@@ -1,16 +1,23 @@
 import type { Metadata } from "next";
-import { Badge, Button, Card, CardHeader } from "@/components/ui";
+import { headers } from "next/headers";
+import Link from "next/link";
+import { Badge, Button, Card, CardHeader, LinkButton } from "@/components/ui";
 import { health } from "@/lib/admin";
 import { sql } from "@/lib/db";
-import { env } from "@/lib/env";
 import { formatDate } from "@/lib/format";
+import { lastDoctorRun, runKeyChecks } from "@/lib/keycheck";
 import { ActionForm } from "../action-form";
 import { cleanupAction } from "../actions";
+import { KeyTable } from "./key-table";
 
 export const metadata: Metadata = { title: "시스템" };
 
-export default async function AdminSystem() {
-  const h = await health();
+export default async function AdminSystem(props: PageProps<"/admin/system">) {
+  const live = (await props.searchParams).check === "1";
+  const hd = await headers();
+  const host = hd.get("x-forwarded-host") ?? hd.get("host");
+  const origin = host ? `${hd.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https")}://${host}` : null;
+  const [h, webKeys, doctor] = await Promise.all([health(), runKeyChecks(live, origin), lastDoctorRun().catch(() => null)]);
   const [jobs, aiByPurpose, aiByUser, quota] = await Promise.all([
     sql<{ job: string; status: string; started_at: string; finished_at: string | null; detail: Record<string, unknown> | null }[]>`
       select distinct on (job) job, status, started_at::text, finished_at::text, detail from job_runs order by job, started_at desc`,
@@ -23,17 +30,6 @@ export default async function AdminSystem() {
       where a.created_at >= date_trunc('month', now()) group by u.email order by cost desc limit 10`,
     sql<{ api: string; calls: number }[]>`select api, calls from api_quota where day = current_date order by api`,
   ]);
-  const keys = [
-    ["세션 서명", "AUTH_SECRET", h.authSecret],
-    ["관리자 계정", "ADMIN_EMAILS", env.adminEmails.length > 0],
-    ["SMTP 메일(로그인 코드·다이제스트)", "SMTP_HOST", h.smtp],
-    ["공공데이터포털(실거래·건축물대장·청약)", "DATA_GO_KR_KEY", "ETL"],
-    ["도로명주소 검색", "JUSO_KEY", Boolean(env.jusoKey)],
-    ["네이버 지도/지오코딩", "NCP_MAPS_KEY_ID / NCP_MAPS_KEY", Boolean(env.ncpKeyId)],
-    ["Claude API", "ANTHROPIC_API_KEY", Boolean(env.anthropicApiKey)],
-    ["웹푸시(VAPID)", "NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY", Boolean(env.vapidPublicKey && env.vapidPrivateKey)],
-    ["정기 리포트 호출 인증", "CRON_SECRET", Boolean(process.env.CRON_SECRET)],
-  ] as const;
 
   return (
     <div className="space-y-4">
@@ -64,20 +60,39 @@ export default async function AdminSystem() {
       </Card>
 
       <Card>
-        <CardHeader title="환경 변수 · 외부 API" sub="값은 리포지토리 루트 .env 또는 배포 플랫폼 환경 변수에서 설정합니다." />
-        <ul className="divide-y divide-border px-4 pb-2 text-sm">
-          {keys.map(([name, envName, ok]) => (
-            <li key={envName} className="flex items-center justify-between gap-2 py-2">
-              <span>
-                {name}
-                <span className="block text-xs text-muted">{envName}</span>
-              </span>
-              <span className={ok === "ETL" ? "text-xs text-muted" : ok ? "text-xs font-medium text-ok" : "text-xs text-up"}>
-                {ok === "ETL" ? "ETL에서 사용" : ok ? "설정됨" : "미설정"}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <CardHeader
+          title="키 점검 · 웹(Vercel)과 GitHub Actions(ETL)"
+          sub={
+            <>
+              {live ? "각 키로 실제 요청을 보내 확인했습니다." : "지금은 설정 여부만 보입니다. 실제 호출로 확인하려면 오른쪽 버튼을 누르세요."} 값 대신 SHA-256 앞 8자리
+              지문을 보여 주며, 두 곳의 지문이 다르면 서로 다른 키가 들어가 있는 것입니다.
+            </>
+          }
+          action={
+            <LinkButton href={live ? "/admin/system" : "/admin/system?check=1"} variant="secondary" className="h-8">
+              {live ? "설정 여부만 보기" : "실제 호출로 점검"}
+            </LinkButton>
+          }
+        />
+        <KeyTable web={webKeys} github={doctor?.detail?.checks ?? null} />
+        <p className="px-4 pb-4 pt-2 text-xs text-muted">
+          GitHub 열:{" "}
+          {doctor ? (
+            <>
+              {formatDate(doctor.started_at)} {doctor.detail?.source === "local" ? "로컬" : "Actions"} 실행 결과
+              {doctor.detail?.run_url ? (
+                <>
+                  {" "}
+                  (<Link href={doctor.detail.run_url} className="text-accent" target="_blank" rel="noreferrer">실행 기록</Link>)
+                </>
+              ) : null}
+              . 매일 ETL 실행 때 갱신되며, 바로 확인하려면 GitHub → Actions → <b>Check keys</b> → Run workflow.
+            </>
+          ) : (
+            <>아직 기록이 없습니다. GitHub → Actions → <b>Check keys</b> → Run workflow 를 실행하세요(DATABASE_URL 이 맞아야 여기에 표시됩니다. 틀리면 Actions 실행 요약에서 확인).</>
+          )}{" "}
+          Vercel 에서 환경 변수를 바꾼 뒤에는 재배포해야 반영됩니다.
+        </p>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">

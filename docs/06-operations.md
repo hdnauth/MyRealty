@@ -9,10 +9,10 @@
 
 | 환경 변수 | 용도 | 없을 때 |
 |---|---|---|
-| `DATA_GO_KR_KEY` | 실거래가 11종, 건축물대장, 청약홈, 상가정보, 병원정보 | 실거래·속성·청약·POI 수집 건너뜀 |
+| `DATA_GO_KR_KEY` | 실거래가 11종, 건축물대장, 청약홈, 상가정보, 병원정보. **웹에도 넣으면** 물건 등록 시 건축물대장으로 유형·평형·동·호·면적 자동 입력 | 실거래·속성·청약·POI 수집 건너뜀, 등록 화면은 수집된 실거래 면적만 제시 |
 | `JUSO_KEY` | 물건 등록 시 주소 검색 | 수집된 단지명 검색만 가능 |
-| `NCP_MAPS_KEY_ID` / `NCP_MAPS_KEY` | 지도 표시, 지오코딩 | 지도 대신 목록, 좌표는 VWorld 로 보조 |
-| `VWORLD_KEY` (+`VWORLD_DOMAIN`) | 토지특성·이용계획·공시가격, 지오코딩 보조 | 토지·공시가격 없음 |
+| `NCP_MAPS_KEY_ID` / `NCP_MAPS_KEY` | 네이버 지도 표시, 지오코딩 | 대체 지도(브이월드 배경 → OpenStreetMap)로 표시, 좌표는 VWorld 로 보조 |
+| `VWORLD_KEY` (+`VWORLD_DOMAIN`) | 토지특성·이용계획·공시가격, 지오코딩 보조, 대체 지도 배경. **웹에도 넣으면** 토지·임야 등록 시 지목·면적 자동 입력 | 토지·공시가격 없음 |
 | `ECOS_KEY`, `KOSIS_KEY`, `REB_KEY` | 금리·물가·M2, 미분양, 부동산원 지수 | 자체 지수·지표는 계산되나 금리·물가 보정 없음 |
 | `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 뉴스 검색 | 뉴스 수집 건너뜀 |
 | `ANTHROPIC_API_KEY` | 뉴스 분류, AI 질문·분석·비교·리포트 | AI 기능 비활성 |
@@ -54,9 +54,10 @@ uv run myrealty import-geo rail.geojson --kind infra
 
 1. 새 프로젝트 → 이 저장소, **Root Directory = `apps/web`**, Framework = Next.js
 2. Environment Variables: `DATABASE_URL`(풀러), `DATABASE_PREPARE=false`(6543 풀러 주소면 자동), `AUTH_SECRET`, `ADMIN_EMAILS`, `APP_URL`,
-   `JUSO_KEY`, `NCP_MAPS_KEY_ID`, `NCP_MAPS_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AI_MONTHLY_BUDGET_USD`,
+   `JUSO_KEY`, `NCP_MAPS_KEY_ID`, `NCP_MAPS_KEY`, `DATA_GO_KR_KEY`, `VWORLD_KEY`(+`VWORLD_DOMAIN`), `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AI_MONTHLY_BUDGET_USD`,
    `SMTP_*`, `MAIL_FROM`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `CRON_SECRET`
-3. 네이버 클라우드 Maps 애플리케이션의 **Web 서비스 URL** 에 배포 도메인(과 `http://localhost:3000`) 등록
+3. 네이버 클라우드 Maps 애플리케이션에서 **Dynamic Map**(지도)·**Geocoding** 을 선택하고, **Web 서비스 URL** 에 배포 도메인(과 `http://localhost:3000`) 등록.
+   인증에 실패하면 지도 화면 위에 원인과 등록할 주소가 표시되고 대체 지도로 보인다.
 4. 휴대폰에서 접속 → (iPhone) Safari 공유 → 홈 화면에 추가 → 앱에서 설정 → "이 기기에서 푸시 받기"
 
 > 다른 호스팅(자체 서버 `pnpm build && pnpm start`, Docker 등)도 동일한 환경 변수로 동작한다. 자체 서버에서는 리포지토리 루트 `.env` 를
@@ -106,7 +107,10 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 |---|---|
 | RTMS 오류 30 / `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` | 활용신청 승인 전이거나 Encoding 키를 넣음 → **Decoding(일반) 키**를 넣고 승인 후 1~2시간 대기 |
 | RTMS 오류 22 | 일일 트래픽 초과 → 다음 날 자동 이월 |
-| 지도 대신 "지도 키가 설정되지 않았습니다" | `NCP_MAPS_KEY_ID` 미설정 또는 서비스 URL 미등록 |
+| 지도가 빈 화면(회색) | (이전 버전) Tailwind 의 `img { max-width: 100% }` 가 지도 타일을 0px 로 줄이던 문제 → 수정됨. 지금은 네이버 키가 없거나 인증에 실패하면 대체 지도가 뜬다 |
+| 지도 위 "네이버 지도 인증에 실패했습니다" | NCP Maps Application 에 Dynamic Map 선택, Web 서비스 URL 에 안내된 주소 등록. `NCP_MAPS_KEY_ID` 는 **Client ID**(Secret 아님) |
+| 지도 좌하단 "대체 지도" | `NCP_MAPS_KEY_ID` 미설정. 배경은 `VWORLD_KEY` 가 있으면 브이월드(서비스 URL 에 배포 도메인 등록), 없거나 실패하면 OpenStreetMap |
+| 어떤 키가 빠졌거나 틀렸는지 모르겠음 | 아래 **7. 키 점검** |
 | "로그인 코드 받기" 후 *This page couldn't load / A server error occurred* | (이전 버전) 서버 오류가 그대로 노출됨. 현재는 원인별 문구와 오류 번호가 표시된다. `/api/health` 로 확인: `db:error`(DATABASE_URL·네트워크·Supabase 는 IPv4 풀러 주소 사용), `pendingMigrations`(`uv run myrealty migrate`), `authSecret:false`(AUTH_SECRET) |
 | "데이터베이스에 연결할 수 없습니다" | `DATABASE_URL` 확인. 자체 서버는 루트 `.env` 가 읽히는지(`/api/health` 의 `authSecret`), Vercel 은 Transaction pooler(6543) 주소 사용 |
 | "스키마가 최신이 아닙니다" | `cd services/etl && uv run myrealty migrate` |
@@ -117,3 +121,21 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 | iPhone 에서 푸시 버튼이 없음 | iOS 16.4+ 에서 홈 화면에 추가한 앱으로 열어야 함 |
 | 단지가 "연결되지 않았습니다" | 해당 시군구 실거래가 아직 수집되지 않음 → rtms·link 실행 후 재확인 |
 | 지표 화면이 비어 있음 | 시군구 아파트 매매가 30건 미만이면 지표를 계산하지 않음(표본 부족) |
+
+## 7. 키 점검 (Vercel · GitHub)
+
+웹(Vercel)과 ETL(GitHub Actions)은 환경 변수를 따로 갖고 있어 한쪽만 빠지거나 서로 다른 값이 들어가기 쉽다. 두 곳을 한 화면에서 비교한다.
+
+| 어디서 | 방법 | 결과 |
+|---|---|---|
+| 웹(Vercel) | 관리 → 시스템 → **키 점검** → "실제 호출로 점검" | 각 키로 가벼운 요청을 보내 정상 / 미설정(필수·선택) / 오류(원인·조치) 표시 |
+| GitHub Actions | Actions → **Check keys** → Run workflow (매일 ETL 에서도 자동 실행) | 실행 요약(Summary)에 같은 표. `DATABASE_URL` 이 맞으면 관리 화면의 GitHub 열에도 표시 |
+| 로컬 | `cd services/etl && uv run myrealty doctor` | 콘솔 표 |
+
+- 값은 어디에도 출력하지 않고 **지문(SHA-256 앞 8자리)** 만 보여 준다. 관리 화면 "같은 키?" 열이 "다름"이면 두 곳에 서로 다른 값이 들어가 있다.
+  `DATABASE_URL` 은 호스트·포트·DB 이름만으로 지문을 만들어 웹과 ETL 이 같은 DB 를 보는지 알 수 있다.
+- `CRON_SECRET` 은 Check keys 워크플로가 웹의 `/api/cron/reports?kind=check` 를 직접 호출해 두 곳 값이 같은지 확인한다(리포트는 만들지 않음). `APP_URL` 은 GitHub **Variables** 에 넣는다.
+- 확인하는 것: 공공데이터포털(실거래·건축물대장 활용신청 여부, 오류 20/22/30/31/32), 브이월드(키·도메인), 도로명주소, NCP 지오코딩, 네이버 검색, ECOS·KOSIS·R-ONE,
+  Claude(키·모델 이름), SMTP 로그인, VAPID 공개키·비밀키 쌍(웹은 빌드에 들어간 공개키가 현재 값과 같은지도), AUTH_SECRET 길이, APP_URL 과 실제 주소.
+- 네이버 지도 표시(Dynamic Map)는 브라우저에서 도메인으로 인증하므로 서버에서 확인할 수 없다. 지도 화면에서 인증 실패 안내가 뜨는지 본다.
+- Vercel 에서 값을 바꾼 뒤에는 **재배포**해야 반영된다(`NEXT_PUBLIC_*` 는 빌드에 들어감).

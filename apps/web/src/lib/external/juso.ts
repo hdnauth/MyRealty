@@ -15,6 +15,8 @@ export type JusoResult = {
   lnbrSlno: string;
   mtYn: string; // 0 대지, 1 산
   bdKdcd: string; // 1 공동주택
+  bdMgtSn: string; // 건물관리번호
+  detBdNmList: string; // 상세건물명(동 목록, 쉼표 구분)
   zipNo: string;
 };
 

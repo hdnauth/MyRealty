@@ -13,6 +13,8 @@ export async function GET(req: NextRequest) {
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // 키 점검(myrealty doctor): GitHub 의 CRON_SECRET 이 웹과 같은지만 확인하고 리포트는 만들지 않는다
+  if (req.nextUrl.searchParams.get("kind") === "check") return NextResponse.json({ ok: true });
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ skipped: "ANTHROPIC_API_KEY 미설정" });
   const kind: ReportKind = req.nextUrl.searchParams.get("kind") === "monthly" ? "monthly" : "weekly";
   const users = await sql<{ id: string; email: string; settings: { emailDigest?: boolean } }[]>`

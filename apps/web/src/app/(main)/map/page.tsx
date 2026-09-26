@@ -27,5 +27,5 @@ export default async function MapPage(props: PageProps<"/map">) {
     limit 1000`;
   const focus = typeof sp.item === "string" ? items.find((i) => i.id === sp.item) : undefined;
   const center: [number, number] = focus ? [focus.lng, focus.lat] : items[0] ? [items[0].lng, items[0].lat] : [126.978, 37.5665];
-  return <RealtyMap keyId={env.ncpKeyId ?? null} items={items} events={events} projects={projects} initialCenter={center} />;
+  return <RealtyMap keyId={env.ncpKeyId ?? null} vworldKey={env.vworldKey ?? null} items={items} events={events} projects={projects} initialCenter={center} />;
 }

@@ -4,6 +4,10 @@ import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { getSiteSettings } from "@/lib/site-settings";
 
+// 로그인 사용자 전용 화면이라 항상 요청 시 렌더링한다. 빌드 때 미리 렌더링을 시도하면 DB 쿼리를 기다리느라
+// 배포 빌드가 멈출 수 있다(예: /admin/system 60초 초과로 빌드 실패).
+export const dynamic = "force-dynamic";
+
 export default async function MainLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
   const [[{ n }], site] = await Promise.all([

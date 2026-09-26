@@ -85,6 +85,41 @@ _simple("events", "myrealty_etl.jobs.events_job:collect_events", "청약·연례
 _simple("news", "myrealty_etl.jobs.news_job:collect_news", "관심 물건 뉴스 수집")
 _simple("classify", "myrealty_etl.ai.news_classifier:classify_pending", "뉴스 AI 분류(배치/동기)",
         lambda p: p.add_argument("--mode", choices=["auto", "sync", "batch"]))
+_simple("macro", "myrealty_etl.collectors.macro:collect_macro", "ECOS·KOSIS·R-ONE 지표 수집")
+_simple("indicators", "myrealty_etl.analytics.indicators:compute_indicators", "지역 지표·온도계 계산")
+_simple("pois", "myrealty_etl.jobs.pois_job:collect_pois", "주변 편의시설 수집 + 입지 점수")
+_simple("locations", "myrealty_etl.analytics.location:compute_locations", "입지 점수만 재계산")
+
+
+def _poi_args(p):
+    p.add_argument("file")
+    p.add_argument("--category", required=True,
+                   choices=["subway", "bus", "school", "park", "mart", "hospital", "clinic", "academy", "food", "cafe", "convenience"])
+    p.add_argument("--dataset", help="데이터셋 이름(기본: 파일명)")
+    p.add_argument("--srid", type=int, default=5174, help="TM 좌표일 때 EPSG(대규모점포 LOCALDATA=5174)")
+
+
+@command("import-poi", "표준데이터 CSV → POI (지하철역·버스정류장·학교·공원·대규모점포)", _poi_args)
+def _import_poi(ns):
+    from .collectors.pois import import_csv
+    with connect() as conn:
+        return import_csv(conn, ns.file, ns.category, ns.dataset, ns.srid)
+
+
+def _geo_args(p):
+    p.add_argument("file")
+    p.add_argument("--kind", required=True, choices=["zones", "infra"])
+
+
+@command("import-geo", "GeoJSON → 정비구역(zones)/인프라 사업(infra)", _geo_args)
+def _import_geo(ns):
+    from .collectors.projects import import_geojson, import_zones_csv
+    with connect() as conn:
+        if ns.file.endswith(".csv") and ns.kind == "zones":
+            return import_zones_csv(conn, ns.file)
+        return import_geojson(conn, ns.file, ns.kind)
+
+
 _simple("alerts", "myrealty_etl.alerts.rules:detect_alerts", "알림 규칙 평가")
 _simple("push", "myrealty_etl.alerts.notify:send_push", "중요 알림 웹푸시 발송")
 _simple("digest", "myrealty_etl.alerts.notify:send_digest", "이메일 다이제스트 발송")
@@ -96,10 +131,13 @@ DAILY_STEPS: list[tuple[str, str]] = [
     ("backfill", "myrealty_etl.jobs.rtms_job:backfill"),
     ("geocode", "myrealty_etl.transforms.geocode:geocode_pending"),
     ("link", "myrealty_etl.transforms.complexes:link_watch_items"),
+    ("macro", "myrealty_etl.collectors.macro:collect_macro"),
     ("attrs", "myrealty_etl.jobs.attrs_job:refresh_attrs"),
     ("events", "myrealty_etl.jobs.events_job:collect_events"),
     ("news", "myrealty_etl.jobs.news_job:collect_news"),
     ("classify", "myrealty_etl.ai.news_classifier:classify_pending"),
+    ("indicators", "myrealty_etl.analytics.indicators:compute_indicators"),
+    ("pois", "myrealty_etl.jobs.pois_job:collect_pois"),
     ("alerts", "myrealty_etl.alerts.rules:detect_alerts"),
     ("push", "myrealty_etl.alerts.notify:send_push"),
     ("digest", "myrealty_etl.alerts.notify:send_digest"),

@@ -42,3 +42,25 @@ describe("기타", () => {
     ]);
   });
 });
+
+import { jeonseRisk, monthlyPayment, scenario } from "../finance";
+
+describe("finance", () => {
+  it("원리금균등", () => {
+    expect(Math.round(monthlyPayment(30000, 4, 30) * 10) / 10).toBe(143.2);
+    expect(monthlyPayment(12000, 0, 30)).toBe(12000 / 360);
+  });
+  it("시나리오 DSR", () => {
+    const s = scenario({ price: 100000, ltv: 0.5, rate: 4, years: 30, incomeAnnual: 10000 });
+    expect(s.loan).toBe(50000);
+    expect(s.dsr).toBeCloseTo((monthlyPayment(50000, 4, 30) * 12) / 10000, 6);
+  });
+  it("전세 위험", () => {
+    expect(jeonseRisk({ deposit: 20000, marketPrice: 30000, officialPrice: 20000 }).level).toBe("안전");
+    expect(jeonseRisk({ deposit: 26000, marketPrice: 30000, officialPrice: 22000 }).level).toBe("주의");
+    // 공시가 126% 초과 → 위험
+    expect(jeonseRisk({ deposit: 26000, marketPrice: 40000, officialPrice: 20000 }).level).toBe("위험");
+    expect(jeonseRisk({ deposit: 1, marketPrice: null, officialPrice: null }).level).toBe("판단불가");
+    expect(jeonseRisk({ deposit: 0, marketPrice: 30000, officialPrice: 20000 }).level).toBe("판단불가");
+  });
+});

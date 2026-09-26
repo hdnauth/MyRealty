@@ -18,6 +18,24 @@ declare global {
 
 export type MapWatchItem = { id: string; label: string; lng: number; lat: number; radius_m: number; property_type: string };
 export type MapEvent = { id: number; title: string; kind: string; lng: number; lat: number; starts_on: string | null };
+export type MapProject = { type: "zone" | "infra"; id: number; name: string; kind: string; status: string | null; step: number | null; expected_open: string | null; lng: number; lat: number };
+type MapPoi = { id: number; category: string; subcategory: string | null; name: string; lng: number; lat: number };
+
+const LAYERS = [
+  { key: "projects", label: "개발사업" },
+  { key: "subway", label: "지하철" },
+  { key: "school", label: "학교" },
+  { key: "park", label: "공원" },
+  { key: "hospital", label: "병원" },
+  { key: "mart", label: "마트" },
+] as const;
+const POI_STYLE: Record<string, { bg: string; icon: string }> = {
+  subway: { bg: "#2a78d6", icon: "🚇" },
+  school: { bg: "#1baf7a", icon: "🏫" },
+  park: { bg: "#008300", icon: "🌳" },
+  hospital: { bg: "#e34948", icon: "🏥" },
+  mart: { bg: "#eb6834", icon: "🛒" },
+};
 
 const TYPE_OPTIONS = [
   { key: "apt", label: "아파트" },
@@ -39,11 +57,13 @@ export function RealtyMap({
   keyId,
   items,
   events,
+  projects = [],
   initialCenter,
 }: {
   keyId: string | null;
   items: MapWatchItem[];
   events: MapEvent[];
+  projects?: MapProject[];
   initialCenter: [number, number];
 }) {
   const el = useRef<HTMLDivElement>(null);
@@ -61,6 +81,9 @@ export function RealtyMap({
   const [selected, setSelected] = useState<MapPoint | null>(null);
   const [detail, setDetail] = useState<{ complex: { name: string; build_year: number | null; households: number | null }; trades: Trade[] } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [layers, setLayers] = useState<Set<string>>(() => new Set(["projects"]));
+  const [pois, setPois] = useState<MapPoi[]>([]);
+  const layerMarkersRef = useRef<any[]>([]);
 
   // 지도 초기화
   useEffect(() => {
@@ -175,6 +198,60 @@ export function RealtyMap({
     });
   }, [points, selected, type, select]);
 
+  // POI 레이어 조회
+  useEffect(() => {
+    const cats = [...layers].filter((l) => l !== "projects");
+    if (!bbox || !cats.length) return;
+    const ctl = new AbortController();
+    fetch(`/api/map/pois?bbox=${bbox.map((v) => v.toFixed(5)).join(",")}&cats=${cats.join(",")}`, { signal: ctl.signal })
+      .then((r) => r.json())
+      .then((d) => setPois(d.pois ?? []))
+      .catch(() => {});
+    return () => ctl.abort();
+  }, [bbox, layers]);
+
+  // 개발사업·POI 마커
+  useEffect(() => {
+    const map = mapRef.current;
+    const naver = window.naver;
+    if (!map || !naver) return;
+    for (const m of layerMarkersRef.current) m.setMap(null);
+    const ms: any[] = [];
+    if (layers.has("projects")) {
+      for (const p of projects) {
+        const label = p.type === "zone" ? `${p.kind} · ${p.status ?? ""}` : `${p.status ?? ""}${p.expected_open ? ` ${p.expected_open.slice(0, 4)}` : ""}`;
+        ms.push(
+          new naver.maps.Marker({
+            map,
+            position: new naver.maps.LatLng(p.lat, p.lng),
+            zIndex: 300,
+            title: p.name,
+            icon: {
+              content: `<div style="transform:translate(-50%,-50%);padding:3px 6px;border-radius:6px;background:${p.type === "zone" ? "#4a3aa7" : "#16191f"};color:#fff;font-size:11px;white-space:nowrap">${p.type === "zone" ? "🏗" : "🚉"} ${escapeHtml(p.name.slice(0, 14))}<br><span style="opacity:.8">${escapeHtml(label)}</span></div>`,
+              anchor: new naver.maps.Point(0, 0),
+            },
+          }),
+        );
+      }
+    }
+    for (const p of pois.filter((x) => layers.has(x.category))) {
+      const st = POI_STYLE[p.category];
+      ms.push(
+        new naver.maps.Marker({
+          map,
+          position: new naver.maps.LatLng(p.lat, p.lng),
+          zIndex: 50,
+          title: p.name,
+          icon: {
+            content: `<div title="${escapeHtml(p.name)}" style="transform:translate(-50%,-50%);width:22px;height:22px;border-radius:999px;background:${st.bg};display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${st.icon}</div>`,
+            anchor: new naver.maps.Point(0, 0),
+          },
+        }),
+      );
+    }
+    layerMarkersRef.current = ms;
+  }, [layers, projects, pois, ready]);
+
   const sorted = useMemo(() => [...points].sort((a, b) => b.n - a.n), [points]);
 
   return (
@@ -204,6 +281,23 @@ export function RealtyMap({
         {MONTHS.map((m) => (
           <Chip key={m} active={months === m} onClick={() => setMonths(m)}>
             {m < 12 ? `${m}개월` : `${m / 12}년`}
+          </Chip>
+        ))}
+        <span className="mx-1 w-px shrink-0 bg-border" />
+        {LAYERS.map((l) => (
+          <Chip
+            key={l.key}
+            active={layers.has(l.key)}
+            onClick={() =>
+              setLayers((prev) => {
+                const next = new Set(prev);
+                if (next.has(l.key)) next.delete(l.key);
+                else next.add(l.key);
+                return next;
+              })
+            }
+          >
+            {l.label}
           </Chip>
         ))}
       </div>

@@ -58,6 +58,9 @@ def reset(conn) -> None:
     conn.execute("delete from series where source = 'demo'")
     conn.execute("delete from articles where url like 'https://demo.myrealty.local/%%'")
     conn.execute("delete from events where source_key like 'demo:%%'")
+    conn.execute("delete from pois where source = 'demo'")
+    conn.execute("delete from redevelopment_zones where source_key like 'demo:%%'")
+    conn.execute("delete from infra_projects where source_key like 'demo:%%'")
     conn.commit()
 
 
@@ -196,6 +199,8 @@ def seed_demo(conn, email: str, *, today: date | None = None, years: int = 8) ->
         "update transactions set collected_at = least(now(), deal_date + interval '25 days') where src_hash like 'demo-%%'"
     )
     _seed_attrs(conn, today)
+    _seed_macro(conn, today)
+    _seed_location(conn)
     n_news = _seed_news_events(conn, uid, today)
     conn.commit()
     return {"user_id": str(uid), "transactions": n_tx, "complexes": len(complex_ids), "items": len(items), **n_news}
@@ -245,7 +250,7 @@ def _seed_news_events(conn, uid, today: date) -> dict:
                   ('demo:movein1', 'move_in', '[데모] 잠실 르엘 입주 예정', %s, null, '서울특별시 송파구 잠실동 일대',
              ST_SetSRID(ST_MakePoint(127.0930, 37.5105), 4326), '{"households": 1865}', null)
            on conflict (source_key) do nothing""",
-        (today + timedelta(days=5), today + timedelta(days=7), date(today.year + 3, 3, 1)),
+        (today + timedelta(days=5), today + timedelta(days=7), month_start_after(today, 15)),
     )
     from .alerts.rules import detect_alerts
     from .jobs.events_job import annual_events
@@ -284,3 +289,89 @@ def _seed_attrs(conn, today: date) -> None:
             "insert into official_prices (target_type, target_key, year, price) values ('land', %s, %s, %s) on conflict do nothing",
             (forest, y, 36000 + 1100 * i),
         )
+
+
+def _seed_macro(conn, today: date) -> None:
+    """합성 거시 시계열(실제 통계 아님): 기준금리·주담대 금리·CPI·M2·국고채."""
+    from .collectors.macro import upsert_series
+
+    def base_rate(m: date) -> float:
+        steps = [(date(2016, 6, 1), 1.25), (date(2017, 11, 1), 1.5), (date(2018, 11, 1), 1.75), (date(2019, 7, 1), 1.5),
+                 (date(2019, 10, 1), 1.25), (date(2020, 3, 1), 0.75), (date(2020, 5, 1), 0.5), (date(2021, 8, 1), 0.75),
+                 (date(2021, 11, 1), 1.0), (date(2022, 1, 1), 1.25), (date(2022, 4, 1), 1.5), (date(2022, 7, 1), 2.25),
+                 (date(2022, 10, 1), 3.0), (date(2023, 1, 1), 3.5), (date(2024, 10, 1), 3.25), (date(2024, 11, 1), 3.0),
+                 (date(2025, 2, 1), 2.75), (date(2025, 5, 1), 2.5), (date(2026, 8, 1), 2.25)]
+        v = 1.25
+        for d, r in steps:
+            if m >= d:
+                v = r
+        return v
+
+    months, m = [], date(2016, 1, 1)
+    while m <= today:
+        months.append(m)
+        m += relativedelta(months=1)
+    t = lambda d: (d.year - 2016) * 12 + d.month - 1  # noqa: E731
+    series = {
+        "ecos.base_rate": ("[데모] 한국은행 기준금리", "%", [(d, base_rate(d)) for d in months]),
+        "ecos.mortgage_rate": ("[데모] 주택담보대출 금리", "%", [(d, round(base_rate(d) + 1.6 + 0.3 * math.sin(t(d) / 7), 2)) for d in months]),
+        "ecos.bond_3y": ("[데모] 국고채 3년", "%", [(d, round(base_rate(d) + 0.2 + 0.25 * math.sin(t(d) / 5), 2)) for d in months]),
+        "ecos.cpi": ("[데모] 소비자물가지수", "2020=100", [(d, round(96.5 * (1.0022 ** t(d)) * (1.01 if d >= date(2022, 3, 1) else 1), 2)) for d in months]),
+        "ecos.m2": ("[데모] M2 평잔", "십억원", [(d, round(2_350_000 * (1.0062 ** t(d)))) for d in months]),
+    }
+    for code, (name, unit, vals) in series.items():
+        upsert_series(conn, code, {"name": name, "unit": unit, "freq": "M", "source": "demo"}, vals)
+
+
+def month_start_after(d: date, months: int) -> date:
+    return d.replace(day=1) + relativedelta(months=months)
+
+
+def _seed_location(conn) -> None:
+    """합성 POI·정비사업·인프라(위치·이름은 예시이며 실제 데이터 아님)."""
+    from .analytics.location import compute_locations
+    from .collectors import projects
+    from .collectors.pois import upsert_pois
+
+    rnd = random.Random(7)
+    rows = []
+
+    def add(cat, sub, name, lng, lat, area=None):
+        rows.append({"source": "demo", "source_id": f"{cat}:{len(rows)}", "category": cat, "subcategory": sub,
+                     "name": name, "lng": lng, "lat": lat, "area_m2": area, "attrs": {"demo": True}})
+
+    for name, line, lng, lat in [("잠실", "2호선", 127.1001, 37.5133), ("잠실새내", "2호선", 127.0862, 37.5117),
+                                 ("종합운동장", "2호선", 127.0736, 37.5109), ("잠실나루", "2호선", 127.1038, 37.5207),
+                                 ("석촌", "8호선", 127.1068, 37.5055)]:
+        add("subway", line, f"{name}역", lng, lat)
+    for sub, names in (("초등학교", ["잠신초", "잠일초", "잠실초", "버들초"]), ("중학교", ["잠신중", "신천중"]), ("고등학교", ["잠신고", "잠실고"])):
+        for n in names:
+            add("school", sub, f"[데모] {n}", 127.08 + rnd.uniform(0, 0.03), 37.505 + rnd.uniform(0, 0.02))
+    add("park", "근린공원", "석촌호수", 127.1010, 37.5090, 217_850)
+    add("park", "근린공원", "올림픽공원", 127.1215, 37.5205, 1_450_000)
+    add("park", "어린이공원", "[데모] 잠실 어린이공원", 127.0840, 37.5100, 3_000)
+    add("mart", "대형마트", "[데모] 대형마트 잠실점", 127.0985, 37.5112)
+    add("mart", "백화점", "[데모] 백화점 잠실점", 127.1000, 37.5115)
+    add("hospital", "상급종합", "[데모] 상급종합병원", 127.1080, 37.5265)
+    for i in range(30):
+        add("bus", None, f"[데모] 정류장{i}", 127.075 + rnd.uniform(0, 0.035), 37.503 + rnd.uniform(0, 0.022))
+    for cat, n, sub in (("clinic", 60, "의원"), ("academy", 140, "입시·교과학원"), ("food", 260, "한식"), ("cafe", 90, "카페"),
+                        ("convenience", 25, "편의점")):
+        for i in range(n):
+            add(cat, sub, f"[데모] {sub}{i}", 127.075 + rnd.uniform(0, 0.035), 37.503 + rnd.uniform(0, 0.022))
+    upsert_pois(conn, rows)
+    for key, props, pt in [
+        ("demo:z1", {"name": "[데모] 잠실 A 재건축", "kind": "재건축", "stage": "조합설립", "stage_date": "2024-03-15",
+                     "households_now": 3930, "households_plan": 6815}, (127.0870, 37.5170)),
+        ("demo:z2", {"name": "[데모] 잠실 B 재건축", "kind": "재건축", "stage": "사업시행인가", "stage_date": "2025-11-20",
+                     "households_now": 1842, "households_plan": 2680}, (127.0770, 37.5090)),
+        ("demo:z3", {"name": "[데모] 석촌 C 가로주택", "kind": "가로주택", "stage": "착공", "stage_date": "2026-02-01"}, (127.1030, 37.5040)),
+    ]:
+        projects.upsert_zone(conn, props, {"type": "Point", "coordinates": list(pt)}, key)
+    projects.upsert_infra(conn, {"name": "[데모] 잠실 광역환승센터", "kind": "station", "line_name": "광역급행(예시)",
+                                 "status": "착공", "expected_open": "2029-12-01"},
+                          {"type": "Point", "coordinates": [127.1005, 37.5125]}, "demo:i1")
+    projects.upsert_infra(conn, {"name": "[데모] 도시철도 연장선 신설역", "kind": "station", "line_name": "연장선(예시)",
+                                 "status": "예타", "expected_open": "2033-06-01"},
+                          {"type": "Point", "coordinates": [127.0920, 37.5010]}, "demo:i2")
+    compute_locations(conn)

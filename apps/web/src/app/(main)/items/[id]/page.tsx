@@ -8,6 +8,7 @@ import { formatArea } from "@/lib/format";
 import { GROUP_TAGS, PROPERTY_TYPES } from "@/lib/property";
 import { getItem } from "@/lib/queries/items";
 import { NearbyTab } from "./tabs/nearby";
+import { LocationTab } from "./tabs/location";
 import { NewsTab } from "./tabs/news";
 import { OverviewTab } from "./tabs/overview";
 import { PriceTab } from "./tabs/price";
@@ -22,6 +23,7 @@ const TABS = [
   { key: "overview", label: "개요" },
   { key: "price", label: "시세" },
   { key: "nearby", label: "주변" },
+  { key: "location", label: "입지" },
   { key: "news", label: "소식" },
 ] as const;
 
@@ -61,6 +63,7 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
       {tab === "overview" ? <OverviewTab item={item} /> : null}
       {tab === "price" ? <PriceTab item={item} all={sp.all === "1"} /> : null}
       {tab === "nearby" ? <NearbyTab item={item} /> : null}
+      {tab === "location" ? <LocationTab item={item} /> : null}
       {tab === "news" ? <NewsTab item={item} /> : null}
       {!item.complex_id && PROPERTY_TYPES[item.property_type].hasComplex ? (
         <Card className="mt-4 p-4 text-sm text-muted">

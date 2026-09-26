@@ -7,6 +7,7 @@ import {
   Building2,
   CalendarDays,
   Columns3,
+  Construction,
   Home,
   LineChart,
   Map as MapIcon,
@@ -25,6 +26,7 @@ const PRIMARY = [
 const SECONDARY = [
   { href: "/compare", label: "비교", icon: Columns3 },
   { href: "/calendar", label: "캘린더", icon: CalendarDays },
+  { href: "/projects", label: "개발사업", icon: Construction },
   { href: "/notifications", label: "알림", icon: Bell },
   { href: "/settings", label: "설정", icon: Settings },
 ];

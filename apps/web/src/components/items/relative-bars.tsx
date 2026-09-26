@@ -1,8 +1,16 @@
 import { formatPct } from "@/lib/format";
 
 /** 0을 기준으로 좌우로 뻗는 수익률 막대(상승=빨강 ▲, 하락=파랑 ▼, 값 라벨 병기) */
-export function RelativeBars({ rows }: { rows: { label: string; value: number | null; emphasis?: boolean }[] }) {
-  const max = Math.max(0.05, ...rows.map((r) => Math.abs(r.value ?? 0)));
+export function RelativeBars({
+  rows,
+  format = (v) => `${v >= 0 ? "▲" : "▼"}${formatPct(Math.abs(v), 1, false)}`,
+  minScale = 0.05,
+}: {
+  rows: { label: string; value: number | null; emphasis?: boolean }[];
+  format?: (v: number) => string;
+  minScale?: number;
+}) {
+  const max = Math.max(minScale, ...rows.map((r) => Math.abs(r.value ?? 0)));
   return (
     <div className="space-y-2.5">
       {rows.map((r) => {
@@ -21,7 +29,7 @@ export function RelativeBars({ rows }: { rows: { label: string; value: number | 
               ) : null}
             </div>
             <span className={`tabular text-right ${v === null ? "text-muted" : v >= 0 ? "text-up" : "text-down"}`}>
-              {v === null ? "-" : `${v >= 0 ? "▲" : "▼"}${formatPct(Math.abs(v), 1, false)}`}
+              {v === null ? "-" : format(v)}
             </span>
           </div>
         );

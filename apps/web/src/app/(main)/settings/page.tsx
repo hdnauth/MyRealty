@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Button, Card, CardHeader, PageHeader } from "@/components/ui";
-import { readToken, requireUser, SESSION_COOKIE } from "@/lib/auth/session";
+import { readToken, requireUser, SESSION_COOKIE, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { formatDate, timeAgo } from "@/lib/format";
@@ -14,15 +14,18 @@ import { PushManager } from "./push-manager";
 export const metadata: Metadata = { title: "설정" };
 
 export default async function SettingsPage() {
-  const user = await requireUser();
-  const sessions = await sql<{ id: string; user_agent: string | null; created_at: string; last_seen_at: string | null; remember: boolean }[]>`
-    select id, user_agent, created_at::text, last_seen_at::text, remember from sessions
-    where user_id = ${user.id} and revoked_at is null and expires_at > now() order by coalesce(last_seen_at, created_at) desc`;
-  const current = await readToken((await cookies()).get(SESSION_COOKIE)?.value);
-  const [ai] = await sql<{ cost: number; calls: number }[]>`
-    select coalesce(sum(cost_usd), 0)::float8 as cost, count(*)::int as calls from ai_usage
-    where user_id = ${user.id} and created_at >= date_trunc('month', now())`;
-  const site = await getSiteSettings();
+  const uid = await sessionUserId();
+  const [user, sessions, current, [ai], site] = await Promise.all([
+    requireUser(),
+    sql<{ id: string; user_agent: string | null; created_at: string; last_seen_at: string | null; remember: boolean }[]>`
+      select id, user_agent, created_at::text, last_seen_at::text, remember from sessions
+      where user_id = ${uid} and revoked_at is null and expires_at > now() order by coalesce(last_seen_at, created_at) desc`,
+    cookies().then((c) => readToken(c.get(SESSION_COOKIE)?.value)),
+    sql<{ cost: number; calls: number }[]>`
+      select coalesce(sum(cost_usd), 0)::float8 as cost, count(*)::int as calls from ai_usage
+      where user_id = ${uid} and created_at >= date_trunc('month', now())`,
+    getSiteSettings(),
+  ]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">

@@ -79,6 +79,23 @@ body {
   font-feature-settings: "tnum" 1;
 }
 
+/*
+ * 지도: Tailwind preflight 의 img { max-width: 100% } 가 지도 타일(크기 0 인 컨테이너 안의 img)을 0px 로 줄여
+ * 네이버 지도가 빈 화면으로 보인다. 지도 영역에서는 해제한다(레이어 밖 규칙이라 preflight 보다 우선).
+ */
+.map-canvas img {
+  max-width: none;
+  max-height: none;
+}
+.map-canvas.leaflet-container {
+  font: inherit;
+  background: var(--surface-2);
+}
+.map-html-marker {
+  background: none;
+  border: 0;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);

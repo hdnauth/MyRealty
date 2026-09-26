@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Card, CardHeader, EmptyState, Notice, PageHeader } from "@/components/ui";
 import { aiEnabled } from "@/lib/ai/client";
 import { latestCompare } from "@/lib/ai/compare";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatArea, formatManwon, formatPct } from "@/lib/format";
 import { PROPERTY_TYPES } from "@/lib/property";
@@ -14,9 +14,8 @@ import { CompareButton } from "./compare-button";
 export const metadata: Metadata = { title: "비교" };
 
 export default async function ComparePage(props: PageProps<"/compare">) {
-  const user = await requireUser();
-  const sp = await props.searchParams;
-  const all = await listItems(user.id);
+  const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
+  const [, all] = await Promise.all([requireUser(), listItems(uid)]);
   const ids = (typeof sp.ids === "string" ? sp.ids.split(",") : all.slice(0, 3).map((i) => i.id)).filter((id) => all.some((i) => i.id === id)).slice(0, 5);
   const toggle = (id: string) => {
     const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id].slice(0, 5);
@@ -25,20 +24,26 @@ export default async function ComparePage(props: PageProps<"/compare">) {
 
   const rows = await Promise.all(
     ids.map(async (id) => {
-      const it = (await getItem(user.id, id))!;
-      const s = summarize(await itemTransactions(it, 3));
-      const [v] = await sql<{ estimate: number; low: number; high: number; confidence: string }[]>`
-        select estimate, low, high, confidence from valuations where watch_item_id = ${id} order by as_of desc limit 1`;
-      const [loc] = await sql<{ total: number | null; scores: Record<string, { score: number | null }>; development: { zones_count?: number; rebuild?: { age: number; years_left: number }; nearest_planned_station?: { dist_m: number } | null } | null }[]>`
-        select total, scores, development from location_scores where target_type = 'item' and target_id = ${id}`;
-      const region = it.sgg_cd
-        ? await sql<{ code: string; value: number }[]>`
-            select s.code, (select value from series_values v where v.code = s.code order by period desc limit 1) as value
-            from series s where s.code in (${`ind.temp.${it.sgg_cd}`}, ${`ind.burden.${it.sgg_cd}`})`
-        : [];
-      const [news] = await sql<{ pos: number; neg: number }[]>`
-        select count(*) filter (where impact > 0)::int as pos, count(*) filter (where impact < 0)::int as neg
-        from article_links where watch_item_id = ${id} and status = 'classified' and relevance >= 0.7 and classified_at > now() - interval '60 days'`;
+      // 물건별로 필요한 조회를 동시에(물건 정보가 필요한 것만 한 단계 뒤)
+      const [it, [v], [loc], [news]] = await Promise.all([
+        getItem(uid, id).then((x) => x!),
+        sql<{ estimate: number; low: number; high: number; confidence: string }[]>`
+          select estimate, low, high, confidence from valuations where watch_item_id = ${id} order by as_of desc limit 1`,
+        sql<{ total: number | null; scores: Record<string, { score: number | null }>; development: { zones_count?: number; rebuild?: { age: number; years_left: number }; nearest_planned_station?: { dist_m: number } | null } | null }[]>`
+          select total, scores, development from location_scores where target_type = 'item' and target_id = ${id}`,
+        sql<{ pos: number; neg: number }[]>`
+          select count(*) filter (where impact > 0)::int as pos, count(*) filter (where impact < 0)::int as neg
+          from article_links where watch_item_id = ${id} and status = 'classified' and relevance >= 0.7 and classified_at > now() - interval '60 days'`,
+      ]);
+      const [txs, region] = await Promise.all([
+        itemTransactions(it, 3),
+        it.sgg_cd
+          ? sql<{ code: string; value: number }[]>`
+              select s.code, (select value from series_values v where v.code = s.code order by period desc limit 1) as value
+              from series s where s.code in (${`ind.temp.${it.sgg_cd}`}, ${`ind.burden.${it.sgg_cd}`})`
+          : [],
+      ]);
+      const s = summarize(txs);
       const area = it.area_m2 ?? it.land_area_m2;
       return {
         it,
@@ -52,7 +57,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
       };
     }),
   );
-  const ai = ids.length >= 2 ? await latestCompare(user.id, ids) : null;
+  const ai = ids.length >= 2 ? await latestCompare(uid, ids) : null;
   const enabled = aiEnabled();
 
   const metrics: { label: string; get: (r: (typeof rows)[number]) => string }[] = [

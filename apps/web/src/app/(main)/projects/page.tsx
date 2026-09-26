@@ -9,11 +9,13 @@ import { ProjectForm } from "./project-form";
 export const metadata: Metadata = { title: "개발사업" };
 
 export default async function ProjectsPage() {
-  const user = await requireUser();
-  const zones = await sql<{ id: number; name: string; kind: string; stage: string | null; stage_date: string | null; source_key: string }[]>`
-    select id, name, kind, stage, stage_date::text, source_key from redevelopment_zones order by updated_at desc limit 200`;
-  const infra = await sql<{ id: number; name: string; kind: string; line_name: string | null; status: string; expected_open: string | null; source_key: string }[]>`
-    select id, name, kind, line_name, status, expected_open::text, source_key from infra_projects order by updated_at desc limit 200`;
+  const [user, zones, infra] = await Promise.all([
+    requireUser(),
+    sql<{ id: number; name: string; kind: string; stage: string | null; stage_date: string | null; source_key: string }[]>`
+      select id, name, kind, stage, stage_date::text, source_key from redevelopment_zones order by updated_at desc limit 200`,
+    sql<{ id: number; name: string; kind: string; line_name: string | null; status: string; expected_open: string | null; source_key: string }[]>`
+      select id, name, kind, line_name, status, expected_open::text, source_key from infra_projects order by updated_at desc limit 200`,
+  ]);
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <PageHeader title="개발사업" sub="재개발·재건축 구역과 철도·도로 사업. 입지 점수와 지도·물건 입지 탭에 반영됩니다." />

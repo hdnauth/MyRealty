@@ -1,20 +1,12 @@
 "use client";
 
 import clsx from "clsx";
-import Link from "next/link";
-import Script from "next/script";
+import "leaflet/dist/leaflet.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MapPoint } from "@/app/api/map/points/route";
-import { Badge } from "@/components/ui";
 import { formatDate, formatManwon } from "@/lib/format";
 import { DEAL_KIND_LABEL } from "@/lib/property";
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-declare global {
-  interface Window {
-    naver?: any;
-  }
-}
+import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, tileSources } from "./engines";
 
 export type MapWatchItem = { id: string; label: string; lng: number; lat: number; radius_m: number; property_type: string };
 export type MapEvent = { id: number; title: string; kind: string; lng: number; lat: number; starts_on: string | null };
@@ -55,97 +47,111 @@ function escapeHtml(s: string) {
 
 export function RealtyMap({
   keyId,
+  vworldKey = null,
   items,
   events,
   projects = [],
   initialCenter,
 }: {
+  /** 네이버 클라우드 Maps Client ID. 없거나 인증에 실패하면 Leaflet 대체 지도로 그린다. */
   keyId: string | null;
+  /** 대체 지도 배경(브이월드 WMTS). 없으면 OpenStreetMap */
+  vworldKey?: string | null;
   items: MapWatchItem[];
   events: MapEvent[];
   projects?: MapProject[];
   initialCenter: [number, number];
 }) {
   const el = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const [ready, setReady] = useState(false);
+  const mapRef = useRef<MapHandle | null>(null);
+  const markersRef = useRef<Removable[]>([]);
+  const layerMarkersRef = useRef<Removable[]>([]);
+  // 지도가 새로 만들어질 때마다 올라가 마커 effect 를 다시 돌린다(네이버 → 대체 지도 전환 포함)
+  const [mapVersion, setMapVersion] = useState(0);
+  const [engine, setEngine] = useState<"naver" | "leaflet">(keyId ? "naver" : "leaflet");
+  const [notice, setNotice] = useState<string | null>(null);
   const [type, setType] = useState("apt");
   const [kind, setKind] = useState<"sale" | "jeonse">("sale");
   const [months, setMonths] = useState(6);
   const [points, setPoints] = useState<MapPoint[]>([]);
-  // 키가 없으면 지도 없이 관심물건 주변 영역을 목록으로 조회
-  const [bbox, setBbox] = useState<number[] | null>(() =>
-    keyId ? null : [initialCenter[0] - 0.05, initialCenter[1] - 0.04, initialCenter[0] + 0.05, initialCenter[1] + 0.04],
-  );
+  const [bbox, setBbox] = useState<BBox | null>(null);
   const [selected, setSelected] = useState<MapPoint | null>(null);
   const [detail, setDetail] = useState<{ complex: { name: string; build_year: number | null; households: number | null }; trades: Trade[] } | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [layers, setLayers] = useState<Set<string>>(() => new Set(["projects"]));
   const [pois, setPois] = useState<MapPoi[]>([]);
-  const layerMarkersRef = useRef<any[]>([]);
+  const [lng0, lat0] = initialCenter;
 
-  // 지도 초기화
+  // 지도 생성: 네이버 우선, 스크립트 오류·인증 실패·시간 초과면 대체 지도로 바꾼다
   useEffect(() => {
-    if (!ready || !el.current || mapRef.current || !window.naver?.maps) return;
-    const { naver } = window;
-    const map = new naver.maps.Map(el.current, {
-      center: new naver.maps.LatLng(initialCenter[1], initialCenter[0]),
-      zoom: 15,
-      zoomControl: true,
-      zoomControlOptions: { position: naver.maps.Position.TOP_RIGHT },
-      mapDataControl: false,
-      scaleControl: false,
-    });
-    mapRef.current = map;
-    const update = () => {
-      const b = map.getBounds();
-      const sw = b.getSW();
-      const ne = b.getNE();
-      setBbox([sw.lng(), sw.lat(), ne.lng(), ne.lat()]);
+    const node = el.current;
+    if (!node) return;
+    let cancelled = false;
+    let handle: MapHandle | null = null;
+    const fallback = (msg: string) => {
+      if (cancelled) return;
+      setNotice(msg);
+      setEngine("leaflet");
     };
-    naver.maps.Event.addListener(map, "idle", update);
-    update();
+    const origin = window.location.origin;
+    (async () => {
+      try {
+        if (engine === "naver" && keyId) {
+          await loadNaver(keyId, () =>
+            fallback(
+              `네이버 지도 인증에 실패했습니다. 네이버 클라우드 콘솔 › Maps › Application 에서 Dynamic Map 을 선택했는지, Web 서비스 URL 에 ${origin} 이 등록돼 있는지 확인하세요. 지금은 대체 지도를 표시합니다.`,
+            ),
+          );
+          if (cancelled) return;
+          handle = createNaverMap(node, [lng0, lat0], 15);
+        } else {
+          const L = await loadLeaflet();
+          if (cancelled) return;
+          handle = createLeafletMap(L, node, [lng0, lat0], 15, tileSources(vworldKey), (from, to) =>
+            setNotice(`배경지도(${from.url.includes("vworld") ? "브이월드" : "기본"})를 불러오지 못해 ${to.url.includes("openstreetmap") ? "OpenStreetMap" : "다른 배경"}으로 바꿨습니다. 브이월드 키의 서비스 URL 에 ${origin} 이 등록돼 있는지 확인하세요.`),
+          );
+        }
+      } catch {
+        if (engine === "naver") fallback("네이버 지도 스크립트를 불러오지 못했습니다(네트워크·광고 차단 확장 등). 대체 지도를 표시합니다.");
+        else {
+          setNotice("지도를 불러오지 못했습니다. 아래 목록에서 관심 물건 주변 거래를 볼 수 있습니다.");
+          setBbox([lng0 - 0.05, lat0 - 0.04, lng0 + 0.05, lat0 + 0.04]);
+        }
+        return;
+      }
+      const map = handle;
+      mapRef.current = map;
 
-    // 관심 물건 핀 + 탐색 반경
-    for (const it of items) {
-      const pos = new naver.maps.LatLng(it.lat, it.lng);
-      new naver.maps.Circle({
-        map,
-        center: pos,
-        radius: it.radius_m,
-        strokeColor: "#2563eb",
-        strokeOpacity: 0.5,
-        strokeWeight: 1,
-        fillColor: "#2563eb",
-        fillOpacity: 0.04,
-        clickable: false,
-      });
-      const m = new naver.maps.Marker({
-        map,
-        position: pos,
-        zIndex: 1000,
-        icon: {
-          content: `<a href="/items/${it.id}" style="display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;text-decoration:none">★ ${escapeHtml(it.label)}</a>`,
-          anchor: new naver.maps.Point(12, 12),
-        },
-      });
-      void m;
-    }
-    // 이벤트(청약 등)
-    for (const ev of events) {
-      new naver.maps.Marker({
-        map,
-        position: new naver.maps.LatLng(ev.lat, ev.lng),
-        zIndex: 500,
-        title: ev.title,
-        icon: {
-          content: `<div title="${escapeHtml(ev.title)}" style="padding:3px 6px;border-radius:6px;background:#eb6834;color:#fff;font-size:11px;font-weight:600;white-space:nowrap">청약 · ${escapeHtml(ev.title.slice(0, 10))}</div>`,
-          anchor: new naver.maps.Point(10, 10),
-        },
-      });
-    }
-  }, [ready, initialCenter, items, events]);
+      // 관심 물건 핀 + 탐색 반경
+      for (const it of items) {
+        map.addCircle({ lng: it.lng, lat: it.lat, radius: it.radius_m, color: "#2563eb" });
+        map.addHtmlMarker({
+          lng: it.lng,
+          lat: it.lat,
+          zIndex: 1000,
+          html: `<a href="/items/${it.id}" style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;text-decoration:none">★ ${escapeHtml(it.label)}</a>`,
+        });
+      }
+      // 이벤트(청약 등)
+      for (const ev of events) {
+        map.addHtmlMarker({
+          lng: ev.lng,
+          lat: ev.lat,
+          zIndex: 500,
+          title: ev.title,
+          html: `<div title="${escapeHtml(ev.title)}" style="transform:translate(-10px,-50%);display:inline-block;padding:3px 6px;border-radius:6px;background:#eb6834;color:#fff;font-size:11px;font-weight:600;white-space:nowrap">청약 · ${escapeHtml(ev.title.slice(0, 10))}</div>`,
+        });
+      }
+      map.onIdle(setBbox);
+      setMapVersion((v) => v + 1);
+    })();
+    return () => {
+      cancelled = true;
+      handle?.destroy();
+      mapRef.current = null;
+      markersRef.current = [];
+      layerMarkersRef.current = [];
+    };
+  }, [engine, keyId, vworldKey, lng0, lat0, items, events]);
 
   // 영역·필터 변경 시 집계 조회
   useEffect(() => {
@@ -172,31 +178,26 @@ export function RealtyMap({
         .then(setDetail)
         .catch(() => {});
     }
-    if (mapRef.current && window.naver) mapRef.current.panTo(new window.naver.maps.LatLng(p.lat, p.lng));
+    mapRef.current?.panTo(p.lng, p.lat);
   }, []);
 
   // 가격 라벨 마커
   useEffect(() => {
     const map = mapRef.current;
-    const naver = window.naver;
-    if (!map || !naver) return;
-    for (const m of markersRef.current) m.setMap(null);
+    if (!map) return;
+    for (const m of markersRef.current) m.remove();
     markersRef.current = points.map((p) => {
       const main = p.median_ppy && (type === "apt" || type === "officetel" || type === "rowhouse") ? `${formatManwon(p.median_ppy, { short: true })}/평` : formatManwon(p.median_price, { short: true });
       const active = selected?.key === p.key;
-      const marker = new naver.maps.Marker({
-        map,
-        position: new naver.maps.LatLng(p.lat, p.lng),
+      return map.addHtmlMarker({
+        lng: p.lng,
+        lat: p.lat,
         zIndex: active ? 900 : 100,
-        icon: {
-          content: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600">${main}<span style="font-weight:400;opacity:.7">${escapeHtml(p.name.slice(0, 8))} · ${p.n}건</span></div>`,
-          anchor: new naver.maps.Point(0, 0),
-        },
+        onClick: () => select(p),
+        html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer">${main}<span style="font-weight:400;opacity:.7">${escapeHtml(p.name.slice(0, 8))} · ${p.n}건</span></div>`,
       });
-      naver.maps.Event.addListener(marker, "click", () => select(p));
-      return marker;
     });
-  }, [points, selected, type, select]);
+  }, [points, selected, type, select, mapVersion]);
 
   // POI 레이어 조회
   useEffect(() => {
@@ -213,23 +214,19 @@ export function RealtyMap({
   // 개발사업·POI 마커
   useEffect(() => {
     const map = mapRef.current;
-    const naver = window.naver;
-    if (!map || !naver) return;
-    for (const m of layerMarkersRef.current) m.setMap(null);
-    const ms: any[] = [];
+    if (!map) return;
+    for (const m of layerMarkersRef.current) m.remove();
+    const ms: Removable[] = [];
     if (layers.has("projects")) {
       for (const p of projects) {
         const label = p.type === "zone" ? `${p.kind} · ${p.status ?? ""}` : `${p.status ?? ""}${p.expected_open ? ` ${p.expected_open.slice(0, 4)}` : ""}`;
         ms.push(
-          new naver.maps.Marker({
-            map,
-            position: new naver.maps.LatLng(p.lat, p.lng),
+          map.addHtmlMarker({
+            lng: p.lng,
+            lat: p.lat,
             zIndex: 300,
             title: p.name,
-            icon: {
-              content: `<div style="transform:translate(-50%,-50%);padding:3px 6px;border-radius:6px;background:${p.type === "zone" ? "#4a3aa7" : "#16191f"};color:#fff;font-size:11px;white-space:nowrap">${p.type === "zone" ? "🏗" : "🚉"} ${escapeHtml(p.name.slice(0, 14))}<br><span style="opacity:.8">${escapeHtml(label)}</span></div>`,
-              anchor: new naver.maps.Point(0, 0),
-            },
+            html: `<div style="transform:translate(-50%,-50%);display:inline-block;padding:3px 6px;border-radius:6px;background:${p.type === "zone" ? "#4a3aa7" : "#16191f"};color:#fff;font-size:11px;white-space:nowrap">${p.type === "zone" ? "🏗" : "🚉"} ${escapeHtml(p.name.slice(0, 14))}<br><span style="opacity:.8">${escapeHtml(label)}</span></div>`,
           }),
         );
       }
@@ -237,34 +234,22 @@ export function RealtyMap({
     for (const p of pois.filter((x) => layers.has(x.category))) {
       const st = POI_STYLE[p.category];
       ms.push(
-        new naver.maps.Marker({
-          map,
-          position: new naver.maps.LatLng(p.lat, p.lng),
+        map.addHtmlMarker({
+          lng: p.lng,
+          lat: p.lat,
           zIndex: 50,
           title: p.name,
-          icon: {
-            content: `<div title="${escapeHtml(p.name)}" style="transform:translate(-50%,-50%);width:22px;height:22px;border-radius:999px;background:${st.bg};display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${st.icon}</div>`,
-            anchor: new naver.maps.Point(0, 0),
-          },
+          html: `<div title="${escapeHtml(p.name)}" style="transform:translate(-50%,-50%);width:22px;height:22px;border-radius:999px;background:${st.bg};display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${st.icon}</div>`,
         }),
       );
     }
     layerMarkersRef.current = ms;
-  }, [layers, projects, pois, ready]);
+  }, [layers, projects, pois, mapVersion]);
 
   const sorted = useMemo(() => [...points].sort((a, b) => b.n - a.n), [points]);
 
   return (
     <div className="-mx-4 -mt-4 flex h-[calc(100dvh-7.5rem)] flex-col lg:mx-0 lg:mt-0 lg:h-[calc(100dvh-4rem)]">
-      {keyId ? (
-        <Script
-          src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(keyId)}`}
-          strategy="afterInteractive"
-          onReady={() => setReady(true)}
-          onError={() => setLoadError("네이버 지도 스크립트를 불러오지 못했습니다. 키와 서비스 URL 등록을 확인하세요.")}
-        />
-      ) : null}
-
       <div className="flex gap-1.5 overflow-x-auto border-b border-border bg-surface px-4 py-2 lg:rounded-t-xl lg:border">
         {TYPE_OPTIONS.map((o) => (
           <Chip key={o.key} active={type === o.key} onClick={() => setType(o.key)}>
@@ -357,24 +342,20 @@ export function RealtyMap({
         </div>
 
         <div className="relative order-1 min-h-0 flex-1 lg:order-2">
-          {keyId ? (
-            <div ref={el} className="absolute inset-0 bg-surface-2" />
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-surface-2 p-6 text-center">
-              <p className="font-medium">지도 키가 설정되지 않았습니다</p>
-              <p className="max-w-sm text-sm text-muted">
-                .env 에 <code>NCP_MAPS_KEY_ID</code>(네이버 클라우드 Maps Client ID)를 설정하면 지도가 표시됩니다. 지금은 관심 물건 주변 거래를 목록으로 보여줍니다.
-              </p>
-              <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                {items.map((i) => (
-                  <Link key={i.id} href={`/items/${i.id}`}>
-                    <Badge tone="accent">★ {i.label}</Badge>
-                  </Link>
-                ))}
-              </div>
+          <div ref={el} className="map-canvas absolute inset-0 z-0 bg-surface-2" />
+          {engine === "leaflet" && !keyId && !notice ? (
+            <div className="pointer-events-none absolute bottom-6 left-2 z-[500] rounded-md bg-surface/90 px-2 py-1 text-[11px] text-muted shadow">
+              대체 지도 · NCP_MAPS_KEY_ID 를 설정하면 네이버 지도로 표시됩니다
             </div>
-          )}
-          {loadError ? <div className="absolute inset-x-4 top-4 rounded-lg bg-warn/90 p-2 text-sm text-white">{loadError}</div> : null}
+          ) : null}
+          {notice ? (
+            <div role="status" className="absolute inset-x-4 top-4 z-[500] flex items-start gap-2 rounded-lg bg-warn/95 p-2 text-sm text-white shadow lg:right-auto lg:max-w-lg">
+              <span className="min-w-0 flex-1">{notice}</span>
+              <button type="button" className="shrink-0 px-1 font-bold" aria-label="닫기" onClick={() => setNotice(null)}>
+                ×
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { TypeIcon } from "@/components/items/item-card";
 import { Badge, Card, LinkButton, Tabs } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { formatArea } from "@/lib/format";
 import { GROUP_TAGS, PROPERTY_TYPES } from "@/lib/property";
 import { getItem } from "@/lib/queries/items";
@@ -16,8 +16,8 @@ import { OverviewTab } from "./tabs/overview";
 import { PriceTab } from "./tabs/price";
 
 export async function generateMetadata(props: PageProps<"/items/[id]">): Promise<Metadata> {
-  const user = await requireUser();
-  const item = await getItem(user.id, (await props.params).id);
+  const [uid, { id }] = await Promise.all([sessionUserId(), props.params]);
+  const [, item] = await Promise.all([requireUser(), getItem(uid, id)]);
   return { title: item?.label ?? "물건" };
 }
 
@@ -32,10 +32,8 @@ const TABS = [
 ] as const;
 
 export default async function ItemPage(props: PageProps<"/items/[id]">) {
-  const user = await requireUser();
-  const { id } = await props.params;
-  const sp = await props.searchParams;
-  const item = await getItem(user.id, id);
+  const [uid, { id }, sp] = await Promise.all([sessionUserId(), props.params, props.searchParams]);
+  const [, item] = await Promise.all([requireUser(), getItem(uid, id)]);
   if (!item) notFound();
   const tab = TABS.find((t) => t.key === sp.tab)?.key ?? "overview";
 

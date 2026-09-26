@@ -1,24 +1,14 @@
-name: ETL daily
+name: Check keys
 
+# GitHub Secrets/Variables 에 넣은 키가 비었거나 잘못됐는지 실제 호출로 확인한다(값은 출력하지 않음).
+# Actions → Check keys → Run workflow. 결과는 실행 요약(Summary) 표와 웹 관리 → 시스템 화면에서 본다.
 on:
-  schedule:
-    # 매일 05:50 KST (20:50 UTC 전날)
-    - cron: "50 20 * * *"
   workflow_dispatch:
-    inputs:
-      only:
-        description: "실행할 단계(공백 구분, 비우면 전체)"
-        required: false
-        default: ""
-
-concurrency:
-  group: etl
-  cancel-in-progress: false
 
 jobs:
-  daily:
+  doctor:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: services/etl
@@ -46,14 +36,9 @@ jobs:
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
       VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
       VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --no-dev
-      - run: uv run myrealty migrate
-      # 키 점검: 결과는 실행 요약과 관리 → 시스템 화면에 남는다. 실패해도 수집은 계속한다.
-      - run: uv run myrealty doctor
-        continue-on-error: true
-        env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-      - run: uv run myrealty daily ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
+      - run: uv run myrealty doctor --strict

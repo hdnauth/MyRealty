@@ -63,7 +63,7 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
   const roadAddr = str(form.get("road_address"));
   const jibunAddr = str(form.get("jibun_address"));
   const buildingName = str(form.get("building_name"));
-  const label = str(form.get("label")) ?? buildingName ?? jibunAddr ?? "관심 물건";
+  const label = str(form.get("label")) ?? str(form.get("default_label")) ?? buildingName ?? jibunAddr ?? "관심 물건";
 
   // 좌표: 단지 좌표 → 지오코딩 → 읍면동 중심
   let pt: [number, number] | null = null;

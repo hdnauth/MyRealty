@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { safeHref } from "@/lib/format";
 import { calendarEntries, type CalendarEntry } from "@/lib/queries/feed";
 
@@ -24,13 +24,12 @@ function ym(d: Date) {
 }
 
 export default async function CalendarPage(props: PageProps<"/calendar">) {
-  const user = await requireUser();
-  const sp = await props.searchParams;
+  const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
   const base = typeof sp.m === "string" && /^\d{4}-\d{2}$/.test(sp.m) ? new Date(`${sp.m}-01T00:00:00`) : new Date();
   const first = new Date(base.getFullYear(), base.getMonth(), 1);
   const last = new Date(base.getFullYear(), base.getMonth() + 1, 0);
   const iso = (d: Date) => `${ym(d)}-${String(d.getDate()).padStart(2, "0")}`;
-  const entries = await calendarEntries(user.id, iso(first), iso(last));
+  const [, entries] = await Promise.all([requireUser(), calendarEntries(uid, iso(first), iso(last))]);
   const byDay = new Map<string, CalendarEntry[]>();
   for (const e of entries) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
   const prev = new Date(first.getFullYear(), first.getMonth() - 1, 1);

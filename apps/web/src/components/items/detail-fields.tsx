@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Field, Input, Select } from "@/components/ui";
 import { GROUP_TAGS } from "@/lib/property";
 import type { Lease, Loan } from "@/lib/queries/items";
@@ -26,11 +26,16 @@ export function DetailFields({
   isLand = false,
   areaOptions,
   showKeywords = false,
+  unitSlot,
+  labelPlaceholder = "예) 우리집, 매수후보 A",
 }: {
   d?: DetailDefaults;
   isLand?: boolean;
   areaOptions?: { area: number; n: number }[];
   showKeywords?: boolean;
+  /** 면적·층·동/호 입력을 대신 그릴 요소(등록 화면의 평형·동·호 선택) */
+  unitSlot?: ReactNode;
+  labelPlaceholder?: string;
 }) {
   const loan = d.loans?.[0];
   const [area, setArea] = useState<string>(isLand ? String(d.land_area_m2 ?? "") : String(d.area_m2 ?? ""));
@@ -39,7 +44,7 @@ export function DetailFields({
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="이름(표시용)">
-          <Input name="label" defaultValue={d.label ?? ""} placeholder="예) 우리집, 매수후보 A" />
+          <Input name="label" defaultValue={d.label ?? ""} placeholder={labelPlaceholder} />
         </Field>
         <Field label="그룹">
           <Select name="group_tag" defaultValue={d.group_tag ?? "watch"}>
@@ -52,35 +57,39 @@ export function DetailFields({
         </Field>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Field label={isLand ? "토지 면적(㎡)" : "전용면적(㎡)"}>
-          <Input name="area_m2" inputMode="decimal" value={area} onChange={(e) => setArea(e.target.value)} placeholder="84.9" />
-        </Field>
-        {!isLand ? (
-          <>
-            <Field label="층">
-              <Input name="floor" inputMode="numeric" defaultValue={d.floor ?? ""} />
+      {unitSlot ?? (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label={isLand ? "토지 면적(㎡)" : "전용면적(㎡)"}>
+              <Input name="area_m2" inputMode="decimal" value={area} onChange={(e) => setArea(e.target.value)} placeholder="84.9" />
             </Field>
-            <Field label="동/호">
-              <Input name="dong_ho" defaultValue={d.dong_ho ?? ""} placeholder="101동 1502호" />
-            </Field>
-          </>
-        ) : null}
-      </div>
-      {areaOptions && areaOptions.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {areaOptions.map((a) => (
-            <button
-              type="button"
-              key={a.area}
-              onClick={() => setArea(String(a.area))}
-              className={`rounded-full border px-2.5 py-1 text-xs ${String(a.area) === area ? "border-accent bg-accent-soft text-accent" : "border-border text-muted"}`}
-            >
-              {a.area}㎡ · {(a.area / 3.305785).toFixed(0)}평 <span className="opacity-60">({a.n})</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+            {!isLand ? (
+              <>
+                <Field label="층">
+                  <Input name="floor" inputMode="numeric" defaultValue={d.floor ?? ""} />
+                </Field>
+                <Field label="동/호">
+                  <Input name="dong_ho" defaultValue={d.dong_ho ?? ""} placeholder="101동 1502호" />
+                </Field>
+              </>
+            ) : null}
+          </div>
+          {areaOptions && areaOptions.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {areaOptions.map((a) => (
+                <button
+                  type="button"
+                  key={a.area}
+                  onClick={() => setArea(String(a.area))}
+                  className={`rounded-full border px-2.5 py-1 text-xs ${String(a.area) === area ? "border-accent bg-accent-soft text-accent" : "border-border text-muted"}`}
+                >
+                  {a.area}㎡ · {(a.area / 3.305785).toFixed(0)}평 <span className="opacity-60">({a.n})</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </>
+      )}
 
       <button type="button" className="text-sm font-medium text-accent" onClick={() => setFinance((v) => !v)}>
         {finance ? "− 매입·대출·임대 정보 접기" : "+ 매입·대출·임대 정보 입력 (선택)"}

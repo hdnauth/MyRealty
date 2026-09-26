@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { sql } from "../db";
 import { PROPERTY_TYPES, type PropertyType } from "../property";
 
@@ -65,7 +66,8 @@ export async function listItems(userId: string) {
     order by w.sort_order, w.created_at`;
 }
 
-export async function getItem(userId: string, id: string): Promise<WatchItem | null> {
+/** 요청 단위 캐시(generateMetadata 와 page 가 같은 요청에서 함께 부른다) */
+export const getItem = cache(async (userId: string, id: string): Promise<WatchItem | null> => {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const rows = await sql<WatchItem[]>`
     select ${ITEM_COLUMNS}
@@ -74,7 +76,7 @@ export async function getItem(userId: string, id: string): Promise<WatchItem | n
     left join regions r on r.lawd_cd = w.lawd_cd
     where w.user_id = ${userId} and w.id = ${id}`;
   return rows[0] ?? null;
-}
+});
 
 export type TxPoint = {
   id: number;
@@ -219,13 +221,15 @@ export type ItemAttrs = {
 
 export async function itemAttrs(item: WatchItem): Promise<ItemAttrs> {
   if (!item.pnu) return { building: null, parcel: null, prices: [] };
-  const [b] = await sql<NonNullable<ItemAttrs["building"]>[]>`
-    select titles, recap, fetched_at::text from building_registers where pnu = ${item.pnu}`;
-  const [p] = await sql<NonNullable<ItemAttrs["parcel"]>[]>`
-    select jimok, area_m2, land_use_zone, road_side, terrain_shape, terrain_height, land_uses from parcels where pnu = ${item.pnu}`;
-  const prices = await sql<ItemAttrs["prices"]>`
-    select target_type, target_key, year, price, area_m2 from official_prices
-    where target_key = ${item.pnu} or target_key like ${item.pnu + "|%"}
-    order by target_type, year`;
+  const [[b], [p], prices] = await Promise.all([
+    sql<NonNullable<ItemAttrs["building"]>[]>`
+      select titles, recap, fetched_at::text from building_registers where pnu = ${item.pnu}`,
+    sql<NonNullable<ItemAttrs["parcel"]>[]>`
+      select jimok, area_m2, land_use_zone, road_side, terrain_shape, terrain_height, land_uses from parcels where pnu = ${item.pnu}`,
+    sql<ItemAttrs["prices"]>`
+      select target_type, target_key, year, price, area_m2 from official_prices
+      where target_key = ${item.pnu} or target_key like ${item.pnu + "|%"}
+      order by target_type, year`,
+  ]);
   return { building: b ?? null, parcel: p ?? null, prices };
 }

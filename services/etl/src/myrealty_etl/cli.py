@@ -165,6 +165,13 @@ def _daily(ns):
     return results
 
 
+@command("doctor", "키·설정 점검(미설정·오설정 키를 실제 호출로 확인, 값 대신 지문 출력)",
+         lambda p: p.add_argument("--strict", action="store_true", help="오류·필수 미설정이 있으면 실패 코드로 종료"))
+def _doctor(ns):
+    from .doctor import doctor
+    return doctor(strict=ns.strict)
+
+
 @command("seed-demo", "데모 데이터 생성(키 없이 화면 확인용)", _demo_args)
 def _seed_demo(ns):
     from .demo import reset, seed_demo

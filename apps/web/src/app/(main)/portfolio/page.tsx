@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LineSeriesChart } from "@/components/charts/series-chart";
 import { Card, CardHeader, EmptyState, Notice, PageHeader, Stat } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatDate, formatManwon, formatPct } from "@/lib/format";
 import { holdingTax } from "@/lib/tax";
@@ -23,19 +23,23 @@ type Row = {
 };
 
 export default async function PortfolioPage(props: PageProps<"/portfolio">) {
-  const user = await requireUser();
-  const sp = await props.searchParams;
-  const rows = await sql<Row[]>`
-    select w.id, w.label, w.property_type, w.pnu, w.purchase_price, w.purchase_date::text, w.loans, w.lease,
-      (select estimate from valuations v where v.watch_item_id = w.id order by as_of desc limit 1) as estimate,
-      (select o.price from official_prices o where o.target_type in ('apt_unit', 'house')
-         and (o.target_key = w.pnu or o.target_key like w.pnu || '|%') order by o.year desc limit 1) as official
-    from watch_items w where w.user_id = ${user.id} and w.group_tag = 'owned' order by w.created_at`;
-  const history = await sql<{ month: string; value: number }[]>`
-    select to_char(date_trunc('month', v.as_of), 'YYYY-MM-01') as month, sum(v.estimate)::float8 as value
-    from (select distinct on (watch_item_id, date_trunc('month', as_of)) watch_item_id, as_of, estimate from valuations
-          where watch_item_id = any(${rows.map((r) => r.id)}::uuid[]) order by watch_item_id, date_trunc('month', as_of), as_of desc) v
-    group by 1 having count(*) = ${rows.length} order by 1`;
+  const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
+  // 보유 물건 목록과 월별 합계를 동시에 조회(합계는 같은 조건의 하위 쿼리로 물건을 고른다)
+  const [, rows, history] = await Promise.all([
+    requireUser(),
+    sql<Row[]>`
+      select w.id, w.label, w.property_type, w.pnu, w.purchase_price, w.purchase_date::text, w.loans, w.lease,
+        (select estimate from valuations v where v.watch_item_id = w.id order by as_of desc limit 1) as estimate,
+        (select o.price from official_prices o where o.target_type in ('apt_unit', 'house')
+           and (o.target_key = w.pnu or o.target_key like w.pnu || '|%') order by o.year desc limit 1) as official
+      from watch_items w where w.user_id = ${uid} and w.group_tag = 'owned' order by w.created_at`,
+    sql<{ month: string; value: number }[]>`
+      with owned as (select id from watch_items where user_id = ${uid} and group_tag = 'owned')
+      select to_char(date_trunc('month', v.as_of), 'YYYY-MM-01') as month, sum(v.estimate)::float8 as value
+      from (select distinct on (watch_item_id, date_trunc('month', as_of)) watch_item_id, as_of, estimate from valuations
+            where watch_item_id in (select id from owned) order by watch_item_id, date_trunc('month', as_of), as_of desc) v
+      group by 1 having count(*) = (select count(*) from owned) order by 1`,
+  ]);
 
   if (!rows.length) {
     return (

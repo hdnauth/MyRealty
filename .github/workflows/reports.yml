@@ -1,0 +1,30 @@
+name: AI reports
+
+on:
+  schedule:
+    # 매주 월요일 07:40 KST (일요일 22:40 UTC)
+    - cron: "40 22 * * 0"
+    # 매월 1일 07:50 KST (전월 말일 22:50 UTC 근사: 매일 실행 후 날짜 확인)
+    - cron: "50 22 * * *"
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "weekly | monthly"
+        default: weekly
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide kind
+        id: k
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "kind=${{ inputs.kind }}" >> $GITHUB_OUTPUT; exit 0; fi
+          if [ "${{ github.event.schedule }}" = "40 22 * * 0" ]; then echo "kind=weekly" >> $GITHUB_OUTPUT; exit 0; fi
+          # 다음 날(KST)이 1일일 때만 월간
+          if [ "$(TZ=Asia/Seoul date -d '+2 hours' +%d)" = "01" ]; then echo "kind=monthly" >> $GITHUB_OUTPUT; else echo "kind=" >> $GITHUB_OUTPUT; fi
+      - name: Call app
+        if: steps.k.outputs.kind != ''
+        run: |
+          curl -fsS --max-time 290 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.APP_URL }}/api/cron/reports?kind=${{ steps.k.outputs.kind }}"

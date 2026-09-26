@@ -120,6 +120,8 @@ def _import_geo(ns):
         return import_geojson(conn, ns.file, ns.kind)
 
 
+_simple("avm", "myrealty_etl.analytics.avm:compute_valuations", "추정 시세(AVM) 계산")
+_simple("avm-backtest", "myrealty_etl.analytics.avm:backtest", "AVM 오차(MAPE) 점검")
 _simple("alerts", "myrealty_etl.alerts.rules:detect_alerts", "알림 규칙 평가")
 _simple("push", "myrealty_etl.alerts.notify:send_push", "중요 알림 웹푸시 발송")
 _simple("digest", "myrealty_etl.alerts.notify:send_digest", "이메일 다이제스트 발송")
@@ -138,6 +140,7 @@ DAILY_STEPS: list[tuple[str, str]] = [
     ("classify", "myrealty_etl.ai.news_classifier:classify_pending"),
     ("indicators", "myrealty_etl.analytics.indicators:compute_indicators"),
     ("pois", "myrealty_etl.jobs.pois_job:collect_pois"),
+    ("avm", "myrealty_etl.analytics.avm:compute_valuations"),
     ("alerts", "myrealty_etl.alerts.rules:detect_alerts"),
     ("push", "myrealty_etl.alerts.notify:send_push"),
     ("digest", "myrealty_etl.alerts.notify:send_digest"),

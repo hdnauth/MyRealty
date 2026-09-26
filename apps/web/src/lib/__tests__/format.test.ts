@@ -64,3 +64,24 @@ describe("finance", () => {
     expect(jeonseRisk({ deposit: 0, marketPrice: 30000, officialPrice: 20000 }).level).toBe("판단불가");
   });
 });
+
+import { comprehensiveTax, holdingTax, propertyTax } from "../tax";
+
+describe("보유세 개략", () => {
+  it("재산세 누진(표준세율)", () => {
+    // 공시 5억, 일반: 과표 3억 → 6만 + 13.5만 + 37.5만 = 57만 (본세)
+    expect(Math.round(propertyTax(50000, false).main * 10) / 10).toBe(57);
+  });
+  it("1주택 특례세율·비율", () => {
+    const t = propertyTax(50000, true); // 과표 5억×44%=2.2억 → 3+9+14=26만
+    expect(Math.round(t.main)).toBe(26);
+  });
+  it("종부세 공제 이하면 0", () => {
+    expect(comprehensiveTax(110000, true).total).toBe(0);
+    expect(comprehensiveTax(150000, true).main).toBeCloseTo(18000 * 0.005, 6);
+  });
+  it("합계", () => {
+    const h = holdingTax([150000], true);
+    expect(h.total).toBeGreaterThan(h.property);
+  });
+});

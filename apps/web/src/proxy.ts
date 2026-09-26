@@ -1,7 +1,8 @@
 import { jwtVerify } from "jose";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/manifest.webmanifest", "/sw.js", "/offline"];
+// /api/cron 은 라우트에서 CRON_SECRET 으로 인증한다
+const PUBLIC_PATHS = ["/login", "/manifest.webmanifest", "/sw.js", "/offline", "/api/cron"];
 
 // 서명만 빠르게 확인해 비로그인 사용자를 /login 으로 보낸다. 세션 폐기 여부는 페이지에서 DB 로 재확인.
 export async function proxy(req: NextRequest) {

@@ -159,3 +159,18 @@ export async function markItemNotificationsRead(id: string) {
   await sql`update notifications set read_at = now() where user_id = ${user.id} and watch_item_id = ${id} and read_at is null`;
   refresh();
 }
+
+export async function analyzeItemAction(id: string): Promise<{ error?: string }> {
+  const user = await requireUser();
+  const { getItem } = await import("@/lib/queries/items");
+  const { generateAnalysis } = await import("@/lib/ai/analysis");
+  const item = await getItem(user.id, id);
+  if (!item) return { error: "물건을 찾을 수 없습니다." };
+  try {
+    await generateAnalysis(user.id, item);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+  refresh();
+  return {};
+}

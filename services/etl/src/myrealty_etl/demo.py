@@ -201,6 +201,7 @@ def seed_demo(conn, email: str, *, today: date | None = None, years: int = 8) ->
     _seed_attrs(conn, today)
     _seed_macro(conn, today)
     _seed_location(conn)
+    _seed_valuations(conn, today)
     n_news = _seed_news_events(conn, uid, today)
     conn.commit()
     return {"user_id": str(uid), "transactions": n_tx, "complexes": len(complex_ids), "items": len(items), **n_news}
@@ -375,3 +376,15 @@ def _seed_location(conn) -> None:
                                  "status": "예타", "expected_open": "2033-06-01"},
                           {"type": "Point", "coordinates": [127.0920, 37.5010]}, "demo:i2")
     compute_locations(conn)
+
+
+def _seed_valuations(conn, today: date) -> None:
+    """지역 지표 계산 후 최근 12개월 월말 기준 추정 시세 이력(백테스트용)."""
+    from .analytics.avm import compute_valuations
+    from .analytics.indicators import compute_region
+
+    compute_region(conn, SGG, today)
+    conn.execute("delete from valuations where watch_item_id in (select id from watch_items where label like '[데모]%%')")
+    for k in range(12, 0, -1):
+        compute_valuations(conn, today.replace(day=1) - relativedelta(months=k - 1) - timedelta(days=1))
+    compute_valuations(conn, today)

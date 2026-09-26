@@ -63,7 +63,7 @@ export default async function HomePage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           {owned.length ? (
-            <Card className="p-4">
+            <Link href="/portfolio" className="card block p-4 hover:border-accent/40">
               <div className="grid grid-cols-3 gap-3">
                 <Stat label="보유 자산 시세" value={formatManwon(value, { short: true })} sub={<span className="text-muted">{owned.length}건</span>} />
                 <Stat
@@ -73,7 +73,7 @@ export default async function HomePage() {
                 />
                 <Stat label="순자산" value={formatManwon(value - debt, { short: true })} sub={<span className="text-muted">부채 {formatManwon(debt, { short: true })}</span>} />
               </div>
-            </Card>
+            </Link>
           ) : null}
 
           <Card className="overflow-hidden">

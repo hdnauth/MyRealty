@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
 import type { NextConfig } from "next";
@@ -23,10 +23,23 @@ function loadRootEnv(root: string) {
 }
 loadRootEnv(path.resolve(__dirname, "../.."));
 
+/**
+ * db/migrations 목록은 빌드 시점에 읽어 번들에 넣는다. 런타임 readdir 은 Turbopack 이 프로젝트 전체를 추적하게 만들고
+ * (경고), 서버리스 배포 번들에는 폴더가 없어 어차피 읽을 수 없다.
+ */
+function migrationFiles(root: string) {
+  try {
+    return readdirSync(path.join(root, "db/migrations")).filter((f) => f.endsWith(".sql")).sort().join(",");
+  } catch {
+    return "";
+  }
+}
+
 const nextConfig: NextConfig = {
   serverExternalPackages: ["postgres", "nodemailer", "web-push"],
   poweredByHeader: false,
   devIndicators: false,
+  env: { MIGRATION_FILES: migrationFiles(path.resolve(__dirname, "../..")) },
 };
 
 export default nextConfig;

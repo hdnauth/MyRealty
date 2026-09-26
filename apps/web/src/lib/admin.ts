@@ -1,6 +1,4 @@
 import "server-only";
-import { readdir } from "node:fs/promises";
-import path from "node:path";
 import { isAdminEmail } from "./auth/policy";
 import type { User } from "./auth/session";
 import { sql } from "./db";
@@ -93,23 +91,17 @@ export type Health = {
   adminEmails: number;
 };
 
-/** db/migrations 폴더(배포 번들에 없을 수 있음)와 schema_migrations 비교 */
-async function migrationFiles(): Promise<string[] | null> {
-  for (const dir of [path.resolve(process.cwd(), "../../db/migrations"), path.resolve(process.cwd(), "db/migrations")]) {
-    try {
-      return (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
-    } catch {
-      /* 다음 후보 */
-    }
-  }
-  return null;
+/** 빌드 시점에 next.config.ts 가 넣어 둔 db/migrations 목록(없으면 null) — schema_migrations 와 비교 */
+function migrationFiles(): string[] | null {
+  const list = process.env.MIGRATION_FILES;
+  return list ? list.split(",") : null;
 }
 
 export async function health(): Promise<Health> {
   const base = { authSecret: Boolean(env.authSecret), smtp: Boolean(env.smtp.host), adminEmails: env.adminEmails.length };
   try {
     const applied = (await sql<{ name: string }[]>`select name from schema_migrations order by name`).map((r) => r.name);
-    const files = await migrationFiles();
+    const files = migrationFiles();
     return { ...base, db: "ok", migrations: { applied, pending: files ? files.filter((f) => !applied.includes(f)) : [] } };
   } catch (e) {
     const code = (e as { code?: string })?.code;

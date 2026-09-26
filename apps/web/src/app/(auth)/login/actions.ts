@@ -30,7 +30,9 @@ export async function requestCodeAction(_: LoginState, form: FormData): Promise<
     if (!res.ok) return { step: "email", email, remember, error: res.error };
     const { signupMode } = await getSiteSettings();
     const info = !env.smtp.host
-      ? "개발 모드: SMTP 미설정으로 코드가 서버 로그에 출력됩니다."
+      ? env.isDev
+        ? "개발 모드: SMTP 미설정으로 코드가 서버 로그에 출력됩니다."
+        : "메일 발송(SMTP_HOST)이 설정되지 않아 코드가 메일 대신 서버 로그에만 기록됩니다. 관리자에게 문의하세요."
       : signupMode === "open"
         ? "이메일로 6자리 코드를 보냈습니다. 메일이 없으면 스팸함을 확인하세요."
         : "이메일로 6자리 코드를 보냈습니다. (가입이 허용된 주소에만 발송됩니다)";

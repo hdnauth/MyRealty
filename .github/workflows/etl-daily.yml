@@ -1,0 +1,54 @@
+name: ETL daily
+
+on:
+  schedule:
+    # 매일 05:50 KST (20:50 UTC 전날)
+    - cron: "50 20 * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "실행할 단계(공백 구분, 비우면 전체)"
+        required: false
+        default: ""
+
+concurrency:
+  group: etl
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: services/etl
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+      VWORLD_KEY: ${{ secrets.VWORLD_KEY }}
+      VWORLD_DOMAIN: ${{ secrets.VWORLD_DOMAIN }}
+      ECOS_KEY: ${{ secrets.ECOS_KEY }}
+      KOSIS_KEY: ${{ secrets.KOSIS_KEY }}
+      REB_KEY: ${{ secrets.REB_KEY }}
+      NCP_MAPS_KEY_ID: ${{ secrets.NCP_MAPS_KEY_ID }}
+      NCP_MAPS_KEY: ${{ secrets.NCP_MAPS_KEY }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+      ANTHROPIC_BULK_MODEL: ${{ vars.ANTHROPIC_BULK_MODEL }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      APP_URL: ${{ vars.APP_URL }}
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
+      VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+      VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --no-dev
+      - run: uv run myrealty migrate
+      - run: uv run myrealty daily ${{ inputs.only && format('--only {0}', inputs.only) || '' }}

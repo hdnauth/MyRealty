@@ -8,6 +8,37 @@ AI 분석을 더해 **내가 관심 있는 부동산을 중심으로** 시장을
 - 아파트 · 연립/다세대(빌라) · 단독/다가구 · 오피스텔 · 토지 · 임야 · 상가 등록 및 추적
 - 유사 물건 비교, 관련 뉴스·정책·이벤트 자동 연결, 조합 지표, AI 질의응답·리포트
 
+## 구성
+
+```
+apps/web/         Next.js 16 웹앱 (모바일 우선 PWA, 이메일 OTP 로그인)
+services/etl/     Python 수집·지표·AI 배치 (CLI: myrealty)
+db/migrations/    Postgres(PostGIS·pgvector) 스키마
+.github/workflows CI, 매일 ETL 실행
+```
+
+## 빠른 시작 (로컬)
+
+사전 준비: Node 20.9+, pnpm, Python 3.11+, [uv](https://docs.astral.sh/uv/), PostgreSQL 16 + PostGIS + pgvector
+
+```bash
+cp .env.example .env              # AUTH_SECRET, ALLOWED_EMAILS 최소 설정
+createdb myrealty                 # DATABASE_URL 과 일치하게
+
+cd services/etl
+uv sync
+uv run myrealty migrate           # 스키마 적용
+uv run myrealty seed-demo --email you@example.com   # (선택) 키 없이 확인용 합성 데이터
+
+cd ../../apps/web
+pnpm install
+pnpm dev                          # http://localhost:3000
+```
+
+- SMTP 를 설정하지 않으면 로그인 코드가 `pnpm dev` 콘솔에 출력됩니다.
+- 공공 API 키를 넣으면 `uv run myrealty daily` 가 관심 물건이 있는 시군구의 실거래를 수집합니다.
+- 데모 데이터 삭제: `uv run myrealty seed-demo --reset`
+
 ## 계획 문서
 
 | 문서 | 내용 |

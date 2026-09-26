@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* 디자인 토큰 — 라이트/다크. 시세 색상은 국내 관례(상승=빨강, 하락=파랑). */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #e3e6eb;
+  --text: #16191f;
+  --muted: #6b7280;
+  --accent: #2563eb;
+  --accent-soft: #e8efff;
+  --up: #e5383b;
+  --down: #2f6fdf;
+  --warn: #d97706;
+  --ok: #059669;
+  --shadow: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
+  /* 차트 토큰 (dataviz 검증 팔레트, 3슬롯 all-pairs 통과) */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --chart-grid: #e6e8ec;
+  --chart-axis: #c3c7cf;
+  --chart-ink: #52514e;
+  --chart-muted: #898781;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115;
+    --surface: #171a21;
+    --surface-2: #1f232c;
+    --border: #2a2f3a;
+    --text: #e8eaef;
+    --muted: #9aa3b2;
+    --accent: #6c9cff;
+    --accent-soft: #1d2a47;
+    --up: #ff6b6e;
+    --down: #6aa2ff;
+    --warn: #f0a33a;
+    --ok: #34c79a;
+    --shadow: none;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --chart-grid: #2a2f3a;
+    --chart-axis: #3a404c;
+    --chart-ink: #c3c2b7;
+    --chart-muted: #898781;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-warn: var(--warn);
+  --color-ok: var(--ok);
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-feature-settings: "tnum" 1;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* iOS 홈 화면 앱의 하단 안전 영역 */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}

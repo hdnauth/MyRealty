@@ -1,0 +1,64 @@
+"""환경 변수 기반 설정. 키가 없는 수집기는 건너뛴다(로그로 알림)."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    """리포지토리 루트 또는 현재 경로의 .env 를 (이미 설정된 값은 덮어쓰지 않고) 읽는다."""
+    here = Path.cwd()
+    for base in (here, *here.parents):
+        env = base / ".env"
+        if env.is_file():
+            for line in env.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            return
+
+
+_load_dotenv()
+
+
+def _env(name: str, default: str | None = None) -> str | None:
+    v = os.environ.get(name)
+    return v if v not in (None, "") else default
+
+
+@dataclass(frozen=True)
+class Settings:
+    database_url: str = field(default_factory=lambda: _env("DATABASE_URL", "postgresql://myrealty:myrealty@localhost:5432/myrealty"))
+    # 공공데이터포털(data.go.kr) 일반 인증키(Decoding 키)
+    data_go_kr_key: str | None = field(default_factory=lambda: _env("DATA_GO_KR_KEY"))
+    vworld_key: str | None = field(default_factory=lambda: _env("VWORLD_KEY"))
+    vworld_domain: str | None = field(default_factory=lambda: _env("VWORLD_DOMAIN"))
+    ecos_key: str | None = field(default_factory=lambda: _env("ECOS_KEY"))
+    kosis_key: str | None = field(default_factory=lambda: _env("KOSIS_KEY"))
+    reb_key: str | None = field(default_factory=lambda: _env("REB_KEY"))
+    naver_client_id: str | None = field(default_factory=lambda: _env("NAVER_CLIENT_ID"))
+    naver_client_secret: str | None = field(default_factory=lambda: _env("NAVER_CLIENT_SECRET"))
+    ncp_key_id: str | None = field(default_factory=lambda: _env("NCP_MAPS_KEY_ID"))
+    ncp_key: str | None = field(default_factory=lambda: _env("NCP_MAPS_KEY"))
+    anthropic_api_key: str | None = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
+    anthropic_model: str = field(default_factory=lambda: _env("ANTHROPIC_MODEL", "claude-opus-5"))
+    anthropic_bulk_model: str = field(default_factory=lambda: _env("ANTHROPIC_BULK_MODEL", "claude-opus-5"))
+    ai_monthly_budget_usd: float = field(default_factory=lambda: float(_env("AI_MONTHLY_BUDGET_USD", "30")))
+    smtp_host: str | None = field(default_factory=lambda: _env("SMTP_HOST"))
+    smtp_port: int = field(default_factory=lambda: int(_env("SMTP_PORT", "587")))
+    smtp_user: str | None = field(default_factory=lambda: _env("SMTP_USER"))
+    smtp_password: str | None = field(default_factory=lambda: _env("SMTP_PASSWORD"))
+    mail_from: str = field(default_factory=lambda: _env("MAIL_FROM", "MyRealty <no-reply@example.com>"))
+    app_url: str = field(default_factory=lambda: _env("APP_URL", "http://localhost:3000"))
+    vapid_public_key: str | None = field(default_factory=lambda: _env("NEXT_PUBLIC_VAPID_PUBLIC_KEY"))
+    vapid_private_key: str | None = field(default_factory=lambda: _env("VAPID_PRIVATE_KEY"))
+    vapid_subject: str = field(default_factory=lambda: _env("VAPID_SUBJECT", "mailto:admin@example.com"))
+    # 일일 호출 한도(개발계정 기본값). 운영계정 전환 시 늘린다.
+    daily_quota_data_go_kr: int = field(default_factory=lambda: int(_env("QUOTA_DATA_GO_KR", "900")))
+
+
+settings = Settings()

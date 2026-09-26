@@ -1,0 +1,4 @@
+<response><header><resultCode>000</resultCode><resultMsg>OK</resultMsg></header><body><items>
+<item><aptNm>잠실 엘스</aptNm><buildYear>2008</buildYear><contractTerm>26.09~28.09</contractTerm><contractType>갱신</contractType><dealDay>1</dealDay><dealMonth>8</dealMonth><dealYear>2026</dealYear><deposit>120,000</deposit><excluUseAr>84.8</excluUseAr><floor>11</floor><jibun>19</jibun><monthlyRent>0</monthlyRent><sggCd>11710</sggCd><umdNm>잠실동</umdNm><useRRRight>사용</useRRRight></item>
+<item><aptNm>잠실엘스</aptNm><buildYear>2008</buildYear><dealDay>5</dealDay><dealMonth>8</dealMonth><dealYear>2026</dealYear><deposit>50,000</deposit><excluUseAr>59.9</excluUseAr><floor>3</floor><jibun>19</jibun><monthlyRent>150</monthlyRent><sggCd>11710</sggCd><umdNm>잠실동</umdNm></item>
+</items><totalCount>2</totalCount></body></response>

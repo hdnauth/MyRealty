@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<response><header><resultCode>000</resultCode><resultMsg>OK</resultMsg></header>
+<body><items>
+<item><aptDong>101</aptDong><aptNm>잠실엘스</aptNm><aptSeq>11710-6183</aptSeq><bonbun>0019</bonbun><bubun>0000</bubun><buildYear>2008</buildYear><buyerGbn>개인</buyerGbn><cdealDay></cdealDay><cdealType></cdealType><dealAmount>   275,000</dealAmount><dealDay>12</dealDay><dealMonth>8</dealMonth><dealYear>2026</dealYear><dealingGbn>중개거래</dealingGbn><excluUseAr>84.8</excluUseAr><floor>15</floor><jibun>19</jibun><sggCd>11710</sggCd><umdCd>10100</umdCd><umdNm>잠실동</umdNm></item>
+<item><aptDong></aptDong><aptNm>잠실엘스</aptNm><aptSeq>11710-6183</aptSeq><buildYear>2008</buildYear><cdealDay>26.08.20</cdealDay><cdealType>O</cdealType><dealAmount>270,000</dealAmount><dealDay>3</dealDay><dealMonth>8</dealMonth><dealYear>2026</dealYear><dealingGbn>직거래</dealingGbn><excluUseAr>84.8</excluUseAr><floor>7</floor><jibun>19</jibun><sggCd>11710</sggCd><umdCd>10100</umdCd><umdNm>잠실동</umdNm></item>
+<item><aptNm>리센츠</aptNm><aptSeq>11710-6190</aptSeq><buildYear>2008</buildYear><dealAmount>260,000</dealAmount><dealDay>3</dealDay><dealMonth>8</dealMonth><dealYear>2026</dealYear><excluUseAr>84.99</excluUseAr><floor>7</floor><jibun>22</jibun><sggCd>11710</sggCd><umdCd>10100</umdCd><umdNm>잠실동</umdNm></item>
+<item><aptNm>리센츠</aptNm><aptSeq>11710-6190</aptSeq><buildYear>2008</buildYear><dealAmount>260,000</dealAmount><dealDay>3</dealDay><dealMonth>8</dealMonth><dealYear>2026</dealYear><excluUseAr>84.99</excluUseAr><floor>7</floor><jibun>22</jibun><sggCd>11710</sggCd><umdCd>10100</umdCd><umdNm>잠실동</umdNm></item>
+</items><numOfRows>10</numOfRows><pageNo>1</pageNo><totalCount>4</totalCount></body></response>

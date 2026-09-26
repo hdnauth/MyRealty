@@ -17,7 +17,7 @@
 | 데이터 패칭 | TanStack Query | 캐시·재검증, 모바일 오프라인 친화 |
 | PWA | Serwist(Workbox 기반) | 홈 화면 설치, 오프라인 캐시, Web Push |
 | DB | **Supabase Postgres + PostGIS + pgvector** | 공간 쿼리(반경·폴리곤), 뉴스 임베딩 유사도, RLS |
-| 인증 | **Supabase Auth — 이메일 OTP** | 간단한 이메일 인증 요구사항 충족, 공개 가입 차단 가능 |
+| 인증 | **자체 구현 이메일 OTP** (6자리 코드 + JWT 세션 쿠키) | DB 종류에 묶이지 않고 로컬에서 그대로 테스트 가능, 허용 목록으로 공개 가입 차단 |
 | 스토리지 | Supabase Storage | 임장 사진 |
 | ETL · 분석 | **Python** (uv, httpx, pandas, statsmodels/LightGBM) | 공공 API 파싱(XML/JSON), 통계·모델링 |
 | 스케줄러 | GitHub Actions `schedule` (주), Supabase pg_cron (보조) | 무료, 로그·재실행 용이 |
@@ -54,16 +54,19 @@
                    └─────────────┘        └──────────────┘
 ```
 
-## 4. 인증 설계 (이메일 OTP)
+## 4. 인증 설계 (이메일 OTP) — 구현됨
 
-1. 로그인 화면에서 이메일 입력 → `signInWithOtp({ email, options: { shouldCreateUser: false } })`
-2. 메일 템플릿을 **6자리 코드(`{{ .Token }}`)** 형태로 설정 → 사용자가 앱에서 코드 입력 → `verifyOtp({ email, token, type: 'email' })`
-3. **공개 가입 비활성화** + 본인 계정은 대시보드에서 초대/생성 → 허용 목록 외 이메일은 로그인 불가
-4. `allowed_emails` 테이블을 두고 Auth Hook(가입 전 검사)으로 이중 차단(가족 추가 대비)
-5. 세션은 `@supabase/ssr`로 쿠키 기반 관리, 미들웨어에서 보호 라우트 검사
-6. OTP 요청 레이트 리밋(기본 제공) + 커스텀 SMTP로 발송 신뢰도 확보
+1. 로그인 화면에서 이메일 입력 → 허용 목록(`allowed_emails` 테이블 + `ALLOWED_EMAILS` 환경 변수) 확인
+2. 허용된 경우에만 6자리 코드를 생성해 **해시만** `otp_codes` 에 저장(10분 유효, 5회 시도 제한), SMTP 로 발송
+   - 허용되지 않은 이메일에도 같은 응답을 돌려줘 계정 존재 여부를 노출하지 않음
+   - 요청 레이트리밋: 이메일당 1분 1회, 1시간 5회
+3. 코드 확인 → `sessions` 행 생성 → HS256 JWT(`jti`=세션 ID)를 httpOnly 쿠키로 30일 유지
+4. `src/proxy.ts`(Next 16 의 middleware 대체)가 서명만 빠르게 검사해 비로그인 요청을 `/login` 으로 보내고,
+   각 페이지는 `requireUser()` 로 세션 폐기·만료를 DB 에서 재확인
+5. 설정 화면에서 허용 이메일 관리, 기기별 로그아웃
 
 > 매직링크 대신 코드 방식을 쓰는 이유: iOS에서 홈 화면에 설치한 PWA는 메일 앱의 링크가 Safari로 열려 PWA 세션에 로그인되지 않는 문제가 있음.
+> 호스팅 DB 로 Supabase·Neon 등 어떤 Postgres 를 써도 되며, PostGIS·pgvector 확장만 필요하다.
 
 ## 5. 데이터 모델 (주요 테이블)
 

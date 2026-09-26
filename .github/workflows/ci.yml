@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+        env:
+          AUTH_SECRET: ci-build-secret
+
+  etl:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: myrealty
+          POSTGRES_PASSWORD: myrealty
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: services/etl
+    env:
+      TEST_DATABASE_URL: postgresql://myrealty:myrealty@localhost:5432/myrealty_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      # postgis 이미지에는 pgvector 가 없어 설치한다
+      - run: |
+          docker exec ${{ job.services.postgres.id }} sh -c "apt-get update -qq && apt-get install -y -qq postgresql-16-pgvector"
+      - run: uv sync
+      - run: uv run ruff check src tests
+      - run: uv run pytest -q

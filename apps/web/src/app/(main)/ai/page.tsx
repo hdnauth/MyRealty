@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Chat, type ChatMsg } from "@/components/ai/chat";
 import { Card, Notice, Tabs } from "@/components/ui";
 import { aiEnabled } from "@/lib/ai/client";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { ReportsPanel } from "./reports-panel";
@@ -12,17 +12,22 @@ import { ReportsPanel } from "./reports-panel";
 export const metadata: Metadata = { title: "AI" };
 
 export default async function AiPage(props: PageProps<"/ai">) {
-  const user = await requireUser();
-  const sp = await props.searchParams;
+  const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
   const view = sp.view === "reports" ? "reports" : "chat";
-  const convs = await sql<{ id: string; title: string | null; updated_at: string }[]>`
-    select id, title, updated_at::text from ai_conversations where user_id = ${user.id} order by updated_at desc limit 30`;
-  const cid = typeof sp.c === "string" && convs.some((c) => c.id === sp.c) ? sp.c : null;
-  const rows = cid
-    ? await sql<{ role: "user" | "assistant"; content: { text: string; tools?: { name: string }[] } }[]>`
-        select role, content from ai_messages where conversation_id = ${cid} order by id`
-    : [];
-  const initial: ChatMsg[] = rows.map((r) => ({ role: r.role, text: r.content.text, tools: r.content.tools?.map((t) => t.name) }));
+  const wanted = typeof sp.c === "string" && /^[0-9a-f-]{36}$/i.test(sp.c) ? sp.c : null;
+  const [user, convs, rows] = await Promise.all([
+    requireUser(),
+    sql<{ id: string; title: string | null; updated_at: string }[]>`
+      select id, title, updated_at::text from ai_conversations where user_id = ${uid} order by updated_at desc limit 30`,
+    // 대화 목록과 동시에 조회하되 내 대화인지는 같은 쿼리에서 확인
+    wanted
+      ? sql<{ role: "user" | "assistant"; content: { text: string; tools?: { name: string }[] } }[]>`
+          select m.role, m.content from ai_messages m join ai_conversations c on c.id = m.conversation_id
+          where m.conversation_id = ${wanted} and c.user_id = ${uid} order by m.id`
+      : Promise.resolve([]),
+  ]);
+  const cid = wanted && convs.some((c) => c.id === wanted) ? wanted : null;
+  const initial: ChatMsg[] = (cid ? rows : []).map((r) => ({ role: r.role, text: r.content.text, tools: r.content.tools?.map((t) => t.name) }));
   const enabled = aiEnabled();
 
   return (

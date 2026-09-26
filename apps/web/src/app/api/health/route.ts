@@ -13,6 +13,8 @@ export async function GET() {
       db: h.db,
       dbError: h.dbError,
       pendingMigrations: h.migrations?.pending ?? null,
+      dbRttMs: h.dbRttMs ?? null,
+      region: h.region,
       authSecret: h.authSecret,
       smtp: h.smtp,
       adminEmails: h.adminEmails > 0,

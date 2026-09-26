@@ -2,15 +2,15 @@ import { Plus } from "lucide-react";
 import type { Metadata } from "next";
 import { ItemCard } from "@/components/items/item-card";
 import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { GROUP_TAGS } from "@/lib/property";
 import { listItems } from "@/lib/queries/items";
 
 export const metadata: Metadata = { title: "내 물건" };
 
 export default async function ItemsPage() {
-  const user = await requireUser();
-  const items = await listItems(user.id);
+  const uid = await sessionUserId();
+  const [, items] = await Promise.all([requireUser(), listItems(uid)]);
   const groups = Object.entries(GROUP_TAGS)
     .map(([k, label]) => ({ k, label, items: items.filter((i) => i.group_tag === k) }))
     .filter((g) => g.items.length);

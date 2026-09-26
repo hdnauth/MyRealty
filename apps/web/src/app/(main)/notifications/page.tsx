@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { NotificationRow } from "@/components/feed/notification-row";
 import { Button, Card, EmptyState, PageHeader, Tabs } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { listNotifications } from "@/lib/queries/feed";
 import { markAllReadAction } from "./actions";
 
@@ -17,14 +17,16 @@ const FILTERS = [
 ];
 
 export default async function NotificationsPage(props: PageProps<"/notifications">) {
-  const user = await requireUser();
-  const sp = await props.searchParams;
+  const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
   const f = FILTERS.find((x) => x.key === sp.f)?.key ?? "all";
-  const rows = await listNotifications(user.id, {
-    unreadOnly: f === "unread",
-    kind: f !== "all" && f !== "unread" ? f : undefined,
-    limit: 200,
-  });
+  const [, rows] = await Promise.all([
+    requireUser(),
+    listNotifications(uid, {
+      unreadOnly: f === "unread",
+      kind: f !== "all" && f !== "unread" ? f : undefined,
+      limit: 200,
+    }),
+  ]);
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader

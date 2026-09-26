@@ -91,12 +91,16 @@ describe("오류 분류", () => {
 });
 
 describe("DB 풀러 감지", () => {
-  it("6543 포트·pgbouncer·pooler 호스트면 prepare 끔", () => {
+  it("트랜잭션 풀러(6543·pgbouncer·Neon -pooler)면 prepare 끔", () => {
     expect(shouldPrepare("postgresql://u:p@aws-0-ap.pooler.supabase.com:6543/postgres", undefined)).toBe(false);
     expect(shouldPrepare("postgresql://u:p@host:5432/db?pgbouncer=true", undefined)).toBe(false);
     expect(shouldPrepare("postgresql://u:p@localhost:5432/db", undefined)).toBe(true);
     expect(shouldPrepare("postgresql://u:p@localhost:5432/db", "false")).toBe(false);
     expect(shouldPrepare("postgresql://u:p@x.pooler.supabase.com:6543/db", "true")).toBe(true);
+    expect(shouldPrepare("postgresql://u:p@ep-cool-1-pooler.us-east-2.aws.neon.tech/db", undefined)).toBe(false);
+  });
+  it("Supabase Session pooler(5432)는 세션이 유지돼 prepare 켬(쿼리당 왕복 1회)", () => {
+    expect(shouldPrepare("postgresql://u:p@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres", undefined)).toBe(true);
   });
 });
 

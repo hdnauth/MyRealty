@@ -40,6 +40,22 @@ export default async function AdminSystem(props: PageProps<"/admin/system">) {
             <span>데이터베이스</span>
             {h.db === "ok" ? <Badge tone="ok">연결됨</Badge> : <Badge tone="up">오류 {h.dbError}</Badge>}
           </li>
+          {h.dbRttMs !== undefined ? (
+            <li className="flex items-center justify-between gap-2 py-2">
+              <span>
+                DB 응답 속도
+                <span className="block text-xs text-muted">
+                  웹 서버 지역 {h.region ?? "알 수 없음(로컬·자체 서버)"} · prepared statement {h.prepare ? "사용(쿼리당 왕복 1회)" : "끔(쿼리당 왕복 2회)"}
+                </span>
+                {h.dbRttMs > 30 ? (
+                  <span className="block text-xs text-up">
+                    DB 가 웹 서버와 멀리 있습니다. 화면 하나에 DB 왕복이 5~10번 있어 이 값의 5~10배만큼 느려집니다. 배포 가이드 &quot;속도&quot; 항목대로 지역을 맞추세요.
+                  </span>
+                ) : null}
+              </span>
+              <Badge tone={h.dbRttMs > 30 ? "up" : h.dbRttMs > 10 ? "warn" : "ok"}>왕복 {h.dbRttMs}ms</Badge>
+            </li>
+          ) : null}
           <li className="flex items-center justify-between gap-2 py-2">
             <span>
               스키마 마이그레이션

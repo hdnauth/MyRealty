@@ -5,7 +5,7 @@ import { ContribBars } from "@/components/indicators/contrib-bars";
 import { type JeonseItemOption, JeonseCheck } from "@/components/indicators/jeonse-check";
 import { Simulator } from "@/components/indicators/simulator";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, Stat } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatManwon, formatPct } from "@/lib/format";
 import { change, indicatorRegions, last, type Point, seriesMeta, seriesValues, TEMP_FACTORS, tempBand } from "@/lib/queries/indicators";
@@ -22,11 +22,24 @@ function yoy(points: Point[]): Point[] {
 }
 
 export default async function IndicatorsPage(props: PageProps<"/indicators">) {
-  const user = await requireUser();
-  const sp = await props.searchParams;
-  const regions = await indicatorRegions(user.id);
-  const sgg = regions.find((r) => r.sgg === sp.sgg)?.sgg ?? regions[0]?.sgg;
+  const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
   const since = new Date(new Date().getFullYear() - 8, 0, 1).toISOString().slice(0, 10);
+  const macroCodes = ["ecos.base_rate", "ecos.mortgage_rate", "ecos.bond_3y", "ecos.cpi", "ecos.m2"];
+  // 지역 목록이 있어야 정해지는 지역 지표만 다음 단계로 두고 나머지는 한 번에 조회
+  const [, regions, macroV, meta, items, official] = await Promise.all([
+    requireUser(),
+    indicatorRegions(uid),
+    seriesValues(macroCodes, since),
+    seriesMeta(macroCodes),
+    listItems(uid),
+    // 깡통전세 점검용: 내 물건 공시가격
+    sql<{ id: string; price: number }[]>`
+      select distinct on (w.id) w.id, o.price from watch_items w
+      join official_prices o on o.target_key = w.pnu or o.target_key like w.pnu || '|%'
+      where w.user_id = ${uid} and o.target_type in ('apt_unit', 'house')
+      order by w.id, o.year desc`,
+  ]);
+  const sgg = regions.find((r) => r.sgg === sp.sgg)?.sgg ?? regions[0]?.sgg;
 
   const regionCodes = sgg
     ? ["idx", "vol", "med84", "jr", "nhr", "dr"].map((k) => `${k}.${sgg}`).concat(
@@ -34,8 +47,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
         TEMP_FACTORS.map((f) => `ind.temp_c.${f.key}.${sgg}`),
       )
     : [];
-  const macroCodes = ["ecos.base_rate", "ecos.mortgage_rate", "ecos.bond_3y", "ecos.cpi", "ecos.m2"];
-  const [v, meta, items] = await Promise.all([seriesValues([...regionCodes, ...macroCodes], since), seriesMeta(macroCodes), listItems(user.id)]);
+  const v = { ...macroV, ...(await seriesValues(regionCodes, since)) };
   const r = (k: string) => v[`${k}.${sgg}`] ?? [];
 
   const temp = last(r("ind.temp"));
@@ -43,12 +55,6 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
   const contribs = TEMP_FACTORS.map((f) => ({ label: f.label, value: last(r(`ind.temp_c.${f.key}`)) }));
   const mortgage = last(v["ecos.mortgage_rate"]) ?? (last(v["ecos.base_rate"]) ?? 2.5) + 1.7;
 
-  // 깡통전세 점검용: 내 물건 시세·공시가격
-  const official = await sql<{ id: string; price: number }[]>`
-    select distinct on (w.id) w.id, o.price from watch_items w
-    join official_prices o on o.target_key = w.pnu or o.target_key like w.pnu || '|%'
-    where w.user_id = ${user.id} and o.target_type in ('apt_unit', 'house')
-    order by w.id, o.year desc`;
   const jeonseItems: JeonseItemOption[] = items
     .filter((i) => ["apt", "officetel", "rowhouse", "house"].includes(i.property_type))
     .map((i) => ({ id: i.id, label: i.label, market: i.estimate ?? i.last_trade_price, official: (official.find((o) => o.id === i.id)?.price ?? 0) / 10000 || null }));

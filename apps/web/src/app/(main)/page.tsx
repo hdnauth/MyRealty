@@ -3,7 +3,7 @@ import Link from "next/link";
 import { NotificationRow } from "@/components/feed/notification-row";
 import { ItemCard } from "@/components/items/item-card";
 import { Card, CardHeader, EmptyState, LinkButton, Stat } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { formatDate, formatManwon } from "@/lib/format";
 import { calendarEntries, listNotifications } from "@/lib/queries/feed";
 import { listItems } from "@/lib/queries/items";
@@ -15,11 +15,12 @@ function isoDay(offset = 0) {
 }
 
 export default async function HomePage() {
-  const user = await requireUser();
-  const [items, notes, upcoming] = await Promise.all([
-    listItems(user.id),
-    listNotifications(user.id, { limit: 8 }),
-    calendarEntries(user.id, isoDay(0), isoDay(45)),
+  const uid = await sessionUserId();
+  const [, items, notes, upcoming] = await Promise.all([
+    requireUser(),
+    listItems(uid),
+    listNotifications(uid, { limit: 8 }),
+    calendarEntries(uid, isoDay(0), isoDay(45)),
   ]);
 
   const owned = items.filter((i) => i.group_tag === "owned");

@@ -2,6 +2,7 @@ import "server-only";
 import { jwtVerify, SignJWT } from "jose";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { after } from "next/server";
 import { cache } from "react";
 import { sql } from "../db";
 import { env, requireAuthSecret } from "../env";
@@ -19,6 +20,8 @@ export type User = {
   /** ADMIN_EMAILS 로 지정된 관리자(화면에서 해제·정지 불가) */
   isEnvAdmin: boolean;
   sessionId: string;
+  /** 안 읽은 알림 수(레이아웃 배지). 세션 확인과 같은 쿼리로 가져와 DB 왕복을 줄인다 */
+  unread: number;
 };
 export type UserSettings = {
   emailDigest?: boolean;
@@ -71,6 +74,7 @@ type Row = {
   role: "user" | "admin";
   remember: boolean;
   seen_recently: boolean;
+  unread: number;
 };
 
 /** 현재 요청의 로그인 사용자(세션 폐기·만료·계정 정지까지 DB 로 확인). 요청 단위로 캐시. */
@@ -79,18 +83,21 @@ export const getUser = cache(async (): Promise<User | null> => {
   if (!tok) return null;
   const rows = await sql<Row[]>`
     select u.id, u.email, u.display_name, u.settings, u.role, s.remember,
-           coalesce(s.last_seen_at > now() - interval '10 minutes', false) as seen_recently
+           coalesce(s.last_seen_at > now() - interval '10 minutes', false) as seen_recently,
+           (select count(*)::int from notifications n where n.user_id = u.id and n.read_at is null) as unread
     from sessions s join users u on u.id = s.user_id
     where s.id = ${tok.sid} and s.user_id = ${tok.uid} and s.revoked_at is null and s.expires_at > now()
       and u.status = 'active'`;
   const r = rows[0];
   if (!r) return null;
   if (!r.seen_recently) {
-    // 마지막 접속 기록 + 기억된 기기는 만료를 연장(쿠키는 proxy 가 재발급)
+    // 마지막 접속 기록 + 기억된 기기는 만료를 연장(쿠키는 proxy 가 재발급). 화면에 필요 없으니 응답을 보낸 뒤에 한다.
     const ext = r.remember ? sessionExpiry(true) : null;
-    await sql`
-      update sessions set last_seen_at = now(), expires_at = greatest(expires_at, coalesce(${ext}::timestamptz, expires_at))
-      where id = ${tok.sid}`;
+    after(async () => {
+      await sql`
+        update sessions set last_seen_at = now(), expires_at = greatest(expires_at, coalesce(${ext}::timestamptz, expires_at))
+        where id = ${tok.sid}`;
+    });
   }
   const isEnvAdmin = isAdminEmail(r.email, env.adminEmails);
   return {
@@ -102,7 +109,20 @@ export const getUser = cache(async (): Promise<User | null> => {
     isAdmin: isAdminUser(r, env.adminEmails),
     isEnvAdmin,
     sessionId: tok.sid,
+    unread: r.unread,
   };
+});
+
+/**
+ * 서명이 확인된 세션 토큰의 사용자 ID(DB 조회 없음). 화면 쿼리를 세션 확인(requireUser)과 동시에 시작해
+ * DB 왕복 한 번을 아끼는 용도다. 세션 폐기·계정 정지는 requireUser 가 확인하므로 반드시 함께 await 한다:
+ *   const uid = await sessionUserId();
+ *   const [user, rows] = await Promise.all([requireUser(), query(uid)]);
+ */
+export const sessionUserId = cache(async (): Promise<string> => {
+  const tok = await readToken((await cookies()).get(SESSION_COOKIE)?.value);
+  if (!tok) redirect("/login");
+  return tok.uid;
 });
 
 export async function requireUser(): Promise<User> {

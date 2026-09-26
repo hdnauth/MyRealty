@@ -2,6 +2,7 @@ import "server-only";
 import { isAdminEmail } from "./auth/policy";
 import type { User } from "./auth/session";
 import { sql } from "./db";
+import { shouldPrepare } from "./db-config";
 import { env } from "./env";
 
 export async function audit(admin: User, action: string, target: string | null, detail?: Record<string, unknown>) {
@@ -39,17 +40,19 @@ export async function listUsers(f: UserFilter) {
     where (${q}::text is null or u.email like '%' || ${q}::text || '%' or lower(coalesce(u.display_name, '')) like '%' || ${q}::text || '%')
       and (${status}::text is null or u.status = ${status}::text)
       and (${role}::text is null or u.role = ${role}::text or (${role}::text = 'admin' and u.email = any(${env.adminEmails}::text[])))`;
-  const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from users u ${where}`;
-  const rows = await sql<AdminUserRow[]>`
-    select u.id, u.email, u.display_name, u.role, u.status, u.created_at::text, u.last_login_at::text,
-           (select max(s.last_seen_at) from sessions s where s.user_id = u.id)::text as last_seen_at,
-           (select count(*) from watch_items w where w.user_id = u.id)::int as items,
-           (select count(*) from sessions s where s.user_id = u.id and s.revoked_at is null and s.expires_at > now())::int as sessions,
-           (select coalesce(sum(a.cost_usd), 0) from ai_usage a
-             where a.user_id = u.id and a.created_at >= date_trunc('month', now()))::float8 as ai_cost
-    from users u ${where}
-    order by u.created_at desc
-    limit ${USERS_PAGE_SIZE} offset ${(page - 1) * USERS_PAGE_SIZE}`;
+  const [[{ n }], rows] = await Promise.all([
+    sql<{ n: number }[]>`select count(*)::int as n from users u ${where}`,
+    sql<AdminUserRow[]>`
+      select u.id, u.email, u.display_name, u.role, u.status, u.created_at::text, u.last_login_at::text,
+             (select max(s.last_seen_at) from sessions s where s.user_id = u.id)::text as last_seen_at,
+             (select count(*) from watch_items w where w.user_id = u.id)::int as items,
+             (select count(*) from sessions s where s.user_id = u.id and s.revoked_at is null and s.expires_at > now())::int as sessions,
+             (select coalesce(sum(a.cost_usd), 0) from ai_usage a
+               where a.user_id = u.id and a.created_at >= date_trunc('month', now()))::float8 as ai_cost
+      from users u ${where}
+      order by u.created_at desc
+      limit ${USERS_PAGE_SIZE} offset ${(page - 1) * USERS_PAGE_SIZE}`,
+  ]);
   return { total: n, rows, page };
 }
 
@@ -89,7 +92,25 @@ export type Health = {
   authSecret: boolean;
   smtp: boolean;
   adminEmails: number;
+  /** 웹 서버 ↔ DB 왕복 시간(ms, 3회 중앙값). 수십 ms 를 넘으면 두 곳의 지역이 다를 가능성이 크다 */
+  dbRttMs?: number;
+  /** 웹 함수가 실행된 지역(Vercel 은 VERCEL_REGION, 예: icn1) */
+  region: string | null;
+  /** 쿼리당 왕복 수를 줄이는 prepared statement 사용 여부(트랜잭션 풀러면 꺼짐) */
+  prepare: boolean;
 };
+
+/** DB 왕복 시간: select 1 을 3번 보내 중앙값. 첫 연결 비용이 섞이지 않도록 한 번 먼저 보낸다 */
+async function dbRtt(): Promise<number> {
+  await sql`select 1`;
+  const ts: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const t = performance.now();
+    await sql`select 1`;
+    ts.push(performance.now() - t);
+  }
+  return Math.round(ts.sort((a, b) => a - b)[1] * 10) / 10;
+}
 
 /** 빌드 시점에 next.config.ts 가 넣어 둔 db/migrations 목록(없으면 null) — schema_migrations 와 비교 */
 function migrationFiles(): string[] | null {
@@ -98,11 +119,18 @@ function migrationFiles(): string[] | null {
 }
 
 export async function health(): Promise<Health> {
-  const base = { authSecret: Boolean(env.authSecret), smtp: Boolean(env.smtp.host), adminEmails: env.adminEmails.length };
+  const base = {
+    authSecret: Boolean(env.authSecret),
+    smtp: Boolean(env.smtp.host),
+    adminEmails: env.adminEmails.length,
+    region: process.env.VERCEL_REGION ?? null,
+    prepare: shouldPrepare(env.databaseUrl, process.env.DATABASE_PREPARE),
+  };
   try {
     const applied = (await sql<{ name: string }[]>`select name from schema_migrations order by name`).map((r) => r.name);
     const files = migrationFiles();
-    return { ...base, db: "ok", migrations: { applied, pending: files ? files.filter((f) => !applied.includes(f)) : [] } };
+    const dbRttMs = await dbRtt();
+    return { ...base, db: "ok", dbRttMs, migrations: { applied, pending: files ? files.filter((f) => !applied.includes(f)) : [] } };
   } catch (e) {
     const code = (e as { code?: string })?.code;
     return { ...base, db: "error", dbError: code ?? (e instanceof Error ? e.name : "error"), migrations: null };

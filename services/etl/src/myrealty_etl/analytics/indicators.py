@@ -294,7 +294,7 @@ def detect_rate_change(conn) -> dict:
     upsert_event(conn, {"source_key": f"rate:{cur['period']}", "kind": "rate_decision", "title": title,
                         "starts_on": cur["period"], "ends_on": None, "address": None, "payload": {}, "source_url": None})
     n = 0
-    for u in conn.execute("select id from users").fetchall():
+    for u in conn.execute("select id from users where status = 'active'").fetchall():
         n += notify(conn, user_id=u["id"], item_id=None, kind="rate", priority=2, title=title,
                     body="대출 금리·월부담지수에 영향. 지표 화면에서 시나리오를 확인하세요.", url="/indicators",
                     dedupe_key=f"rate:{cur['period']}")

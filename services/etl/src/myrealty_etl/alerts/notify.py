@@ -21,7 +21,8 @@ def send_push(conn, min_priority: int = 2) -> dict:
     rows = conn.execute(
         """select n.id, n.user_id, n.title, n.body, n.url, n.kind from notifications n
            where n.pushed_at is null and n.priority >= %s and n.created_at > now() - interval '2 days'
-             and coalesce((select (u.settings->>'pushEnabled')::boolean from users u where u.id = n.user_id), true)
+             and exists (select 1 from users u where u.id = n.user_id and u.status = 'active'
+                         and coalesce((u.settings->>'pushEnabled')::boolean, true))
            order by n.created_at""",
         (min_priority,),
     ).fetchall()
@@ -100,7 +101,7 @@ def send_digest(conn) -> dict:
     if not settings.smtp_host:
         return {"skipped": "SMTP_HOST 미설정"}
     users = conn.execute(
-        """select id, email from users where coalesce((settings->>'emailDigest')::boolean, true)"""
+        """select id, email from users where status = 'active' and coalesce((settings->>'emailDigest')::boolean, true)"""
     ).fetchall()
     sent = 0
     for u in users:

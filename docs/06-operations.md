@@ -19,6 +19,8 @@
 | `SMTP_*`, `MAIL_FROM` | 로그인 코드, 다이제스트, 리포트 메일 | 로그인 코드가 서버 로그에 출력(개발용) |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | 웹푸시 (`npx web-push generate-vapid-keys`) | 푸시 없이 메일만 |
 | `AUTH_SECRET` | 세션 서명 (`openssl rand -base64 32`) | **필수** |
+| `ADMIN_EMAILS` | 관리자 계정(쉼표 구분) — 관리 화면 `/admin` | 관리 화면 없음(DB 에서 `users.role='admin'` 지정 가능) |
+| `ALLOWED_EMAILS` | 가입 방식이 "허용 목록만"일 때 추가 허용 | 기본(누구나 가입)에서는 불필요 |
 | `CRON_SECRET` | 정기 리포트 엔드포인트 보호 | 리포트 스케줄 불가(수동 생성은 가능) |
 
 ## 2. 데이터베이스
@@ -33,8 +35,10 @@
 Neon·RDS·자체 Postgres 도 PostGIS·pgvector 만 있으면 된다. 인증을 앱이 직접 처리하므로 Supabase Auth·RLS 는 쓰지 않으며, DB 는 서버에서만 접근한다(브라우저에 DB 키를 노출하지 않음).
 
 ### 초기 설정
+기본 가입 방식은 **누구나 가입**이다. `.env` 의 `ADMIN_EMAILS` 에 내 이메일을 넣고 로그인하면 관리 화면(`/admin`)에서
+가입 방식(누구나 / 허용 목록만 / 가입 중지)·공지·1인당 AI 한도를 바꾸고 사용자를 관리할 수 있다.
 ```bash
-uv run myrealty allow-email you@example.com       # 로그인 허용(ALLOWED_EMAILS 환경 변수로도 가능)
+uv run myrealty allow-email friend@example.com    # (가입 방식이 "허용 목록만"일 때) 허용 목록 추가 — 관리 화면에서도 가능
 # (선택) 표준데이터 CSV 로 생활편의 POI 채우기 — 공공데이터포털에서 파일 다운로드
 uv run myrealty import-poi 전국도시철도역사정보표준데이터.csv --category subway
 uv run myrealty import-poi 전국초중등학교위치표준데이터.csv --category school
@@ -49,13 +53,15 @@ uv run myrealty import-geo rail.geojson --kind infra
 ## 3. 웹 배포 (Vercel 기준)
 
 1. 새 프로젝트 → 이 저장소, **Root Directory = `apps/web`**, Framework = Next.js
-2. Environment Variables: `DATABASE_URL`(풀러), `DATABASE_PREPARE=false`, `AUTH_SECRET`, `ALLOWED_EMAILS`, `APP_URL`,
+2. Environment Variables: `DATABASE_URL`(풀러), `DATABASE_PREPARE=false`(6543 풀러 주소면 자동), `AUTH_SECRET`, `ADMIN_EMAILS`, `APP_URL`,
    `JUSO_KEY`, `NCP_MAPS_KEY_ID`, `NCP_MAPS_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AI_MONTHLY_BUDGET_USD`,
    `SMTP_*`, `MAIL_FROM`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `CRON_SECRET`
 3. 네이버 클라우드 Maps 애플리케이션의 **Web 서비스 URL** 에 배포 도메인(과 `http://localhost:3000`) 등록
 4. 휴대폰에서 접속 → (iPhone) Safari 공유 → 홈 화면에 추가 → 앱에서 설정 → "이 기기에서 푸시 받기"
 
-> 다른 호스팅(자체 서버 `pnpm build && pnpm start`, Docker 등)도 동일한 환경 변수로 동작한다.
+> 다른 호스팅(자체 서버 `pnpm build && pnpm start`, Docker 등)도 동일한 환경 변수로 동작한다. 자체 서버에서는 리포지토리 루트 `.env` 를
+> 자동으로 읽는다(플랫폼·셸에서 설정한 값이 우선).
+5. 배포 후 `https://<도메인>/api/health` 가 `{"ok":true,...}` 인지 확인한다. `db`·`pendingMigrations`·`authSecret` 으로 원인을 바로 알 수 있다.
 
 ## 4. 스케줄 (GitHub Actions)
 
@@ -101,7 +107,13 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 | RTMS 오류 30 / `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` | 활용신청 승인 전이거나 Encoding 키를 넣음 → **Decoding(일반) 키**를 넣고 승인 후 1~2시간 대기 |
 | RTMS 오류 22 | 일일 트래픽 초과 → 다음 날 자동 이월 |
 | 지도 대신 "지도 키가 설정되지 않았습니다" | `NCP_MAPS_KEY_ID` 미설정 또는 서비스 URL 미등록 |
-| 로그인 코드 메일이 오지 않음 | `SMTP_*` 확인, 허용 목록 여부 확인(허용 외 이메일에는 같은 응답을 주지만 발송하지 않음) |
+| "로그인 코드 받기" 후 *This page couldn't load / A server error occurred* | (이전 버전) 서버 오류가 그대로 노출됨. 현재는 원인별 문구와 오류 번호가 표시된다. `/api/health` 로 확인: `db:error`(DATABASE_URL·네트워크·Supabase 는 IPv4 풀러 주소 사용), `pendingMigrations`(`uv run myrealty migrate`), `authSecret:false`(AUTH_SECRET) |
+| "데이터베이스에 연결할 수 없습니다" | `DATABASE_URL` 확인. 자체 서버는 루트 `.env` 가 읽히는지(`/api/health` 의 `authSecret`), Vercel 은 Transaction pooler(6543) 주소 사용 |
+| "스키마가 최신이 아닙니다" | `cd services/etl && uv run myrealty migrate` |
+| "메일을 보내지 못했습니다" | `SMTP_*` 확인(Gmail 은 앱 비밀번호, 465 포트는 SSL). 서버 로그에서 오류 번호로 상세 원인 확인 |
+| 로그인 코드 메일이 오지 않음 | 스팸함 확인. 가입 방식이 "허용 목록만"·"가입 중지"이거나 정지된 계정이면 같은 응답을 주지만 발송하지 않음(관리 → 사이트 설정) |
+| 자동 로그인이 안 됨 | 로그인 시 "이 기기 기억하기"를 켜야 90일(접속 시 연장) 유지. 끄면 브라우저를 닫을 때 로그아웃 |
+| 관리 메뉴가 없음 | `ADMIN_EMAILS` 에 이메일이 있는지, 변경 후 서버를 재시작했는지 확인 |
 | iPhone 에서 푸시 버튼이 없음 | iOS 16.4+ 에서 홈 화면에 추가한 앱으로 열어야 함 |
 | 단지가 "연결되지 않았습니다" | 해당 시군구 실거래가 아직 수집되지 않음 → rtms·link 실행 후 재확인 |
 | 지표 화면이 비어 있음 | 시군구 아파트 매매가 30건 미만이면 지표를 계산하지 않음(표본 부족) |

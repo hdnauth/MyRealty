@@ -13,6 +13,7 @@ import {
   Map as MapIcon,
   Menu,
   Settings,
+  ShieldCheck,
   Wallet,
 } from "lucide-react";
 import Link from "next/link";
@@ -38,7 +39,7 @@ function isActive(path: string, href: string) {
   return href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
 }
 
-export function Sidebar({ unread, email }: { unread: number; email: string }) {
+export function Sidebar({ unread, email, isAdmin = false }: { unread: number; email: string; isAdmin?: boolean }) {
   const path = usePathname();
   return (
     <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-border bg-surface px-3 py-5 lg:flex">
@@ -55,6 +56,7 @@ export function Sidebar({ unread, email }: { unread: number; email: string }) {
         {SECONDARY.map((n) => (
           <NavLink key={n.href} {...n} active={isActive(path, n.href)} badge={n.href === "/notifications" ? unread : 0} />
         ))}
+        {isAdmin ? <NavLink href="/admin" label="관리" icon={ShieldCheck} active={isActive(path, "/admin")} /> : null}
       </nav>
       <div className="mt-auto truncate px-2 text-xs text-muted">{email}</div>
     </aside>

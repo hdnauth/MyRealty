@@ -4,7 +4,7 @@ import { z } from "zod";
 import { sql } from "../db";
 import { groupChange, similarComplexes } from "../queries/comps";
 import { itemAttrs, itemTransactions, summarize, type WatchItem } from "../queries/items";
-import { anthropic, budgetOk, effortConfig, fallbackParams, MODEL, recordUsage } from "./client";
+import { anthropic, aiQuotaError, effortConfig, fallbackParams, MODEL, recordUsage } from "./client";
 import { ANALYSIS_SYSTEM, todayLine } from "./prompts";
 
 export const AnalysisCard = z.object({
@@ -74,7 +74,8 @@ export async function itemSnapshot(item: WatchItem) {
 }
 
 export async function generateAnalysis(userId: string, item: WatchItem) {
-  if (!(await budgetOk())) throw new Error("이번 달 AI 예산을 모두 사용했습니다.");
+  const quota = await aiQuotaError(userId);
+  if (quota) throw new Error(quota);
   const snap = await itemSnapshot(item);
   const msg = await anthropic().beta.messages.parse({
     model: MODEL,
@@ -87,7 +88,7 @@ export async function generateAnalysis(userId: string, item: WatchItem) {
     output_config: { format: betaZodOutputFormat(AnalysisCard), ...effortConfig("high") },
     ...fallbackParams(),
   });
-  await recordUsage("item_analysis", msg.model, msg.usage);
+  await recordUsage("item_analysis", msg.model, msg.usage, userId);
   if (msg.stop_reason === "refusal" || !msg.parsed_output) throw new Error("분석을 생성하지 못했습니다.");
   const card = msg.parsed_output;
   await sql`insert into ai_reports (user_id, scope, target_ids, title, content_md, data, model)

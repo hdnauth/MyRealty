@@ -55,3 +55,28 @@ def test_digest_render():
 def test_fmt():
     assert rules.fmt_manwon(225000) == "22억 5,000만"
     assert rules.fmt_manwon(9500) == "9,500만"
+
+
+def test_blocked_users_excluded(conn, monkeypatch):
+    """관리 화면에서 정지된 사용자는 전체 알림·푸시·다이제스트 대상에서 빠진다."""
+    from myrealty_etl.analytics import indicators as ind
+
+    active = conn.execute("insert into users (email) values ('ok@example.com') returning id").fetchone()["id"]
+    blocked = conn.execute("insert into users (email, status) values ('no@example.com', 'blocked') returning id").fetchone()["id"]
+    conn.execute("insert into series (code, name, freq, source) values ('ecos.base_rate', '기준금리', 'M', 'ecos')")
+    conn.execute("insert into series_values (code, period, value) values ('ecos.base_rate', '2026-07-01', 2.5), ('ecos.base_rate', '2026-08-01', 2.25)")
+    conn.commit()
+    ind.detect_rate_change(conn)
+    got = {r["user_id"] for r in conn.execute("select user_id from notifications where kind = 'rate'")}
+    assert got == {active}
+
+    # 다이제스트 대상 조회에도 정지 사용자 제외
+    conn.execute("insert into notifications (user_id, kind, priority, title, dedupe_key) values (%s, 'news', 1, 'x', 'd1')", (blocked,))
+    conn.commit()
+    sent_to = []
+    import dataclasses
+
+    monkeypatch.setattr(notify, "settings", dataclasses.replace(notify.settings, smtp_host="smtp.test"))
+    monkeypatch.setattr(notify, "send_mail", lambda to, *a, **k: sent_to.append(to))
+    notify.send_digest(conn)
+    assert sent_to == ["ok@example.com"]

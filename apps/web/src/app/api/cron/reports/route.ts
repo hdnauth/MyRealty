@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ skipped: "ANTHROPIC_API_KEY 미설정" });
   const kind: ReportKind = req.nextUrl.searchParams.get("kind") === "monthly" ? "monthly" : "weekly";
   const users = await sql<{ id: string; email: string; settings: { emailDigest?: boolean } }[]>`
-    select distinct u.id, u.email, u.settings from users u join watch_items w on w.user_id = u.id`;
+    select distinct u.id, u.email, u.settings from users u join watch_items w on w.user_id = u.id where u.status = 'active'`;
   const results = [];
   for (const u of users) {
     try {

@@ -1,35 +1,28 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Button, Card, CardHeader, Input, PageHeader } from "@/components/ui";
+import { Button, Card, CardHeader, PageHeader } from "@/components/ui";
 import { readToken, requireUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { env } from "@/lib/env";
-import { formatDate } from "@/lib/format";
+import { formatDate, timeAgo } from "@/lib/format";
+import { getSiteSettings } from "@/lib/site-settings";
 import { cookies } from "next/headers";
-import { addAllowedEmailAction, logoutAction, removeAllowedEmailAction, revokeSessionAction, updateNotificationSettingsAction } from "./actions";
+import { logoutAction, revokeSessionAction, updateNotificationSettingsAction } from "./actions";
+import { DeleteAccount } from "./delete-account";
 import { PushManager } from "./push-manager";
 
 export const metadata: Metadata = { title: "설정" };
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const allowed = await sql<{ email: string; note: string | null }[]>`select email, note from allowed_emails order by created_at`;
-  const sessions = await sql<{ id: string; user_agent: string | null; created_at: string }[]>`
-    select id, user_agent, created_at::text from sessions
-    where user_id = ${user.id} and revoked_at is null and expires_at > now() order by created_at desc`;
+  const sessions = await sql<{ id: string; user_agent: string | null; created_at: string; last_seen_at: string | null; remember: boolean }[]>`
+    select id, user_agent, created_at::text, last_seen_at::text, remember from sessions
+    where user_id = ${user.id} and revoked_at is null and expires_at > now() order by coalesce(last_seen_at, created_at) desc`;
   const current = await readToken((await cookies()).get(SESSION_COOKIE)?.value);
-  const jobs = await sql<{ job: string; status: string; started_at: string; finished_at: string | null; detail: Record<string, unknown> | null }[]>`
-    select distinct on (job) job, status, started_at::text, finished_at::text, detail from job_runs order by job, started_at desc`;
   const [ai] = await sql<{ cost: number; calls: number }[]>`
-    select coalesce(sum(cost_usd), 0)::float8 as cost, count(*)::int as calls from ai_usage where created_at >= date_trunc('month', now())`;
-  const keys = [
-    ["공공데이터포털(실거래·건축물대장·청약)", "DATA_GO_KR_KEY", "ETL"],
-    ["도로명주소 검색", "JUSO_KEY", Boolean(env.jusoKey)],
-    ["네이버 지도/지오코딩", "NCP_MAPS_KEY_ID / NCP_MAPS_KEY", Boolean(env.ncpKeyId)],
-    ["Claude API", "ANTHROPIC_API_KEY", Boolean(env.anthropicApiKey)],
-    ["SMTP 메일", "SMTP_HOST", Boolean(env.smtp.host)],
-    ["웹푸시(VAPID)", "NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY", Boolean(env.vapidPublicKey && env.vapidPrivateKey)],
-  ] as const;
+    select coalesce(sum(cost_usd), 0)::float8 as cost, count(*)::int as calls from ai_usage
+    where user_id = ${user.id} and created_at >= date_trunc('month', now())`;
+  const site = await getSiteSettings();
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -43,6 +36,7 @@ export default async function SettingsPage() {
             ["/projects", "개발사업"],
             ["/indicators/custom", "커스텀 지표"],
             ["/notifications", "알림"],
+            ...(user.isAdmin ? [["/admin", "관리"]] : []),
           ].map(([href, label]) => (
             <Link key={href} href={href} className="rounded-lg px-2 py-3 hover:bg-surface-2">
               {label}
@@ -51,8 +45,18 @@ export default async function SettingsPage() {
         </div>
       </Card>
       <Card>
-        <CardHeader title="계정" sub={user.email} action={<form action={logoutAction}><Button variant="secondary" type="submit">로그아웃</Button></form>} />
-        <div className="h-2" />
+        <CardHeader
+          title="계정"
+          sub={`${user.email}${user.isAdmin ? " · 관리자" : ""}`}
+          action={<form action={logoutAction}><Button variant="secondary" type="submit">로그아웃</Button></form>}
+        />
+        {user.isAdmin ? (
+          <div className="px-4 pb-3">
+            <Link href="/admin" className="text-sm font-medium text-accent">관리 화면 열기 →</Link>
+          </div>
+        ) : (
+          <div className="h-2" />
+        )}
       </Card>
 
       <Card>
@@ -72,41 +76,13 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader title="로그인 허용 이메일" sub="이 목록(과 환경 변수 ALLOWED_EMAILS)에 있는 이메일만 로그인 코드를 받을 수 있습니다." />
-        <ul className="divide-y divide-border px-4 text-sm">
-          {env.allowedEmails.map((e) => (
-            <li key={`env-${e}`} className="flex items-center justify-between py-2">
-              <span>{e}</span>
-              <span className="text-xs text-muted">환경 변수</span>
-            </li>
-          ))}
-          {allowed.map((a) => (
-            <li key={a.email} className="flex items-center justify-between py-2">
-              <span>{a.email}</span>
-              {a.email !== user.email ? (
-                <form action={removeAllowedEmailAction}>
-                  <input type="hidden" name="email" value={a.email} />
-                  <button className="text-xs text-up">삭제</button>
-                </form>
-              ) : (
-                <span className="text-xs text-muted">나</span>
-              )}
-            </li>
-          ))}
-        </ul>
-        <form action={addAllowedEmailAction} className="flex gap-2 p-4">
-          <Input name="email" type="email" placeholder="가족 이메일 추가" required />
-          <Button type="submit" variant="secondary">추가</Button>
-        </form>
-      </Card>
-
-      <Card>
-        <CardHeader title="로그인된 기기" />
+        <CardHeader title="로그인된 기기" sub="“이 기기 기억하기”로 로그인한 기기는 90일 동안(접속할 때마다 연장) 자동 로그인됩니다." />
         <ul className="divide-y divide-border px-4 pb-2 text-sm">
           {sessions.map((s) => (
             <li key={s.id} className="flex items-center justify-between gap-3 py-2">
               <span className="min-w-0 truncate text-muted">
-                {formatDate(s.created_at, "long")} · {s.user_agent?.slice(0, 60) ?? "알 수 없음"}
+                {s.remember ? "기억됨" : "일회성"} · {formatDate(s.created_at, "long")}
+                {s.last_seen_at ? ` · 최근 ${timeAgo(s.last_seen_at)}` : ""} · {s.user_agent?.slice(0, 60) ?? "알 수 없음"}
               </span>
               {s.id === current?.sid ? (
                 <span className="shrink-0 text-xs text-accent">현재 기기</span>
@@ -122,39 +98,16 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader title="데이터 수집(ETL) 최근 실행" sub="GitHub Actions 또는 uv run myrealty daily" />
-        <ul className="divide-y divide-border px-4 pb-2 text-sm">
-          {jobs.map((j) => (
-            <li key={j.job} className="flex items-center justify-between gap-2 py-2">
-              <span className="min-w-0">
-                <span className="font-mono text-xs">{j.job}</span>
-                <span className="block truncate text-xs text-muted">{j.detail ? JSON.stringify(j.detail).slice(0, 90) : ""}</span>
-              </span>
-              <span className={`shrink-0 text-xs ${j.status === "ok" ? "text-ok" : j.status === "error" ? "text-up" : "text-muted"}`}>
-                {j.status} · {formatDate(j.started_at)}
-              </span>
-            </li>
-          ))}
-          {!jobs.length ? <li className="py-2 text-muted">실행 기록이 없습니다.</li> : null}
-        </ul>
-        <p className="px-4 pb-4 text-xs text-muted">이번 달 AI 사용: {ai.calls}회 · 약 ${ai.cost.toFixed(2)} / 예산 ${process.env.AI_MONTHLY_BUDGET_USD ?? 30}</p>
+        <CardHeader title="이번 달 AI 사용" sub="AI 질문·분석·비교·리포트 사용량입니다." />
+        <p className="px-4 pb-4 text-sm">
+          {ai.calls}회 · 약 ${ai.cost.toFixed(2)}
+          {site.aiUserMonthlyLimitUsd !== null ? <span className="text-muted"> / 개인 한도 ${site.aiUserMonthlyLimitUsd}</span> : null}
+        </p>
       </Card>
 
-      <Card>
-        <CardHeader title="외부 API 연결 상태" sub="키는 리포지토리 루트 .env 에서 설정합니다." />
-        <ul className="divide-y divide-border px-4 pb-2 text-sm">
-          {keys.map(([name, envName, ok]) => (
-            <li key={envName} className="flex items-center justify-between gap-2 py-2">
-              <span>
-                {name}
-                <span className="block text-xs text-muted">{envName}</span>
-              </span>
-              <span className={ok === "ETL" ? "text-xs text-muted" : ok ? "text-xs font-medium text-ok" : "text-xs text-muted"}>
-                {ok === "ETL" ? "ETL에서 사용" : ok ? "연결됨" : "미설정"}
-              </span>
-            </li>
-          ))}
-        </ul>
+      <Card className="border-up/30">
+        <CardHeader title="회원 탈퇴" sub="관심 물건·메모·알림·AI 기록이 모두 삭제되며 되돌릴 수 없습니다." />
+        <DeleteAccount email={user.email} disabled={user.isEnvAdmin} />
       </Card>
     </div>
   );

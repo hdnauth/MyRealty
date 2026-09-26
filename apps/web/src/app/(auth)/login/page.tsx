@@ -1,14 +1,20 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { safeNext } from "@/lib/auth/policy";
 import { getUser } from "@/lib/auth/session";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "로그인" };
 
 export default async function LoginPage(props: PageProps<"/login">) {
-  if (await getUser()) redirect("/");
   const sp = await props.searchParams;
-  const next = typeof sp.next === "string" ? sp.next : "/";
+  const next = safeNext(sp.next);
+  // 기억된 기기면 바로 들어간다. DB 장애 시에도 로그인 화면은 보여준다.
+  const user = await getUser().catch((e) => {
+    console.error("[login] 세션 확인 실패", e);
+    return null;
+  });
+  if (user) redirect(next);
   return (
     <div className="flex min-h-dvh items-center justify-center px-4">
       <div className="card w-full max-w-sm p-6">

@@ -56,14 +56,20 @@
 
 ## 4. 인증 설계 (이메일 OTP) — 구현됨
 
-1. 로그인 화면에서 이메일 입력 → 허용 목록(`allowed_emails` 테이블 + `ALLOWED_EMAILS` 환경 변수) 확인
+1. 로그인 화면에서 이메일 입력 → 가입 정책 판단(`src/lib/auth/policy.ts` `decideLogin`)
+   - 기존 사용자: 정지(`users.status='blocked'`)가 아니면 허용
+   - 신규: `ADMIN_EMAILS` 는 항상 허용, 그 외는 관리 화면의 가입 방식(`site_settings.signupMode`: 누구나 / 허용 목록만 / 가입 중지)
 2. 허용된 경우에만 6자리 코드를 생성해 **해시만** `otp_codes` 에 저장(10분 유효, 5회 시도 제한), SMTP 로 발송
-   - 허용되지 않은 이메일에도 같은 응답을 돌려줘 계정 존재 여부를 노출하지 않음
-   - 요청 레이트리밋: 이메일당 1분 1회, 1시간 5회
-3. 코드 확인 → `sessions` 행 생성 → HS256 JWT(`jti`=세션 ID)를 httpOnly 쿠키로 30일 유지
+   - 거부된 이메일에도 같은 응답을 돌려줘 계정 존재·정지 여부를 노출하지 않음
+   - 요청 레이트리밋: 이메일당 1분 1회·1시간 5회, IP 당 1시간 30회
+   - DB·메일·설정 오류는 원인별 문구 + 오류 번호로 보여주고 서버 로그에 같은 번호로 남김(`src/lib/errors.ts`)
+3. 코드 확인(정책 재확인) → 사용자 생성/갱신 → `sessions` 행 생성 → HS256 JWT(`jti`=세션 ID, `rem`=기억 여부)를 httpOnly 쿠키로 발급
+   - **이 기기 기억하기**: 90일 영구 쿠키, `src/proxy.ts` 가 하루 한 번 재발급하고 DB 만료도 연장 → 계속 쓰는 기기는 자동 로그인 유지
+   - 기억하지 않기: 세션 쿠키(브라우저 종료 시 삭제) + 서버 세션 12시간
 4. `src/proxy.ts`(Next 16 의 middleware 대체)가 서명만 빠르게 검사해 비로그인 요청을 `/login` 으로 보내고,
-   각 페이지는 `requireUser()` 로 세션 폐기·만료를 DB 에서 재확인
-5. 설정 화면에서 허용 이메일 관리, 기기별 로그아웃
+   각 페이지는 `requireUser()` 로 세션 폐기·만료·계정 정지를 DB 에서 재확인. `/admin` 은 `requireAdmin()`(아니면 404)
+5. 관리자 = `ADMIN_EMAILS` 또는 `users.role='admin'`. 관리 화면에서 사용자 정지·관리자 지정·기기 로그아웃·삭제, 가입 방식·허용 목록·공지·1인당 AI 한도, 모든 작업은 `admin_audit_log` 에 기록
+6. 설정 화면에서 기기별 로그아웃, 회원 탈퇴
 
 > 매직링크 대신 코드 방식을 쓰는 이유: iOS에서 홈 화면에 설치한 PWA는 메일 앱의 링크가 Safari로 열려 PWA 세션에 로그인되지 않는 문제가 있음.
 > 호스팅 DB 로 Supabase·Neon 등 어떤 Postgres 를 써도 되며, PostGIS·pgvector 확장만 필요하다.
@@ -229,7 +235,7 @@ create table push_subscriptions (user_id uuid, endpoint text primary key, keys j
 ```
 
 - **접근 제어(구현)**: DB 는 서버(Next.js 서버 컴포넌트·Route Handler·Server Action, ETL)에서만 접근한다. 사용자 데이터(`watch_items`, `notifications`, `ai_reports`, `notes`, `push_subscriptions`, `ai_conversations`)는 모든 쿼리에 `user_id` 조건을 걸고, AI 도구도 로그인 사용자 범위로만 조회한다.
-- 대출·임대 등 민감 정보는 허용 목록 로그인으로 보호하고 백업 시 암호화한다.
+- 대출·임대 등 민감 정보는 사용자별로 격리(`user_id`)하고 백업 시 암호화한다. 모든 사용자가 함께 보는 개발사업(정비구역·철도) 데이터는 관리자만 등록·삭제한다.
 
 ## 6. ETL 파이프라인
 

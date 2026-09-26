@@ -5,16 +5,17 @@ import { Button, Field, Input } from "@/components/ui";
 import { type LoginState, requestCodeAction, verifyCodeAction } from "./actions";
 
 export function LoginForm({ next }: { next: string }) {
-  const [reqState, requestAction, requesting] = useActionState<LoginState, FormData>(requestCodeAction, { step: "email" });
+  const [reqState, requestAction, requesting] = useActionState<LoginState, FormData>(requestCodeAction, { step: "email", remember: true });
   const [verState, verifyAction, verifying] = useActionState<LoginState, FormData>(verifyCodeAction, { step: "code" });
   const [restart, setRestart] = useState(0);
+  const [remember, setRemember] = useState(true);
 
   const onCodeStep = reqState.step === "code" && restart === 0;
 
   if (!onCodeStep) {
     return (
       <form action={(fd) => { setRestart(0); requestAction(fd); }} className="space-y-4">
-        <Field label="이메일">
+        <Field label="이메일" hint="처음이면 코드 확인 후 바로 가입됩니다.">
           <Input
             name="email"
             type="email"
@@ -26,7 +27,8 @@ export function LoginForm({ next }: { next: string }) {
             autoFocus
           />
         </Field>
-        {reqState.error ? <p className="text-sm text-up">{reqState.error}</p> : null}
+        <RememberBox checked={remember} onChange={setRemember} />
+        {reqState.error ? <p role="alert" className="text-sm text-up">{reqState.error}</p> : null}
         <Button type="submit" className="w-full" disabled={requesting}>
           {requesting ? "보내는 중…" : "로그인 코드 받기"}
         </Button>
@@ -57,10 +59,23 @@ export function LoginForm({ next }: { next: string }) {
           className="text-center text-2xl tracking-[0.5em]"
         />
       </Field>
-      {verState.error ? <p className="text-sm text-up">{verState.error}</p> : null}
+      <RememberBox checked={remember} onChange={setRemember} />
+      {verState.error ? <p role="alert" className="text-sm text-up">{verState.error}</p> : null}
       <Button type="submit" className="w-full" disabled={verifying}>
         {verifying ? "확인 중…" : "로그인"}
       </Button>
     </form>
+  );
+}
+
+function RememberBox({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-start gap-2 text-sm">
+      <input type="checkbox" name="remember" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-4 w-4" />
+      <span>
+        이 기기 기억하기
+        <span className="block text-xs text-muted">다음 접속부터 자동 로그인(90일, 접속할 때마다 연장). 공용 기기에서는 해제하세요.</span>
+      </span>
+    </label>
   );
 }

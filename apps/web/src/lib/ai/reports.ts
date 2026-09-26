@@ -3,7 +3,7 @@ import { sql } from "../db";
 import { env } from "../env";
 import { formatManwon } from "../format";
 import { sendMail } from "../mail";
-import { anthropic, budgetOk, effortConfig, fallbackParams, MODEL, recordUsage, textOf } from "./client";
+import { anthropic, aiQuotaError, effortConfig, fallbackParams, MODEL, recordUsage, textOf } from "./client";
 import { REPORT_SYSTEM, todayLine } from "./prompts";
 
 export type ReportKind = "weekly" | "monthly";
@@ -83,7 +83,8 @@ export async function buildSnapshot(userId: string, kind: ReportKind) {
 }
 
 export async function generateReport(userId: string, kind: ReportKind) {
-  if (!(await budgetOk())) throw new Error("이번 달 AI 예산을 모두 사용했습니다.");
+  const quota = await aiQuotaError(userId);
+  if (quota) throw new Error(quota);
   const snap = await buildSnapshot(userId, kind);
   const msg = await anthropic().beta.messages.create({
     model: MODEL,
@@ -96,7 +97,7 @@ export async function generateReport(userId: string, kind: ReportKind) {
     output_config: effortConfig("medium"),
     ...fallbackParams(),
   });
-  await recordUsage(`report_${kind}`, msg.model, msg.usage);
+  await recordUsage(`report_${kind}`, msg.model, msg.usage, userId);
   if (msg.stop_reason === "refusal") throw new Error("리포트를 생성할 수 없습니다.");
   const md = textOf(msg.content).trim();
   const title = `${kind === "weekly" ? "주간" : "월간"} 리포트 · ${new Date().toISOString().slice(0, 10)}`;

@@ -1,7 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { requireUser } from "@/lib/auth/session";
+import { requireAdmin, requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { geocode } from "@/lib/external/geocode";
 
@@ -15,8 +15,10 @@ function str(v: FormDataEntryValue | null) {
   return s || null;
 }
 
+// 개발사업은 모든 사용자가 함께 보는 데이터라 관리자만 등록·삭제한다.
 export async function addProjectAction(_: ProjectFormState, form: FormData): Promise<ProjectFormState> {
-  await requireUser();
+  const user = await requireUser();
+  if (!user.isAdmin) return { error: "개발사업 등록은 관리자만 할 수 있습니다." };
   const type = form.get("type") === "infra" ? "infra" : "zone";
   const name = str(form.get("name"));
   if (!name) return { error: "이름을 입력하세요." };
@@ -46,7 +48,7 @@ export async function addProjectAction(_: ProjectFormState, form: FormData): Pro
 }
 
 export async function deleteProjectAction(form: FormData) {
-  await requireUser();
+  await requireAdmin();
   const id = Number(form.get("id"));
   if (form.get("type") === "infra") await sql`delete from infra_projects where id = ${id}`;
   else await sql`delete from redevelopment_zones where id = ${id}`;

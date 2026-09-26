@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "../db";
 import { env } from "../env";
+import { getSiteSettings } from "../site-settings";
 
 let _client: Anthropic | null = null;
 
@@ -45,15 +46,15 @@ type Usage = {
   cache_creation_input_tokens?: number | null;
 };
 
-export async function recordUsage(purpose: string, model: string, u: Usage) {
+export async function recordUsage(purpose: string, model: string, u: Usage, userId: string | null = null) {
   const [pin, pout] = PRICES[model] ?? [5, 25];
   const inp = u.input_tokens ?? 0;
   const out = u.output_tokens ?? 0;
   const cr = u.cache_read_input_tokens ?? 0;
   const cw = u.cache_creation_input_tokens ?? 0;
   const cost = (inp * pin + cr * pin * 0.1 + cw * pin * 1.25 + out * pout) / 1_000_000;
-  await sql`insert into ai_usage (purpose, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd)
-            values (${purpose}, ${model}, ${inp}, ${out}, ${cr}, ${cw}, ${cost})`;
+  await sql`insert into ai_usage (purpose, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd, user_id)
+            values (${purpose}, ${model}, ${inp}, ${out}, ${cr}, ${cw}, ${cost}, ${userId})`;
 }
 
 export async function monthSpend(): Promise<number> {
@@ -62,9 +63,25 @@ export async function monthSpend(): Promise<number> {
   return r.s;
 }
 
-export async function budgetOk(): Promise<boolean> {
-  const budget = Number(process.env.AI_MONTHLY_BUDGET_USD ?? 30);
-  return (await monthSpend()) < budget;
+export function monthlyBudget(): number {
+  return Number(process.env.AI_MONTHLY_BUDGET_USD ?? 30);
+}
+
+export async function userMonthSpend(userId: string): Promise<number> {
+  const [r] = await sql<{ s: number }[]>`
+    select coalesce(sum(cost_usd), 0)::float8 as s from ai_usage
+    where user_id = ${userId} and created_at >= date_trunc('month', now())`;
+  return r.s;
+}
+
+/** 전체 월 예산과 사용자별 월 한도(관리 화면 설정)를 확인한다. 초과면 사용자 문구, 아니면 null. */
+export async function aiQuotaError(userId: string): Promise<string | null> {
+  if ((await monthSpend()) >= monthlyBudget()) return "이번 달 AI 예산(AI_MONTHLY_BUDGET_USD)을 모두 사용했습니다.";
+  const { aiUserMonthlyLimitUsd: limit } = await getSiteSettings();
+  if (limit !== null && (await userMonthSpend(userId)) >= limit) {
+    return `이번 달 개인 AI 사용 한도($${limit})를 모두 사용했습니다. 다음 달에 다시 이용하세요.`;
+  }
+  return null;
 }
 
 export function textOf(content: { type: string; text?: string }[]): string {

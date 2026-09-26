@@ -5,13 +5,20 @@ function opt(name: string): string | undefined {
   return v && v.length > 0 ? v : undefined;
 }
 
+function emailList(name: string): string[] {
+  return (opt(name) ?? "")
+    .split(/[,;\s]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 export const env = {
   databaseUrl: opt("DATABASE_URL") ?? "postgresql://myrealty:myrealty@localhost:5432/myrealty",
   authSecret: opt("AUTH_SECRET") ?? (process.env.NODE_ENV === "production" ? undefined : "dev-only-insecure-secret-change-me"),
-  allowedEmails: (opt("ALLOWED_EMAILS") ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean),
+  /** 관리자 계정(쉼표 구분). 관리 화면 접근, 가입 정책과 무관하게 로그인 가능, 화면에서 해제·정지 불가 */
+  adminEmails: emailList("ADMIN_EMAILS"),
+  /** 가입 방식이 "허용 목록"일 때 추가로 허용할 이메일 */
+  allowedEmails: emailList("ALLOWED_EMAILS"),
   smtp: {
     host: opt("SMTP_HOST"),
     port: Number(opt("SMTP_PORT") ?? 587),

@@ -1,5 +1,6 @@
 import "server-only";
 import postgres from "postgres";
+import { shouldPrepare } from "./db-config";
 import { env } from "./env";
 
 declare global {
@@ -15,8 +16,8 @@ export const sql: postgres.Sql =
   postgres(env.databaseUrl, {
     max: 5,
     idle_timeout: 20,
-    // Supabase·Neon 등 트랜잭션 풀러(pgbouncer) 사용 시 DATABASE_PREPARE=false
-    prepare: process.env.DATABASE_PREPARE !== "false",
+    prepare: shouldPrepare(env.databaseUrl, process.env.DATABASE_PREPARE),
+    connect_timeout: 10,
     types: {
       int8: { to: 20, from: [20], parse: toNumber, serialize: (x: number) => String(x) },
       numeric: { to: 1700, from: [1700], parse: toNumber, serialize: (x: number) => String(x) },

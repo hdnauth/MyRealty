@@ -13,6 +13,10 @@ export async function sendMail(to: string, subject: string, text: string, html?:
     port: env.smtp.port,
     secure: env.smtp.port === 465,
     auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.password } : undefined,
+    // 서버리스에서 무한 대기하지 않도록
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
   });
   await transport.sendMail({ from: env.smtp.from, to, subject, text, html });
   return { dev: false };

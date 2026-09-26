@@ -4,7 +4,7 @@ import { z } from "zod";
 import { sql } from "../db";
 import type { WatchItem } from "../queries/items";
 import { itemSnapshot } from "./analysis";
-import { anthropic, budgetOk, effortConfig, fallbackParams, MODEL, recordUsage } from "./client";
+import { anthropic, aiQuotaError, effortConfig, fallbackParams, MODEL, recordUsage } from "./client";
 import { todayLine } from "./prompts";
 
 export const CompareResult = z.object({
@@ -21,7 +21,8 @@ const SYSTEM = `당신은 한국 부동산 비교 분석가입니다. 여러 관
 - 금액은 만원 입력을 억/만으로 표기합니다. 데모(합성) 데이터면 summary 에 밝힙니다.`;
 
 export async function generateCompare(userId: string, items: WatchItem[]) {
-  if (!(await budgetOk())) throw new Error("이번 달 AI 예산을 모두 사용했습니다.");
+  const quota = await aiQuotaError(userId);
+  if (quota) throw new Error(quota);
   const snaps = await Promise.all(items.map((i) => itemSnapshot(i)));
   const msg = await anthropic().beta.messages.parse({
     model: MODEL,
@@ -34,7 +35,7 @@ export async function generateCompare(userId: string, items: WatchItem[]) {
     output_config: { format: betaZodOutputFormat(CompareResult), ...effortConfig("high") },
     ...fallbackParams(),
   });
-  await recordUsage("compare", msg.model, msg.usage);
+  await recordUsage("compare", msg.model, msg.usage, userId);
   if (msg.stop_reason === "refusal" || !msg.parsed_output) throw new Error("비교 분석을 생성하지 못했습니다.");
   const ids = items.map((i) => i.id).sort();
   await sql`insert into ai_reports (user_id, scope, target_ids, title, content_md, data, model)

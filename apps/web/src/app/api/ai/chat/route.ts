@@ -1,7 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { anthropic, budgetOk, effortConfig, fallbackParams, MODEL, recordUsage } from "@/lib/ai/client";
+import { anthropic, aiQuotaError, effortConfig, fallbackParams, MODEL, recordUsage } from "@/lib/ai/client";
 import { CHAT_SYSTEM, todayLine } from "@/lib/ai/prompts";
 import { buildTools } from "@/lib/ai/tools";
 import { getUser } from "@/lib/auth/session";
@@ -17,7 +17,8 @@ export async function POST(req: NextRequest) {
   const user = await getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "ANTHROPIC_API_KEY 가 설정되지 않았습니다." }, { status: 503 });
-  if (!(await budgetOk())) return NextResponse.json({ error: "이번 달 AI 예산(AI_MONTHLY_BUDGET_USD)을 모두 사용했습니다." }, { status: 429 });
+  const quota = await aiQuotaError(user.id);
+  if (quota) return NextResponse.json({ error: quota }, { status: 429 });
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid body" }, { status: 400 });
   const { message } = parsed.data;
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
             }
           }
           const msg = await ms.finalMessage();
-          await recordUsage("chat", msg.model, msg.usage);
+          await recordUsage("chat", msg.model, msg.usage, user.id);
           for (const b of msg.content) if (b.type === "tool_use") toolLog.push({ name: b.name, input: b.input });
           if (iterText) {
             text += (text ? "\n\n" : "") + iterText;

@@ -16,7 +16,8 @@ AI 분석을 더해 **내가 관심 있는 부동산을 중심으로** 시장을
 
 | 영역 | 기능 |
 |---|---|
-| 계정 | 이메일 6자리 코드(OTP) 로그인, 허용 이메일 목록, 기기별 세션 관리 |
+| 계정 | 이메일 6자리 코드(OTP) 로그인·**누구나 가입**, **이 기기 기억하기(자동 로그인)**, 기기별 세션 관리, 회원 탈퇴 |
+| 관리 | `ADMIN_EMAILS` 관리자 전용 **관리 화면**: 가입·활성 통계, 사용자 검색·정지·관리자 지정·기기 로그아웃·삭제, 가입 방식(누구나/허용 목록/중지)·공지·1인당 AI 한도, 시스템 점검(DB·마이그레이션·키)·ETL·AI 사용량, 작업 기록 |
 | 관심 물건 | 아파트·빌라·오피스텔·단독·토지·임야·상가를 주소로 등록(PNU·좌표·단지 자동 연결), 매입·대출·임대 정보, 메모·유형별 체크리스트 |
 | 시세·거래 | 실거래 11종 수집(해제·직거래 표시), 가격 차트, 신고가·3년 최저 탐지, **추정 시세(AVM)** 구간·신뢰도·백테스트 |
 | 주변·비교 | 반경 내 거래, **유사 단지**(유사도 점수)와 상대 성과, 최대 5개 **비교** 표 + AI 비교 |
@@ -45,7 +46,7 @@ docs/              기획·데이터·아키텍처·지표/AI·로드맵·운영
 사전 준비: Node 20.9+, pnpm, Python 3.11+, [uv](https://docs.astral.sh/uv/), PostgreSQL 16 + PostGIS + pgvector
 
 ```bash
-cp .env.example .env              # 최소: AUTH_SECRET, ALLOWED_EMAILS
+cp .env.example .env              # 최소: AUTH_SECRET, ADMIN_EMAILS
 createdb myrealty                 # DATABASE_URL 과 일치하게
 
 cd services/etl
@@ -59,6 +60,7 @@ pnpm dev                          # http://localhost:3000
 ```
 
 - SMTP 를 설정하지 않으면 로그인 코드가 `pnpm dev` 콘솔에 출력됩니다.
+- `ADMIN_EMAILS` 의 이메일로 로그인하면 사이드바(모바일은 메뉴)에 **관리** 가 보입니다. 배포 점검은 `/api/health`.
 - 공공 API 키를 넣고 `uv run myrealty daily` 를 실행하면 관심 물건이 있는 시군구의 데이터를 모읍니다.
 - 데모 데이터 삭제: `uv run myrealty seed-demo --reset`
 - 테스트: `cd apps/web && pnpm lint && pnpm typecheck && pnpm test` · `cd services/etl && uv run ruff check src tests && uv run pytest`
@@ -76,5 +78,6 @@ pnpm dev                          # http://localhost:3000
 | [04. 조합 지표 · AI 분석](docs/04-indicators-and-ai.md) | 지표 산식, 생활편의 점수, 유사 물건·AVM, AI 기능 설계 |
 | [05. 로드맵 · 리스크](docs/05-roadmap.md) | 단계별 마일스톤(구현 현황), 비용, 리스크 |
 | [06. 배포 · 운영 가이드](docs/06-operations.md) | 키 발급, DB·웹 배포, 스케줄, 운영 팁, 문제 해결 |
+| [07. 공개 가입 · 관리자 기능](docs/07-admin.md) | 로그인 오류 원인·수정, 가입 정책, 기기 기억, 관리 화면 설계·테스트 |
 
 > 본 앱의 정보·분석은 참고용이며 투자 자문이 아닙니다. AVM·보유세·지표는 공공데이터 기반 추정치입니다.

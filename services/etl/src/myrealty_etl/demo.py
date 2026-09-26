@@ -280,6 +280,12 @@ def _seed_attrs(conn, today: date) -> None:
            on conflict (pnu) do update set land_uses = excluded.land_uses""",
         (forest, jsonb([{"name": "계획관리지역"}, {"name": "자연보전권역"}, {"name": "배출시설설치제한지역"}])),
     )
+    conn.execute(
+        """insert into parcels (pnu, lawd_cd, jimok, area_m2, land_use_zone, road_side, land_uses)
+           values (%s, '1171010100', '대', 141234.5, '{제3종일반주거지역}', '광대소각', %s)
+           on conflict (pnu) do update set land_use_zone = excluded.land_use_zone, land_uses = excluded.land_uses""",
+        (els, jsonb([{"name": "제3종일반주거지역"}, {"name": "토지거래허가구역"}, {"name": "지구단위계획구역"}])),
+    )
     for i, y in enumerate(range(today.year - 5, today.year + 1)):
         conn.execute(
             """insert into official_prices (target_type, target_key, year, price, area_m2) values ('apt_unit', %s, %s, %s, 84.8)
@@ -375,6 +381,9 @@ def _seed_location(conn) -> None:
     projects.upsert_infra(conn, {"name": "[데모] 도시철도 연장선 신설역", "kind": "station", "line_name": "연장선(예시)",
                                  "status": "예타", "expected_open": "2033-06-01"},
                           {"type": "Point", "coordinates": [127.0920, 37.5010]}, "demo:i2")
+    projects.upsert_infra(conn, {"name": "[데모] 경전철 신설역(개통)", "kind": "station", "line_name": "경전철(예시)",
+                                 "status": "개통", "expected_open": "2023-06-01"},
+                          {"type": "Point", "coordinates": [127.0840, 37.5140]}, "demo:i3")
     compute_locations(conn)
 
 

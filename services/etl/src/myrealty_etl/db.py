@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 from collections.abc import Iterator
 from typing import Any
 
@@ -15,7 +16,10 @@ from .config import settings
 
 
 def connect(url: str | None = None) -> psycopg.Connection:
-    return psycopg.connect(url or settings.database_url, row_factory=dict_row, autocommit=False)
+    conn = psycopg.connect(url or settings.database_url, row_factory=dict_row, autocommit=False)
+    if os.environ.get("DATABASE_PREPARE") == "false":  # 트랜잭션 풀러(pgbouncer) 호환
+        conn.prepare_threshold = None
+    return conn
 
 
 @contextlib.contextmanager

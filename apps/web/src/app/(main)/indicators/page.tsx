@@ -56,7 +56,11 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="지표" sub="실거래로 만든 자체 가격지수와 금리·물가·유동성을 조합한 지표" />
+      <PageHeader
+        title="지표"
+        sub="실거래로 만든 자체 가격지수와 금리·물가·유동성을 조합한 지표"
+        action={<Link href="/indicators/custom" className="shrink-0 text-sm text-accent">커스텀 지표 →</Link>}
+      />
       {regions.length ? (
         <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 md:mx-0 md:px-0">
           {regions.map((g) => (

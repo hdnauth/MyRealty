@@ -32,6 +32,8 @@ def parse_item(it: dict) -> dict:
     except (TypeError, ValueError):
         pub = None
     url = it.get("originallink") or it.get("link")
+    if url and not re.match(r"^https?://", url):  # javascript: 등 링크로 쓰일 수 없는 값 차단
+        url = it.get("link") if re.match(r"^https?://", it.get("link") or "") else None
     source = None
     if url:
         m = re.match(r"https?://(?:www\.)?([^/]+)", url)

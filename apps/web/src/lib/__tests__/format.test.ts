@@ -85,3 +85,14 @@ describe("보유세 개략", () => {
     expect(h.total).toBeGreaterThan(h.property);
   });
 });
+
+import { safeHref } from "../format";
+
+describe("safeHref", () => {
+  it("http(s)·내부 경로만 허용", () => {
+    expect(safeHref("https://a.com/x")).toBe("https://a.com/x");
+    expect(safeHref("/items/1")).toBe("/items/1");
+    expect(safeHref("javascript:alert(1)")).toBeNull();
+    expect(safeHref("//evil.com")).toBeNull();
+  });
+});

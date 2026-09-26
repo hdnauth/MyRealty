@@ -11,18 +11,18 @@
 | 영역 | 선택 | 이유 |
 |---|---|---|
 | 웹 프레임워크 | **Next.js (App Router) + TypeScript** | SSR/RSC, Route Handler로 BFF, Vercel 배포 용이 |
-| UI | Tailwind CSS + shadcn/ui, 모바일 우선 반응형 | 빠른 구현, 다크모드 |
-| 차트 | Apache ECharts (또는 Recharts) | 시계열·밴드·이중축·레이더 |
+| UI | Tailwind CSS 4 + 자체 컴포넌트, 모바일 우선 반응형 | 다크모드(시스템 설정) |
+| 차트 | Apache ECharts(단일 축 원칙, 검증된 3색 팔레트) | 시계열·산점도·막대 |
 | 지도 | 네이버 Maps JS v3 + MarkerClustering | 요구사항 |
-| 데이터 패칭 | TanStack Query | 캐시·재검증, 모바일 오프라인 친화 |
-| PWA | Serwist(Workbox 기반) | 홈 화면 설치, 오프라인 캐시, Web Push |
-| DB | **Supabase Postgres + PostGIS + pgvector** | 공간 쿼리(반경·폴리곤), 뉴스 임베딩 유사도, RLS |
+| 데이터 패칭 | React Server Components + Server Actions | 서버에서 DB 조회, 클라이언트 번들 최소화 |
+| PWA | 앱 매니페스트 + 자체 서비스 워커(`public/sw.js`) | 홈 화면 설치, 오프라인 캐시, Web Push |
+| DB | **Postgres + PostGIS + pgvector** (Supabase·Neon 등) | 공간 쿼리(반경·폴리곤), 뉴스 임베딩 확장 여지. 서버에서만 접근 |
 | 인증 | **자체 구현 이메일 OTP** (6자리 코드 + JWT 세션 쿠키) | DB 종류에 묶이지 않고 로컬에서 그대로 테스트 가능, 허용 목록으로 공개 가입 차단 |
-| 스토리지 | Supabase Storage | 임장 사진 |
+| 스토리지 | (향후) 오브젝트 스토리지 | 임장 사진 |
 | ETL · 분석 | **Python** (uv, httpx, pandas, statsmodels/LightGBM) | 공공 API 파싱(XML/JSON), 통계·모델링 |
-| 스케줄러 | GitHub Actions `schedule` (주), Supabase pg_cron (보조) | 무료, 로그·재실행 용이 |
+| 스케줄러 | GitHub Actions `schedule` (ETL 매일, 리포트 주/월) | 무료, 로그·재실행 용이 |
 | AI | Anthropic Claude API (TS SDK는 웹 Q&A, Python SDK는 배치) | 도구 사용, 구조화 출력, 배치, 프롬프트 캐싱 |
-| 이메일 | Resend (또는 SMTP) — Supabase Auth 커스텀 SMTP로도 사용 | OTP·다이제스트 발송 |
+| 이메일 | SMTP(Resend·Gmail 등) — 웹 nodemailer, ETL smtplib | OTP·다이제스트·리포트 발송 |
 | 배포 | Vercel (웹), Supabase (DB), GitHub Actions (ETL) | |
 | 모니터링 | Sentry(웹), ETL 실패 시 이메일 알림 | |
 
@@ -38,8 +38,8 @@
       지오코딩 ───────────▶│                       ▼
                    ┌──────▼──────────────────────────────────┐
                    │ Supabase                                 │
-                   │  Postgres + PostGIS + pgvector (RLS)     │
-                   │  Auth (email OTP) · Storage · pg_cron    │
+                   │  Postgres + PostGIS + pgvector           │
+                   │  (Supabase·Neon·자체 서버 등)            │
                    └──────▲──────────────────────▲────────────┘
                           │ SQL/RPC (읽기 위주)   │
                    ┌──────┴──────────────────────┴────────────┐
@@ -228,8 +228,8 @@ create table allowed_emails (email text primary key);
 create table push_subscriptions (user_id uuid, endpoint text primary key, keys jsonb);
 ```
 
-- **RLS**: `watch_items`, `notifications`, `ai_reports`, `notes`, `push_subscriptions`는 `user_id = auth.uid()` 정책. 공공 데이터 테이블은 인증 사용자 읽기 전용, 쓰기는 서비스 롤(ETL)만.
-- 대출·임대 등 민감 정보는 RLS로 보호하고 백업 시 암호화.
+- **접근 제어(구현)**: DB 는 서버(Next.js 서버 컴포넌트·Route Handler·Server Action, ETL)에서만 접근한다. 사용자 데이터(`watch_items`, `notifications`, `ai_reports`, `notes`, `push_subscriptions`, `ai_conversations`)는 모든 쿼리에 `user_id` 조건을 걸고, AI 도구도 로그인 사용자 범위로만 조회한다.
+- 대출·임대 등 민감 정보는 허용 목록 로그인으로 보호하고 백업 시 암호화한다.
 
 ## 6. ETL 파이프라인
 
@@ -250,38 +250,34 @@ create table push_subscriptions (user_id uuid, endpoint text primary key, keys j
 
 - 모든 잡은 **멱등(idempotent)** 하게: 원천 해시 기반 upsert, 재실행 안전.
 - 호출 한도 관리: API별 일일 카운터 테이블(`api_quota`)로 잔여량 추적, 초과 시 다음 날로 이월.
-- 물건 등록 직후에는 웹에서 "초기 수집" 잡을 트리거(GitHub `workflow_dispatch` 또는 Supabase Edge Function)해 해당 시군구 데이터를 먼저 채움.
+- 물건 등록 시 해당 시군구가 `collect_targets` 에 추가되어 다음 daily 실행부터 수집된다. 급하면 GitHub Actions 의 `workflow_dispatch`(only: rtms backfill geocode link …)로 즉시 실행.
 
-## 7. 디렉터리 구조 (모노레포)
+## 7. 디렉터리 구조 (구현)
 
 ```
 MyRealty/
-├─ apps/
-│  └─ web/                         # Next.js
-│     ├─ app/
-│     │  ├─ (auth)/login/
-│     │  ├─ (main)/home/  map/  items/[id]/  items/new/  compare/
-│     │  │           indicators/  ai/  calendar/  settings/
-│     │  └─ api/ ai/chat/  push/  jobs/trigger/
-│     ├─ components/  map/  charts/  cards/  ui/
-│     ├─ lib/  supabase/  naver-map/  ai/tools/  format/
-│     └─ public/  manifest.webmanifest  icons/
-├─ services/
-│  └─ etl/                         # Python
-│     ├─ collectors/  molit_rtms.py  building_hub.py  kapt.py  vworld.py
-│     │              reb_rone.py  ecos.py  kosis.py  applyhome.py  onbid.py  naver_news.py
-│     ├─ transforms/  normalize.py  geocode.py  match_complex.py
-│     ├─ analytics/   indicators.py  avm.py  similarity.py  temperature.py
-│     ├─ ai/          news_classifier.py  weekly_report.py
-│     ├─ alerts/      rules.py  notify.py
-│     └─ jobs/        (잡 엔트리포인트)
-├─ packages/
-│  └─ shared/                      # 지표 정의(JSON), 공용 타입, 코드표
-├─ supabase/
-│  ├─ migrations/                  # 위 스키마 + RLS + RPC 함수
-│  └─ seed/                        # 법정동코드, 행정경계
-├─ .github/workflows/  etl-daily.yml  etl-news.yml  weekly-report.yml  ci.yml
-└─ docs/
+├─ apps/web/                        # Next.js 16
+│  └─ src/
+│     ├─ proxy.ts                   # 비로그인 → /login (Next 16 middleware 대체)
+│     ├─ app/(auth)/login/          # 이메일 OTP
+│     ├─ app/(main)/                # 홈·지도·내 물건(탭: 개요/시세/주변/입지/소식/분석/메모)·지표(+커스텀)
+│     │                             # ·AI(질문/리포트)·비교·포트폴리오·캘린더·개발사업·알림·설정
+│     ├─ app/api/                   # address, complexes, map/*, push, ai/chat(SSE), cron/reports
+│     ├─ components/                # ui, shell, charts(ECharts), map(Naver), items, feed, indicators, ai
+│     └─ lib/                       # db, auth, queries/*, ai/*(client·tools·prompts·analysis·compare·reports),
+│                                   # finance, tax, expr(커스텀 지표 파서), format, property
+├─ services/etl/src/myrealty_etl/
+│  ├─ collectors/                   # rtms, building, vworld, naver_news, applyhome, macro, pois, projects
+│  ├─ transforms/                   # complexes(단지 매칭·물건 연결), geocode
+│  ├─ analytics/                    # indicators(자체 지수·온도계), location(생활편의), avm
+│  ├─ ai/                           # client(사용량·예산), news_classifier(Batch/동기)
+│  ├─ alerts/                       # rules(알림 규칙), notify(웹푸시·다이제스트)
+│  ├─ jobs/                         # rtms_job, attrs_job, news_job, events_job, pois_job
+│  ├─ series_catalog.py             # ECOS·KOSIS·R-ONE 코드
+│  ├─ demo.py                       # 합성 데모 데이터
+│  └─ cli.py                        # myrealty <명령>
+├─ db/migrations/                   # 0001 초기, 0002 AI 배치·인덱스, 0003 POI·정비사업·인프라·입지 점수
+└─ .github/workflows/               # ci.yml, etl-daily.yml, reports.yml
 ```
 
 ## 8. 반응형 · PWA 세부

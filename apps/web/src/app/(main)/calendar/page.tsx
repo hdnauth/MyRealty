@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/auth/session";
+import { safeHref } from "@/lib/format";
 import { calendarEntries, type CalendarEntry } from "@/lib/queries/feed";
 
 export const metadata: Metadata = { title: "캘린더" };
@@ -80,7 +81,7 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
                 <span className={clsx("tabular w-11 shrink-0", e.date === today ? "font-bold text-accent" : "text-muted")}>{e.date.slice(5).replace("-", ".")}</span>
                 <span className="min-w-0">
                   <Badge tone={KIND[e.kind]?.tone ?? "neutral"}>{KIND[e.kind]?.label ?? e.kind}</Badge>{" "}
-                  {e.href ? <a href={e.href} className="font-medium">{e.title}</a> : <span className="font-medium">{e.title}</span>}
+                  {safeHref(e.href) ? <a href={safeHref(e.href)!} className="font-medium">{e.title}</a> : <span className="font-medium">{e.title}</span>}
                   {e.sub ? <span className="block text-xs text-muted">{e.sub}</span> : null}
                 </span>
               </li>

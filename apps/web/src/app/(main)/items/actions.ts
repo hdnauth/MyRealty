@@ -174,3 +174,31 @@ export async function analyzeItemAction(id: string): Promise<{ error?: string }>
   refresh();
   return {};
 }
+
+export async function addNoteAction(itemId: string, form: FormData) {
+  const user = await requireUser();
+  const body = String(form.get("body") ?? "").trim().slice(0, 5000);
+  if (!body) return;
+  const own = await sql`select 1 from watch_items where id = ${itemId} and user_id = ${user.id}`;
+  if (!own.length) return;
+  await sql`insert into notes (user_id, watch_item_id, body) values (${user.id}, ${itemId}, ${body})`;
+  refresh();
+}
+
+export async function deleteNoteAction(noteId: string) {
+  const user = await requireUser();
+  await sql`delete from notes where id = ${noteId} and user_id = ${user.id}`;
+  refresh();
+}
+
+export async function toggleChecklistAction(itemId: string, label: string, done: boolean) {
+  const user = await requireUser();
+  const own = await sql`select 1 from watch_items where id = ${itemId} and user_id = ${user.id}`;
+  if (!own.length) return;
+  const [row] = await sql<{ id: string; checklist: Record<string, boolean> }[]>`
+    select id, checklist from notes where watch_item_id = ${itemId} and user_id = ${user.id} and checklist is not null limit 1`;
+  const next = { ...(row?.checklist ?? {}), [label]: done };
+  if (row) await sql`update notes set checklist = ${sql.json(next)} where id = ${row.id}`;
+  else await sql`insert into notes (user_id, watch_item_id, body, checklist) values (${user.id}, ${itemId}, '', ${sql.json(next)})`;
+  refresh();
+}

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Badge, Card, CardHeader, EmptyState, Stat } from "@/components/ui";
 import { formatDate, formatPct } from "@/lib/format";
 import type { WatchItem } from "@/lib/queries/items";
-import { itemLocation, type LocDetail } from "@/lib/queries/location";
+import { itemLocation, type LocDetail, openingEffects } from "@/lib/queries/location";
 
 const CAT_LABEL: Record<string, string> = {
   subway: "지하철역", bus: "버스정류장", school: "학교", academy: "학원", hospital: "종합병원", clinic: "의원",
@@ -21,7 +21,7 @@ function detailText(d: LocDetail) {
 }
 
 export async function LocationTab({ item }: { item: WatchItem }) {
-  const loc = await itemLocation(item.id, item.sgg_cd);
+  const [loc, effects] = await Promise.all([itemLocation(item.id, item.sgg_cd), openingEffects(item)]);
   if (!loc) {
     return (
       <Card>
@@ -125,6 +125,23 @@ export async function LocationTab({ item }: { item: WatchItem }) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          ) : null}
+          {effects.length ? (
+            <div className="px-4 pb-4">
+              <div className="mb-1 text-sm font-semibold">개통 전후 1년 가격 변화</div>
+              <ul className="space-y-1 text-sm">
+                {effects.map((e) => (
+                  <li key={e.name} className="flex flex-wrap justify-between gap-2">
+                    <span>{e.name} <span className="text-xs text-muted">개통 {e.opened.slice(0, 7)} · {(e.dist_m / 1000).toFixed(1)}km</span></span>
+                    <span className="tabular text-xs">
+                      단지 {formatPct(e.complex)} · 시군구 {formatPct(e.region)}
+                      {e.excess !== null ? <b className={e.excess >= 0 ? "ml-1 text-up" : "ml-1 text-down"}>초과 {formatPct(e.excess)}p</b> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-muted">단순 전후 비교로 다른 요인(금리·공급)이 섞여 있을 수 있습니다.</p>
             </div>
           ) : null}
           {dev.infra.length ? (

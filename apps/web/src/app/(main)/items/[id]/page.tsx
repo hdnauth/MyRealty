@@ -11,6 +11,7 @@ import { NearbyTab } from "./tabs/nearby";
 import { AnalysisTab } from "./tabs/analysis";
 import { LocationTab } from "./tabs/location";
 import { NewsTab } from "./tabs/news";
+import { NotesTab } from "./tabs/notes";
 import { OverviewTab } from "./tabs/overview";
 import { PriceTab } from "./tabs/price";
 
@@ -27,6 +28,7 @@ const TABS = [
   { key: "location", label: "입지" },
   { key: "news", label: "소식" },
   { key: "analysis", label: "분석" },
+  { key: "notes", label: "메모" },
 ] as const;
 
 export default async function ItemPage(props: PageProps<"/items/[id]">) {
@@ -68,6 +70,7 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
       {tab === "location" ? <LocationTab item={item} /> : null}
       {tab === "news" ? <NewsTab item={item} /> : null}
       {tab === "analysis" ? <AnalysisTab item={item} /> : null}
+      {tab === "notes" ? <NotesTab item={item} /> : null}
       {!item.complex_id && PROPERTY_TYPES[item.property_type].hasComplex ? (
         <Card className="mt-4 p-4 text-sm text-muted">
           단지가 아직 연결되지 않았습니다. 실거래 수집(ETL) 후 자동으로 연결됩니다.

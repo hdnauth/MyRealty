@@ -11,6 +11,7 @@ import {
   Home,
   LineChart,
   Map as MapIcon,
+  Menu,
   Settings,
   Wallet,
 } from "lucide-react";
@@ -136,8 +137,8 @@ export function MobileTopBar({ unread }: { unread: number }) {
             </span>
           ) : null}
         </Link>
-        <Link href="/settings" aria-label="설정" className="rounded-lg p-2 text-muted hover:bg-surface-2">
-          <Settings size={20} />
+        <Link href="/settings" aria-label="메뉴·설정" className="rounded-lg p-2 text-muted hover:bg-surface-2">
+          <Menu size={20} />
         </Link>
       </div>
     </header>

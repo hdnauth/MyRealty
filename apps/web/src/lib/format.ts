@@ -70,3 +70,10 @@ export function changeTone(v: number | null | undefined): "up" | "down" | "flat"
   if (!v || Math.abs(v) < 1e-9) return "flat";
   return v > 0 ? "up" : "down";
 }
+
+/** 외부 데이터에서 온 링크는 http(s) 또는 앱 내부 경로만 허용 */
+export function safeHref(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith("/") && !url.startsWith("//")) return url;
+  return /^https?:\/\//i.test(url) ? url : null;
+}

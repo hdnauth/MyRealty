@@ -1,7 +1,7 @@
 import { ExternalLink } from "lucide-react";
 import { NotificationRow } from "@/components/feed/notification-row";
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
-import { formatDate } from "@/lib/format";
+import { formatDate, safeHref } from "@/lib/format";
 import { eventsNear, itemArticles, listNotifications } from "@/lib/queries/feed";
 import type { WatchItem } from "@/lib/queries/items";
 
@@ -21,7 +21,7 @@ export async function NewsTab({ item }: { item: WatchItem }) {
           <ul className="divide-y divide-border">
             {articles.map((a) => (
               <li key={a.link_id}>
-                <a href={a.url} target="_blank" rel="noreferrer" className="block px-4 py-3 hover:bg-surface-2">
+                <a href={safeHref(a.url) ?? undefined} target="_blank" rel="noreferrer" className="block px-4 py-3 hover:bg-surface-2">
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
                     {a.category ? <Badge tone="accent">{a.category}</Badge> : <Badge>분류 대기</Badge>}
                     {a.impact ? (

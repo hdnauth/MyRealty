@@ -92,3 +92,9 @@ def test_classify_batch_roundtrip(conn, monkeypatch):
     assert s2["polled"]["applied"] == 1
     assert conn.execute("select status from article_links").fetchone()["status"] == "classified"
     assert conn.execute("select batch from ai_usage").fetchone()["batch"] is True
+
+
+def test_rejects_non_http_links():
+    it = naver_news.parse_item({"title": "t", "originallink": "javascript:alert(1)", "link": "https://n.news.naver.com/a"})
+    assert it["url"] == "https://n.news.naver.com/a"
+    assert naver_news.parse_item({"title": "t", "originallink": "javascript:x"})["url"] is None

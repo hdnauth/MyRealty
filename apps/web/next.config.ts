@@ -8,6 +8,7 @@ loadEnvConfig(path.resolve(__dirname, "../.."));
 const nextConfig: NextConfig = {
   serverExternalPackages: ["postgres", "nodemailer", "web-push"],
   poweredByHeader: false,
+  devIndicators: false,
 };
 
 export default nextConfig;

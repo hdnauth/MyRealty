@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Button, Card, CardHeader, Input, PageHeader } from "@/components/ui";
 import { readToken, requireUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
@@ -17,6 +18,10 @@ export default async function SettingsPage() {
     select id, user_agent, created_at::text from sessions
     where user_id = ${user.id} and revoked_at is null and expires_at > now() order by created_at desc`;
   const current = await readToken((await cookies()).get(SESSION_COOKIE)?.value);
+  const jobs = await sql<{ job: string; status: string; started_at: string; finished_at: string | null; detail: Record<string, unknown> | null }[]>`
+    select distinct on (job) job, status, started_at::text, finished_at::text, detail from job_runs order by job, started_at desc`;
+  const [ai] = await sql<{ cost: number; calls: number }[]>`
+    select coalesce(sum(cost_usd), 0)::float8 as cost, count(*)::int as calls from ai_usage where created_at >= date_trunc('month', now())`;
   const keys = [
     ["공공데이터포털(실거래·건축물대장·청약)", "DATA_GO_KR_KEY", "ETL"],
     ["도로명주소 검색", "JUSO_KEY", Boolean(env.jusoKey)],
@@ -28,7 +33,23 @@ export default async function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <PageHeader title="설정" />
+      <PageHeader title="메뉴 · 설정" />
+      <Card className="lg:hidden">
+        <div className="grid grid-cols-3 gap-1 p-2 text-center text-sm">
+          {[
+            ["/portfolio", "포트폴리오"],
+            ["/compare", "비교"],
+            ["/calendar", "캘린더"],
+            ["/projects", "개발사업"],
+            ["/indicators/custom", "커스텀 지표"],
+            ["/notifications", "알림"],
+          ].map(([href, label]) => (
+            <Link key={href} href={href} className="rounded-lg px-2 py-3 hover:bg-surface-2">
+              {label}
+            </Link>
+          ))}
+        </div>
+      </Card>
       <Card>
         <CardHeader title="계정" sub={user.email} action={<form action={logoutAction}><Button variant="secondary" type="submit">로그아웃</Button></form>} />
         <div className="h-2" />
@@ -98,6 +119,25 @@ export default async function SettingsPage() {
             </li>
           ))}
         </ul>
+      </Card>
+
+      <Card>
+        <CardHeader title="데이터 수집(ETL) 최근 실행" sub="GitHub Actions 또는 uv run myrealty daily" />
+        <ul className="divide-y divide-border px-4 pb-2 text-sm">
+          {jobs.map((j) => (
+            <li key={j.job} className="flex items-center justify-between gap-2 py-2">
+              <span className="min-w-0">
+                <span className="font-mono text-xs">{j.job}</span>
+                <span className="block truncate text-xs text-muted">{j.detail ? JSON.stringify(j.detail).slice(0, 90) : ""}</span>
+              </span>
+              <span className={`shrink-0 text-xs ${j.status === "ok" ? "text-ok" : j.status === "error" ? "text-up" : "text-muted"}`}>
+                {j.status} · {formatDate(j.started_at)}
+              </span>
+            </li>
+          ))}
+          {!jobs.length ? <li className="py-2 text-muted">실행 기록이 없습니다.</li> : null}
+        </ul>
+        <p className="px-4 pb-4 text-xs text-muted">이번 달 AI 사용: {ai.calls}회 · 약 ${ai.cost.toFixed(2)} / 예산 ${process.env.AI_MONTHLY_BUDGET_USD ?? 30}</p>
       </Card>
 
       <Card>

@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { AlertTriangle, Bell, CalendarDays, Megaphone, Newspaper, Receipt, TrendingDown, TrendingUp, XCircle } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui";
-import { timeAgo } from "@/lib/format";
+import { safeHref, timeAgo } from "@/lib/format";
 import type { Notification } from "@/lib/queries/feed";
 
 const KIND: Record<string, { label: string; icon: typeof Bell; tone: "up" | "down" | "accent" | "warn" | "neutral" }> = {
@@ -22,7 +22,8 @@ const KIND: Record<string, { label: string; icon: typeof Bell; tone: "up" | "dow
 export function NotificationRow({ n, showItem = true }: { n: Notification; showItem?: boolean }) {
   const k = KIND[n.kind] ?? { label: n.kind, icon: Bell, tone: "neutral" as const };
   const Icon = k.icon;
-  const external = n.url?.startsWith("http");
+  const href = safeHref(n.url);
+  const external = href?.startsWith("http");
   const content = (
     <div className={clsx("flex gap-3 px-4 py-3", !n.read_at && "bg-accent-soft/30")}>
       <div
@@ -49,13 +50,13 @@ export function NotificationRow({ n, showItem = true }: { n: Notification; showI
       </div>
     </div>
   );
-  if (!n.url) return content;
+  if (!href) return content;
   return external ? (
-    <a href={n.url} target="_blank" rel="noreferrer" className="block hover:bg-surface-2">
+    <a href={href} target="_blank" rel="noreferrer" className="block hover:bg-surface-2">
       {content}
     </a>
   ) : (
-    <Link href={n.url} className="block hover:bg-surface-2">
+    <Link href={href} className="block hover:bg-surface-2">
       {content}
     </Link>
   );

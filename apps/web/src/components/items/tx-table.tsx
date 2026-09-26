@@ -20,7 +20,7 @@ export function TxTable({
   if (!rows.length) return <p className="px-4 pb-4 text-sm text-muted">거래가 없습니다.</p>;
   return (
     <div className="overflow-x-auto pb-2">
-      <table className="w-full min-w-[520px] text-sm">
+      <table className="w-full min-w-[520px] whitespace-nowrap text-sm">
         <thead>
           <tr className="border-b border-border text-left text-xs text-muted">
             <th className="px-4 py-2 font-medium">계약일</th>

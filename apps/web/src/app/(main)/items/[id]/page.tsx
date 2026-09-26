@@ -8,6 +8,7 @@ import { formatArea } from "@/lib/format";
 import { GROUP_TAGS, PROPERTY_TYPES } from "@/lib/property";
 import { getItem } from "@/lib/queries/items";
 import { NearbyTab } from "./tabs/nearby";
+import { NewsTab } from "./tabs/news";
 import { OverviewTab } from "./tabs/overview";
 import { PriceTab } from "./tabs/price";
 
@@ -21,6 +22,7 @@ const TABS = [
   { key: "overview", label: "개요" },
   { key: "price", label: "시세" },
   { key: "nearby", label: "주변" },
+  { key: "news", label: "소식" },
 ] as const;
 
 export default async function ItemPage(props: PageProps<"/items/[id]">) {
@@ -59,6 +61,7 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
       {tab === "overview" ? <OverviewTab item={item} /> : null}
       {tab === "price" ? <PriceTab item={item} all={sp.all === "1"} /> : null}
       {tab === "nearby" ? <NearbyTab item={item} /> : null}
+      {tab === "news" ? <NewsTab item={item} /> : null}
       {!item.complex_id && PROPERTY_TYPES[item.property_type].hasComplex ? (
         <Card className="mt-4 p-4 text-sm text-muted">
           단지가 아직 연결되지 않았습니다. 실거래 수집(ETL) 후 자동으로 연결됩니다.

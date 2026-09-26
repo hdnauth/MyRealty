@@ -46,14 +46,13 @@ export function ItemCard({
         <TypeIcon type={item.property_type} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate font-semibold">{item.label}</span>
-          <Badge>{GROUP_TAGS[item.group_tag as keyof typeof GROUP_TAGS] ?? item.group_tag}</Badge>
-          {item.unread > 0 ? <Badge tone="up">새 소식 {item.unread}</Badge> : null}
+          {item.unread > 0 ? <Badge tone="up">{item.unread}</Badge> : null}
         </div>
         <div className="mt-0.5 truncate text-xs text-muted">
-          {PROPERTY_TYPES[item.property_type]?.label} · {formatArea(item.area_m2 ?? item.land_area_m2)} ·{" "}
-          {item.road_address ?? item.jibun_address}
+          {GROUP_TAGS[item.group_tag as keyof typeof GROUP_TAGS] ?? item.group_tag} · {PROPERTY_TYPES[item.property_type]?.label} ·{" "}
+          {formatArea(item.area_m2 ?? item.land_area_m2)} · {item.road_address ?? item.jibun_address}
         </div>
       </div>
       <div className="shrink-0 text-right">

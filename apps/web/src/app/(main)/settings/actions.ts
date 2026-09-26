@@ -32,3 +32,21 @@ export async function revokeSessionAction(form: FormData) {
   await sql`update sessions set revoked_at = now() where id = ${String(form.get("id"))} and user_id = ${user.id}`;
   refresh();
 }
+
+export async function sendTestPushAction(): Promise<{ message: string }> {
+  const user = await requireUser();
+  const { sendPushToUser } = await import("@/lib/push");
+  const r = await sendPushToUser(user.id, { title: "MyRealty 테스트 알림", body: "푸시 알림이 정상적으로 동작합니다.", url: "/notifications" });
+  return { message: r.sent ? `${r.sent}개 기기로 발송했습니다.` : `발송 실패${"reason" in r ? `: ${r.reason}` : ""}` };
+}
+
+export async function updateNotificationSettingsAction(form: FormData) {
+  const user = await requireUser();
+  const settings = {
+    ...user.settings,
+    emailDigest: form.get("emailDigest") === "on",
+    pushEnabled: form.get("pushEnabled") === "on",
+  };
+  await sql`update users set settings = ${sql.json(settings)} where id = ${user.id}`;
+  refresh();
+}

@@ -155,6 +155,8 @@ export type ItemSummary = {
   jeonseMedian6m: number | null;
   jeonseRatio: number | null;
   change1y: number | null;
+  unitMedian12m: number | null; // ㎡당 중위(만원) — 단지가 없는 유형의 가치 산정용
+  count12m: number;
 };
 
 export function median(values: number[]): number | null {
@@ -196,5 +198,34 @@ export function summarize(points: TxPoint[], now = new Date()): ItemSummary {
     jeonseMedian6m,
     jeonseRatio: saleMedian6m && jeonseMedian6m ? jeonseMedian6m / saleMedian6m : null,
     change1y: recent && prior ? recent / prior - 1 : null,
+    unitMedian12m: median(sales.filter((p) => p.deal_date >= y1 && p.area_m2).map((p) => p.price / Number(p.area_m2))),
+    count12m: sales.filter((p) => p.deal_date >= y1).length,
   };
+}
+
+export type ItemAttrs = {
+  building: { titles: Record<string, unknown>[]; recap: Record<string, unknown> | null; fetched_at: string } | null;
+  parcel: {
+    jimok: string | null;
+    area_m2: number | null;
+    land_use_zone: string[];
+    road_side: string | null;
+    terrain_shape: string | null;
+    terrain_height: string | null;
+    land_uses: { name: string; conflict?: string }[] | null;
+  } | null;
+  prices: { target_type: string; target_key: string; year: number; price: number; area_m2: number | null }[];
+};
+
+export async function itemAttrs(item: WatchItem): Promise<ItemAttrs> {
+  if (!item.pnu) return { building: null, parcel: null, prices: [] };
+  const [b] = await sql<NonNullable<ItemAttrs["building"]>[]>`
+    select titles, recap, fetched_at::text from building_registers where pnu = ${item.pnu}`;
+  const [p] = await sql<NonNullable<ItemAttrs["parcel"]>[]>`
+    select jimok, area_m2, land_use_zone, road_side, terrain_shape, terrain_height, land_uses from parcels where pnu = ${item.pnu}`;
+  const prices = await sql<ItemAttrs["prices"]>`
+    select target_type, target_key, year, price, area_m2 from official_prices
+    where target_key = ${item.pnu} or target_key like ${item.pnu + "|%"}
+    order by target_type, year`;
+  return { building: b ?? null, parcel: p ?? null, prices };
 }

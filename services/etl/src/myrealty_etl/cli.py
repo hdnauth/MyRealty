@@ -66,12 +66,43 @@ def _link(ns):
     return _with_job("link", link_watch_items)
 
 
+def _simple(name: str, target: str, help_: str, args=None):
+    """단일 단계 CLI 명령 등록."""
+
+    def run(ns):
+        import importlib
+
+        mod, fn = target.split(":")
+        func = getattr(importlib.import_module(mod), fn)
+        kwargs = {k: v for k, v in vars(ns).items() if k not in ("cmd",) and v is not None}
+        return _with_job(name, lambda c: func(c, **kwargs))
+
+    COMMANDS[name] = (help_, run, args)
+
+
+_simple("attrs", "myrealty_etl.jobs.attrs_job:refresh_attrs", "건축물대장·토지·공시가격 수집")
+_simple("events", "myrealty_etl.jobs.events_job:collect_events", "청약·연례 일정 이벤트 수집")
+_simple("news", "myrealty_etl.jobs.news_job:collect_news", "관심 물건 뉴스 수집")
+_simple("classify", "myrealty_etl.ai.news_classifier:classify_pending", "뉴스 AI 분류(배치/동기)",
+        lambda p: p.add_argument("--mode", choices=["auto", "sync", "batch"]))
+_simple("alerts", "myrealty_etl.alerts.rules:detect_alerts", "알림 규칙 평가")
+_simple("push", "myrealty_etl.alerts.notify:send_push", "중요 알림 웹푸시 발송")
+_simple("digest", "myrealty_etl.alerts.notify:send_digest", "이메일 다이제스트 발송")
+
+
 # 매일 파이프라인: 각 단계는 키가 없으면 건너뛰고, 실패해도 다음 단계를 계속한다.
 DAILY_STEPS: list[tuple[str, str]] = [
     ("rtms", "myrealty_etl.jobs.rtms_job:collect_recent"),
     ("backfill", "myrealty_etl.jobs.rtms_job:backfill"),
     ("geocode", "myrealty_etl.transforms.geocode:geocode_pending"),
     ("link", "myrealty_etl.transforms.complexes:link_watch_items"),
+    ("attrs", "myrealty_etl.jobs.attrs_job:refresh_attrs"),
+    ("events", "myrealty_etl.jobs.events_job:collect_events"),
+    ("news", "myrealty_etl.jobs.news_job:collect_news"),
+    ("classify", "myrealty_etl.ai.news_classifier:classify_pending"),
+    ("alerts", "myrealty_etl.alerts.rules:detect_alerts"),
+    ("push", "myrealty_etl.alerts.notify:send_push"),
+    ("digest", "myrealty_etl.alerts.notify:send_digest"),
 ]
 
 

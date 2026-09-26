@@ -5,7 +5,8 @@ import { sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { formatDate } from "@/lib/format";
 import { cookies } from "next/headers";
-import { addAllowedEmailAction, logoutAction, removeAllowedEmailAction, revokeSessionAction } from "./actions";
+import { addAllowedEmailAction, logoutAction, removeAllowedEmailAction, revokeSessionAction, updateNotificationSettingsAction } from "./actions";
+import { PushManager } from "./push-manager";
 
 export const metadata: Metadata = { title: "설정" };
 
@@ -31,6 +32,22 @@ export default async function SettingsPage() {
       <Card>
         <CardHeader title="계정" sub={user.email} action={<form action={logoutAction}><Button variant="secondary" type="submit">로그아웃</Button></form>} />
         <div className="h-2" />
+      </Card>
+
+      <Card>
+        <CardHeader title="알림" sub="중요 알림(신고가·강한 호재/악재 뉴스·만기 D-7)은 푸시로 즉시, 나머지는 매일 아침 이메일로 모아서 보냅니다." />
+        <form action={updateNotificationSettingsAction} className="space-y-2 px-4 text-sm">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" name="emailDigest" defaultChecked={user.settings.emailDigest !== false} /> 이메일 다이제스트 받기
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" name="pushEnabled" defaultChecked={user.settings.pushEnabled !== false} /> 중요 알림 푸시 받기
+          </label>
+          <Button type="submit" variant="secondary" className="h-8">저장</Button>
+        </form>
+        <div className="p-4">
+          <PushManager vapidKey={env.vapidPublicKey ?? null} />
+        </div>
       </Card>
 
       <Card>

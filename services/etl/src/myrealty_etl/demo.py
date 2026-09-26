@@ -191,5 +191,96 @@ def seed_demo(conn, email: str, *, today: date | None = None, years: int = 8) ->
              f"{lawd}{'2' if ptype == 'forest' else '1'}{12 if ptype == 'forest' else 19:04d}0000", cid, area, land_area,
              floor, pt[0], pt[1], pp, pd, jsonb(loans), jsonb(lease) if lease else None, keywords, radius),
         )
+    # 신고 지연을 흉내: 수집 시각 = 계약일 + 25일
+    conn.execute(
+        "update transactions set collected_at = least(now(), deal_date + interval '25 days') where src_hash like 'demo-%%'"
+    )
+    _seed_attrs(conn, today)
+    n_news = _seed_news_events(conn, uid, today)
     conn.commit()
-    return {"user_id": str(uid), "transactions": n_tx, "complexes": len(complex_ids), "items": len(items)}
+    return {"user_id": str(uid), "transactions": n_tx, "complexes": len(complex_ids), "items": len(items), **n_news}
+
+
+DEMO_NEWS = [
+    # (item label 접미, 제목, 요약, 관련도, 카테고리, 영향, AI 요약, 며칠 전)
+    ("잠실엘스", "잠실 일대 토지거래허가구역 1년 연장…실거주 의무 유지", "서울시는 잠실·삼성·대치·청담동 토지거래허가구역 지정을 1년 연장했다.",
+     0.92, "규제", -1, "잠실동 토지거래허가 연장으로 갭투자 제한이 이어져 매수 수요가 제약됨", 2),
+    ("잠실엘스", "송파구 대단지 전세가 상승세…잠실엘스 84㎡ 11억 돌파", "신규 입주 물량 감소로 송파구 전세가격이 오름세를 보이고 있다.",
+     0.88, "시장동향", 1, "잠실엘스 전세가 상승으로 전세가율이 오르며 매매가 하방을 지지", 4),
+    ("잠실엘스", "잠실동 재건축 단지 정비계획 변경안 통과", "잠실동 인근 노후 단지의 정비계획 변경안이 도시계획위원회를 통과했다.",
+     0.74, "재건축", 1, "인근 재건축 진척은 잠실동 전반의 가격 기대를 높이는 요인", 6),
+    ("파크리오", "신천동 일대 대형 복합개발 착공 예정", "신천동 일대 업무·상업 복합개발이 내년 착공을 목표로 인허가 절차를 밟고 있다.",
+     0.81, "개발", 1, "파크리오 인근 복합개발로 생활 인프라 개선 기대(확정 전)", 3),
+    ("양평", "양평군 계획관리지역 개발행위 기준 강화 검토", "양평군이 난개발 방지를 위해 계획관리지역 개발행위허가 기준 강화를 검토 중이다.",
+     0.77, "규제", -1, "계획관리지역 임야의 개발 가능성이 낮아질 수 있어 토지 가치에 부담", 5),
+    ("잠실엘스", "주택담보대출 스트레스 DSR 3단계 시행", "금융당국이 스트레스 DSR 3단계를 시행하며 대출 한도가 줄어든다.",
+     0.62, "대출", -1, "대출 한도 축소로 고가 아파트 매수 여력이 감소", 8),
+]
+
+
+def _seed_news_events(conn, uid, today: date) -> dict:
+    items = {r["label"]: r["id"] for r in conn.execute("select id, label from watch_items where user_id = %s", (uid,))}
+    n = 0
+    for i, (suffix, title, desc, rel, cat, impact, summary, days) in enumerate(DEMO_NEWS):
+        item_id = next((v for k, v in items.items() if suffix in k), None)
+        if not item_id:
+            continue
+        aid = conn.execute(
+            """insert into articles (url, title, description, source, published_at, title_norm)
+               values (%s, %s, %s, 'demo-news.local', now() - %s::interval, %s)
+               on conflict (url) do update set title = excluded.title returning id""",
+            (f"https://demo.myrealty.local/news/{i}", f"[데모] {title}", desc, f"{days} days", f"demo{i}"),
+        ).fetchone()["id"]
+        conn.execute(
+            """insert into article_links (article_id, watch_item_id, query, status, relevance, category, impact, ai_summary, classified_at)
+               values (%s, %s, 'demo', 'classified', %s, %s, %s, %s, now() - %s::interval) on conflict do nothing""",
+            (aid, item_id, rel, cat, impact, summary, f"{days} days"),
+        )
+        n += 1
+    conn.execute(
+        """insert into events (source_key, kind, title, starts_on, ends_on, address, geom, payload, source_url)
+           values ('demo:sub1', 'subscription', '[데모] 잠실 르엘', %s, %s, '서울특별시 송파구 잠실동 일대',
+             ST_SetSRID(ST_MakePoint(127.0930, 37.5105), 4326), '{"households": 1865, "house_type": "APT"}',
+             'https://www.applyhome.co.kr'),
+                  ('demo:movein1', 'move_in', '[데모] 잠실 르엘 입주 예정', %s, null, '서울특별시 송파구 잠실동 일대',
+             ST_SetSRID(ST_MakePoint(127.0930, 37.5105), 4326), '{"households": 1865}', null)
+           on conflict (source_key) do nothing""",
+        (today + timedelta(days=5), today + timedelta(days=7), date(today.year + 3, 3, 1)),
+    )
+    from .alerts.rules import detect_alerts
+    from .jobs.events_job import annual_events
+
+    annual_events(conn, today)
+    conn.execute("delete from notifications where user_id = %s", (uid,))
+    from datetime import datetime
+
+    alerts = detect_alerts(conn, datetime.now().astimezone() - timedelta(days=30))
+    return {"news": n, "alerts": {k: v for k, v in alerts.items() if k != "since"}}
+
+
+def _seed_attrs(conn, today: date) -> None:
+    els = "1171010100100190000"
+    forest = "4183031021200120000"
+    conn.execute(
+        """insert into building_registers (pnu, titles, recap) values (%s, %s, %s)
+           on conflict (pnu) do update set titles = excluded.titles, recap = excluded.recap, fetched_at = now()""",
+        (els, jsonb([{"bld_nm": "잠실엘스", "dong_nm": "101동", "main_purpose": "공동주택", "structure": "철근콘크리트구조",
+                      "approved_at": "2008-09-30", "floors_above": 33, "floors_below": 3, "households": 132}]),
+         jsonb({"bld_nm": "잠실엘스", "households": 5678, "vl_rat": 274.8, "bc_rat": 13.9, "parking": 9510})),
+    )
+    conn.execute(
+        """insert into parcels (pnu, lawd_cd, jimok, area_m2, land_use_zone, road_side, terrain_shape, terrain_height, land_uses)
+           values (%s, '4183031021', '임야', 1523, '{계획관리지역}', '맹지', '부정형', '완경사', %s)
+           on conflict (pnu) do update set land_uses = excluded.land_uses""",
+        (forest, jsonb([{"name": "계획관리지역"}, {"name": "자연보전권역"}, {"name": "배출시설설치제한지역"}])),
+    )
+    for i, y in enumerate(range(today.year - 5, today.year + 1)):
+        conn.execute(
+            """insert into official_prices (target_type, target_key, year, price, area_m2) values ('apt_unit', %s, %s, %s, 84.8)
+               on conflict do nothing""",
+            (f"{els}||", y, int((1_150_000_000 + 60_000_000 * i) * (1.18 if y == 2022 else 1.0))),
+        )
+        conn.execute(
+            "insert into official_prices (target_type, target_key, year, price) values ('land', %s, %s, %s) on conflict do nothing",
+            (forest, y, 36000 + 1100 * i),
+        )

@@ -1,0 +1,4 @@
+{"response":{"header":{"resultCode":"00","resultMsg":"NORMAL SERVICE."},"body":{"items":{"item":[
+{"bldNm":"잠실엘스","dongNm":"101동","mainPurpsCdNm":"공동주택","strctCdNm":"철근콘크리트구조","useAprDay":"20080930","grndFlrCnt":"33","ugrndFlrCnt":"3","hhldCnt":"132","hoCnt":"0","totArea":"25630.5","platArea":"0","bcRat":"0","vlRat":"0","rideUseElvtCnt":"4","indrAutoUtcnt":"150","oudrAutoUtcnt":"0"},
+{"bldNm":"잠실엘스","dongNm":"102동","mainPurpsCdNm":"공동주택","useAprDay":"20080915","hhldCnt":"120"}
+]},"numOfRows":100,"pageNo":1,"totalCount":2}}}

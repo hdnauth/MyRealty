@@ -8,6 +8,8 @@ from .. import http
 from ..config import settings
 
 URL = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancDetail"
+# 주택형별 분양가(최고가) — 공고 1건당 한 번 조회
+MODEL_URL = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancMdl"
 
 
 def _d(s: str | None) -> date | None:
@@ -90,3 +92,36 @@ def fetch(since: date, conn=None, per_page: int = 200) -> list[dict]:
             break
         page += 1
     return rows
+
+
+def parse_models(rows: list[dict]) -> list[dict]:
+    """주택형별 행 → [{type, area(전용㎡), supply_area, top_price(만원), households}]. 주택형 '084.9800A' 의 숫자가 전용면적."""
+    out = []
+    for r in rows:
+        ty = str(r.get("HOUSE_TY") or "").strip()
+        try:
+            area = float("".join(ch for ch in ty if ch.isdigit() or ch == ".") or "nan")
+        except ValueError:
+            area = float("nan")
+        price = str(r.get("LTTOT_TOP_AMOUNT") or "").replace(",", "").strip()
+        if not price.isdigit() or area != area:  # NaN
+            continue
+        supply = str(r.get("SUPLY_AR") or "").replace(",", "").strip()
+        hh = str(r.get("SUPLY_HSHLDCO") or "").replace(",", "").strip()
+        out.append({
+            "type": ty,
+            "area": round(area, 2),
+            "supply_area": float(supply) if supply.replace(".", "", 1).isdigit() else None,
+            "top_price": int(price),
+            "households": int(hh) if hh.isdigit() else None,
+        })
+    return out
+
+
+def fetch_models(house_manage_no: str, conn=None) -> list[dict]:
+    http.count_call(conn, "data.go.kr:applyhome", settings.daily_quota_data_go_kr)
+    r = http.get(MODEL_URL, params={
+        "serviceKey": settings.data_go_kr_key, "page": 1, "perPage": 100,
+        "cond[HOUSE_MANAGE_NO::EQ]": house_manage_no,
+    })
+    return parse_models(r.json().get("data") or [])

@@ -2,6 +2,8 @@ import "server-only";
 import { sql } from "../db";
 import { env } from "../env";
 import { formatManwon } from "../format";
+import { insightBalance, marketInsights } from "../insights";
+import { insightInputs } from "../queries/indicators";
 import { sendMail } from "../mail";
 import { anthropic, aiQuotaError, effortConfig, fallbackParams, MODEL, recordUsage, textOf } from "./client";
 import { REPORT_SYSTEM, todayLine } from "./prompts";
@@ -63,6 +65,21 @@ export async function buildSnapshot(userId: string, kind: ReportKind) {
     from series s where s.code in ('ecos.base_rate', 'ecos.mortgage_rate')`;
   const events = await sql<{ kind: string; title: string; starts_on: string }[]>`
     select kind, title, starts_on::text from events where starts_on between current_date and current_date + 30 order by starts_on limit 10`;
+  // 톱다운: 전국(금리·유동성·심리·신용·공급) → 시군구(시장 해석) → 부동산. 규칙 기반 해석 결과를 그대로 넘긴다
+  const national = marketInsights(await insightInputs(null)).map(({ tone, title, detail }) => ({ tone, title, detail }));
+  const regions = await Promise.all(
+    sggs.map(async (g) => {
+      const xs = marketInsights(await insightInputs(g));
+      const [nm] = await sql<{ name: string | null }[]>`select name from collect_targets where sgg_cd = ${g}`;
+      return {
+        sgg: g,
+        name: nm?.name ?? g,
+        verdict: insightBalance(xs),
+        factors: xs.filter((x) => !national.some((n) => n.title === x.title)).map(({ tone, title, detail }) => ({ tone, title, detail })),
+        items: items.filter((i) => i.sgg_cd === g).map((i) => i.label),
+      };
+    }),
+  );
   const owned = out.filter((o) => o.group === "owned");
   const isDemo = items.some((i) => i.label.startsWith("[데모]")) || macro.some((m) => m.source === "demo");
   return {
@@ -75,6 +92,7 @@ export async function buildSnapshot(userId: string, kind: ReportKind) {
       value: owned.reduce((a, o) => a + (o.valuation_now?.estimate ?? 0), 0),
       debt: items.filter((i) => i.group_tag === "owned").reduce((a, i) => a + i.loans.reduce((s, l) => s + (l.amount || 0), 0), 0),
     },
+    top_down: { national, regions },
     items: out,
     region_indicators: region,
     macro,

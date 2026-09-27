@@ -64,11 +64,13 @@ export type NearEvent = {
   source_url: string | null;
   payload: Record<string, unknown>;
   dist_m: number | null;
+  lng: number | null;
+  lat: number | null;
 };
 
 export async function eventsNear(lng: number, lat: number, radiusM: number, fromDaysAgo = 60) {
   return sql<NearEvent[]>`
-    select id, kind, title, starts_on::text, ends_on::text, address, source_url, payload,
+    select id, kind, title, starts_on::text, ends_on::text, address, source_url, payload, ST_X(geom) as lng, ST_Y(geom) as lat,
       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography)::int as dist_m
     from events
     where geom is not null and ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})

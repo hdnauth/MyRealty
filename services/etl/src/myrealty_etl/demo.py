@@ -256,7 +256,8 @@ def _seed_news_events(conn, uid, today: date) -> dict:
     conn.execute(
         """insert into events (source_key, kind, title, starts_on, ends_on, address, geom, payload, source_url)
            values ('demo:sub1', 'subscription', '[데모] 잠실 르엘', %s, %s, '서울특별시 송파구 잠실동 일대',
-             ST_SetSRID(ST_MakePoint(127.0930, 37.5105), 4326), '{"households": 1865, "house_type": "APT"}',
+             ST_SetSRID(ST_MakePoint(127.0930, 37.5105), 4326),
+             '{"households": 1865, "house_type": "APT", "models": [{"type": "059.9800A", "area": 59.98, "supply_area": 84.1, "top_price": 139000, "households": 420}, {"type": "084.9700A", "area": 84.97, "supply_area": 114.2, "top_price": 185000, "households": 610}]}',
              'https://www.applyhome.co.kr'),
                   ('demo:movein1', 'move_in', '[데모] 잠실 르엘 입주 예정', %s, null, '서울특별시 송파구 잠실동 일대',
              ST_SetSRID(ST_MakePoint(127.0930, 37.5105), 4326), '{"households": 1865}', null)

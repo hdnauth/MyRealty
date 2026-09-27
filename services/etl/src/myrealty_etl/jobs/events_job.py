@@ -63,16 +63,33 @@ def collect_events(conn, today: date | None = None) -> dict:
         return stats
     sidos = target_sidos(conn)
     rows = applyhome.fetch(today - timedelta(days=45), conn)
-    n = geo = 0
+    n = geo = models = 0
     for row in rows:
+        area = (row.get("SUBSCRPT_AREA_CODE_NM") or "")[:2]
+        in_scope = not sidos or area in sidos
+        # 관심 지역 공고만 주택형별 분양가를 받는다(이미 받은 공고는 건너뜀)
+        mdl = None
+        if in_scope and row.get("HOUSE_MANAGE_NO"):
+            have = conn.execute(
+                "select payload->'models' as m from events where source_key = %s", (f"applyhome:{row.get('HOUSE_MANAGE_NO')}:{row.get('PBLANC_NO')}",)
+            ).fetchone()
+            if have and have["m"]:
+                mdl = have["m"]
+            else:
+                try:
+                    mdl = applyhome.fetch_models(str(row["HOUSE_MANAGE_NO"]), conn)
+                    models += 1
+                except Exception as e:  # noqa: BLE001 — 분양가가 없어도 공고는 저장
+                    log.warning("분양가 조회 실패 %s: %s", row.get("HOUSE_MANAGE_NO"), e)
         for ev in applyhome.parse(row):
+            if mdl:
+                ev["payload"] = {**ev["payload"], "models": mdl}
             pt = None
-            area = (row.get("SUBSCRPT_AREA_CODE_NM") or "")[:2]
-            if ev["address"] and (not sidos or area in sidos):
+            if ev["address"] and in_scope:
                 pt = geocode(conn, ev["address"])
                 geo += 1 if pt else 0
             upsert_event(conn, ev, pt)
             n += 1
     conn.commit()
-    stats.update({"applyhome": n, "geocoded": geo})
+    stats.update({"applyhome": n, "geocoded": geo, "models": models})
     return stats

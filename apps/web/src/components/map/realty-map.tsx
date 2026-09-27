@@ -6,10 +6,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MapPoint } from "@/app/api/map/points/route";
 import { type AreaUnit, formatDate, formatManwon, fromPerPyeong, unitPriceLabel } from "@/lib/format";
 import { DEAL_KIND_LABEL } from "@/lib/property";
-import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, tileSources } from "./engines";
+import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, tileSources, vworldWmsUrl } from "./engines";
 
 export type MapWatchItem = { id: string; label: string; lng: number; lat: number; radius_m: number; property_type: string };
-export type MapEvent = { id: number; title: string; kind: string; lng: number; lat: number; starts_on: string | null };
+export type MapEvent = { id: number; title: string; kind: string; lng: number; lat: number; starts_on: string | null; households: number | null };
 export type MapProject = { type: "zone" | "infra"; id: number; name: string; kind: string; status: string | null; step: number | null; expected_open: string | null; lng: number; lat: number };
 type MapPoi = { id: number; category: string; subcategory: string | null; name: string; lng: number; lat: number };
 
@@ -20,7 +20,13 @@ const LAYERS = [
   { key: "park", label: "공원" },
   { key: "hospital", label: "병원" },
   { key: "mart", label: "마트" },
+  { key: "movein", label: "입주 예정" },
+  { key: "cadastral", label: "지적도" },
+  { key: "zoning", label: "용도지역" },
 ] as const;
+// 지도 위에 이미지를 덮는 레이어(브이월드 WMS). 지적도는 네이버 지도에서는 자체 지적편집도를 쓴다
+const ZONING_LAYERS = ["lt_c_uq111", "lt_c_uq112", "lt_c_uq113", "lt_c_uq114"];
+const CADASTRAL_LAYERS = ["lp_pa_cbnd_bubun", "lp_pa_cbnd_bonbun"];
 const POI_STYLE: Record<string, { bg: string; icon: string }> = {
   subway: { bg: "#2a78d6", icon: "🚇" },
   school: { bg: "#1baf7a", icon: "🏫" },
@@ -48,6 +54,7 @@ function escapeHtml(s: string) {
 export function RealtyMap({
   keyId,
   vworldKey = null,
+  vworldDomain = null,
   items,
   events,
   projects = [],
@@ -59,6 +66,7 @@ export function RealtyMap({
   keyId: string | null;
   /** 대체 지도 배경(브이월드 WMTS). 없으면 OpenStreetMap */
   vworldKey?: string | null;
+  vworldDomain?: string | null;
   items: MapWatchItem[];
   events: MapEvent[];
   projects?: MapProject[];
@@ -133,8 +141,8 @@ export function RealtyMap({
           html: `<a href="/items/${it.id}" style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;text-decoration:none">★ ${escapeHtml(it.label)}</a>`,
         });
       }
-      // 이벤트(청약 등)
-      for (const ev of events) {
+      // 청약 접수(입주 예정은 레이어로 따로)
+      for (const ev of events.filter((e) => e.kind === "subscription")) {
         map.addHtmlMarker({
           lng: ev.lng,
           lat: ev.lat,
@@ -247,6 +255,57 @@ export function RealtyMap({
     }
     layerMarkersRef.current = ms;
   }, [layers, projects, pois, mapVersion]);
+
+  // 입주 예정 레이어
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !layers.has("movein")) return;
+    const ms = events
+      .filter((e) => e.kind === "move_in")
+      .map((ev) =>
+        map.addHtmlMarker({
+          lng: ev.lng,
+          lat: ev.lat,
+          zIndex: 400,
+          title: ev.title,
+          html: `<div title="${escapeHtml(ev.title)}" style="transform:translate(-50%,-50%);display:inline-block;padding:3px 6px;border-radius:6px;background:#1baf7a;color:#fff;font-size:11px;white-space:nowrap">🏠 ${ev.starts_on ? `${ev.starts_on.slice(2, 4)}.${ev.starts_on.slice(5, 7)}` : ""} 입주${ev.households ? ` · ${ev.households.toLocaleString()}세대` : ""}<br><span style="opacity:.85">${escapeHtml(ev.title.replace(/ 입주 예정$/, "").slice(0, 14))}</span></div>`,
+        }),
+      );
+    return () => ms.forEach((m) => m.remove());
+  }, [layers, events, mapVersion]);
+
+  // 지적도·용도지역: 화면이 멈출 때마다 현재 범위 이미지 한 장(WMS). 네이버는 지적도를 자체 레이어로
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !bbox) return;
+    const overlays: Removable[] = [];
+    const want = (k: string) => layers.has(k);
+    const nativeCadastral = map.setCadastral(want("cadastral"));
+    const { width, height } = map.size();
+    const needVworld = (want("zoning") || (want("cadastral") && !nativeCadastral));
+    if (needVworld && !vworldKey) {
+      setNotice("용도지역·지적도 레이어는 브이월드 키(VWORLD_KEY)가 필요합니다.");
+      return () => void map.setCadastral(false);
+    }
+    if (want("zoning") && vworldKey) {
+      overlays.push(map.addImageOverlay({ url: vworldWmsUrl({ key: vworldKey, domain: vworldDomain, layers: ZONING_LAYERS, bbox, width, height }), bbox, opacity: 0.45 }));
+    }
+    if (want("cadastral") && !nativeCadastral && vworldKey) {
+      if (map.zoom() >= 16) {
+        overlays.push(map.addImageOverlay({ url: vworldWmsUrl({ key: vworldKey, domain: vworldDomain, layers: CADASTRAL_LAYERS, bbox, width, height }), bbox, opacity: 0.8 }));
+      } else {
+        setNotice("지적도는 더 확대하면(16단계 이상) 보입니다.");
+      }
+    }
+    return () => {
+      overlays.forEach((o) => o.remove());
+    };
+  }, [layers, bbox, vworldKey, vworldDomain, mapVersion]);
+
+  // 지적도를 끄면 네이버 자체 레이어도 끈다
+  useEffect(() => {
+    if (!layers.has("cadastral")) mapRef.current?.setCadastral(false);
+  }, [layers]);
 
   const sorted = useMemo(() => [...points].sort((a, b) => b.n - a.n), [points]);
 

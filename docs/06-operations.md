@@ -9,8 +9,8 @@
 
 | 환경 변수 | 용도 | 없을 때 |
 |---|---|---|
-| `DATA_GO_KR_KEY` | 실거래가 11종, 건축물대장, 청약홈, 상가정보, 병원정보. **웹에도 넣으면** 물건 등록 시 건축물대장으로 유형·평형·동·호·면적 자동 입력 | 실거래·속성·청약·POI 수집 건너뜀, 등록 화면은 수집된 실거래 면적만 제시 |
-| `JUSO_KEY` | 물건 등록 시 주소 검색 | 수집된 단지명 검색만 가능 |
+| `DATA_GO_KR_KEY` | 실거래가 11종, 건축물대장, 청약홈, 상가정보, 병원정보. **웹에도 넣으면** 부동산 등록 시 건축물대장으로 유형·평형·동·호·면적 자동 입력 | 실거래·속성·청약·POI 수집 건너뜀, 등록 화면은 수집된 실거래 면적만 제시 |
+| `JUSO_KEY` | 부동산 등록 시 주소 검색 | 수집된 단지명 검색만 가능 |
 | `NCP_MAPS_KEY_ID` / `NCP_MAPS_KEY` | 네이버 지도 표시, 지오코딩 | 대체 지도(브이월드 배경 → OpenStreetMap)로 표시, 좌표는 VWorld 로 보조 |
 | `VWORLD_KEY` (+`VWORLD_DOMAIN`) | 토지특성·이용계획·공시가격, 지오코딩 보조, 대체 지도 배경. **웹에도 넣으면** 토지·임야 등록 시 지목·면적 자동 입력 | 토지·공시가격 없음 |
 | `ECOS_KEY`, `KOSIS_KEY`, `REB_KEY` | 금리·물가·M2, 미분양, 부동산원 지수 | 자체 지수·지표는 계산되나 금리·물가 보정 없음 |
@@ -83,7 +83,7 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 | `rtms` | 수집 대상 시군구 × 최근 3개월 × 11종 실거래 재수집(해제 반영) | DATA_GO_KR |
 | `backfill` | 과거 월 백필(시군구당 기본 36개월, 실행당 6개월) | DATA_GO_KR |
 | `geocode` | 단지·읍면동 좌표, 거래 좌표 전파 | NCP 또는 VWORLD |
-| `link` | 관심 물건 ↔ 단지 자동 연결 | - |
+| `link` | 관심 부동산 ↔ 단지 자동 연결 | - |
 | `macro` | ECOS·KOSIS·R-ONE 시계열 | 각 키 |
 | `attrs` | 건축물대장·토지특성·이용계획·공시가격(월 1회 갱신) | DATA_GO_KR, VWORLD |
 | `events` | 청약·입주 예정, 공시·세금 일정 | DATA_GO_KR |
@@ -98,7 +98,7 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 ## 5. 운영 팁
 
 - **호출 한도**: 공공데이터포털 개발계정은 서비스별 일일 한도가 있다. `QUOTA_DATA_GO_KR`(기본 900)에 걸리면 남은 작업은 다음 날로 이월된다. 관심 지역이 많아지면 활용 사례를 등록해 운영계정으로 전환한다. 사용량은 `api_quota` 테이블.
-- **처음 등록한 지역**: 물건을 등록하면 해당 시군구가 `collect_targets` 에 추가되고, 다음 daily 실행부터 최근 3개월 → 과거 순으로 채워진다. 빨리 채우려면 Actions 에서 `only: rtms backfill geocode link indicators avm` 로 수동 실행.
+- **처음 등록한 지역**: 부동산을 등록하면 해당 시군구가 `collect_targets` 에 추가되고, 다음 daily 실행부터 최근 3개월 → 과거 순으로 채워진다. 빨리 채우려면 Actions 에서 `only: rtms backfill geocode link indicators avm` 로 수동 실행.
 - **통계 코드**: ECOS·KOSIS·R-ONE 통계표·항목 코드는 `services/etl/src/myrealty_etl/series_catalog.py` 에 있다. 수집 오류가 나면 각 포털 코드 검색으로 확인 후 수정하거나 `SERIES_OVERRIDES_JSON` 으로 덮어쓴다(`enabled: False` 항목은 코드 확인 후 켠다).
 - **AI 비용**: 모델은 `ANTHROPIC_MODEL`(대화·분석·리포트), `ANTHROPIC_BULK_MODEL`(뉴스 분류)로 바꾼다. 월 예산 `AI_MONTHLY_BUDGET_USD` 를 넘으면 새 요청을 막는다. 사용량은 `ai_usage` 테이블·설정 화면. Opus 5 계열은 안전 분류기 거절 시 권장 모델로 자동 재시도하는 server-side fallbacks 를 사용한다.
 - **데모 데이터**: `uv run myrealty seed-demo --email ...` 은 이름에 `[데모]` 가 붙은 합성 데이터를 만든다. 실데이터 운영 전 `uv run myrealty seed-demo --reset` 으로 지운다(합성 거시 시계열도 삭제되므로 이후 `macro` 가 실제 값으로 채운다).
@@ -174,8 +174,8 @@ Supabase **Session pooler**(pooler 호스트 5432) 주소를 쓰면 자동으로
 | 화면 | 이전 | 이후 | prepare 끔(이후) |
 |---|---|---|---|
 | 홈 | 0.55 | 0.19 | 0.35 |
-| 내 물건 | 0.27 | 0.10 | 0.18 |
-| 물건 상세(개요) | 0.52 | 0.18~0.26 | 0.39 |
+| 내 부동산 | 0.27 | 0.10 | 0.18 |
+| 부동산 상세(개요) | 0.52 | 0.18~0.26 | 0.39 |
 | 지도 | 0.43 | 0.10 | 0.18 |
 | 지표 | 0.64 | 0.24 | 0.56 |
 | 첫 요청(새 인스턴스, 연결 생성 포함) | 1.25 | — | — |

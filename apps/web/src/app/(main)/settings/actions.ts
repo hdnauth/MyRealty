@@ -40,7 +40,7 @@ export async function deleteAccountAction(_: { error?: string }, form: FormData)
   const user = await requireUser();
   if (user.isEnvAdmin) return { error: "ADMIN_EMAILS 로 지정된 관리자 계정은 탈퇴할 수 없습니다." };
   if (normalizeEmail(String(form.get("confirm") ?? "")) !== user.email) return { error: "확인을 위해 이메일 주소를 정확히 입력하세요." };
-  await sql`delete from users where id = ${user.id}`; // 물건·메모·알림·세션 등은 cascade
+  await sql`delete from users where id = ${user.id}`; // 부동산·메모·알림·세션 등은 cascade
   (await cookies()).delete(SESSION_COOKIE);
   redirect("/login");
 }

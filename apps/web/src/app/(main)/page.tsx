@@ -37,7 +37,7 @@ export default async function HomePage() {
         <EmptyState
           title="환영합니다!"
           desc="보유하거나 관심 있는 부동산을 등록하면 실거래·주변 시세·뉴스·정책·일정을 모아 알려드립니다."
-          action={<LinkButton href="/items/new">첫 물건 등록하기</LinkButton>}
+          action={<LinkButton href="/items/new">관심 부동산 등록하기</LinkButton>}
         />
       </Card>
     );
@@ -93,7 +93,7 @@ export default async function HomePage() {
 
         <div className="space-y-4">
           <Card>
-            <CardHeader title="내 물건" action={<Link href="/items/new" className="flex items-center text-accent"><Plus size={16} />등록</Link>} />
+            <CardHeader title="내 부동산" action={<Link href="/items/new" className="flex items-center text-accent"><Plus size={16} />등록</Link>} />
             <div className="space-y-2 px-3 pb-3">
               {items.slice(0, 6).map((i) => (
                 <ItemCard key={i.id} item={i} />

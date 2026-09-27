@@ -38,7 +38,7 @@ export default async function AdminHome() {
           <Stat label="신규 가입" value={`${users.new7}명`} sub={<span className="text-muted">7일 · 30일 {users.new30}명</span>} />
           <Stat label="활성 사용자" value={`${users.seen7}명`} sub={<span className="text-muted">7일 · 오늘 {users.seen1}명</span>} />
           <Stat label="로그인 세션" value={formatNumber(counts.sessions)} sub={<span className="text-muted">7일 로그인 {counts.logins7}회</span>} />
-          <Stat label="관심 물건" value={formatNumber(counts.items)} />
+          <Stat label="관심 부동산" value={formatNumber(counts.items)} />
           <Stat label="알림(7일)" value={formatNumber(counts.notifications7)} />
           <Stat label="AI 리포트" value={formatNumber(counts.reports)} />
           <Stat

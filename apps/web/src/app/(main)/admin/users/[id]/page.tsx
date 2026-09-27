@@ -72,7 +72,7 @@ export default async function AdminUserDetail(props: PageProps<"/admin/users/[id
           sub={`가입 ${formatDate(u.created_at, "long")} · 최근 로그인 ${u.last_login_at ? timeAgo(u.last_login_at) : "-"}${u.blocked_at ? ` · 정지 ${formatDate(u.blocked_at, "long")}` : ""}`}
         />
         <div className="grid grid-cols-3 gap-4 p-4 md:grid-cols-6">
-          <Stat label="관심 물건" value={items.length} />
+          <Stat label="관심 부동산" value={items.length} />
           <Stat label="메모" value={c.notes} />
           <Stat label="알림" value={c.notifications} />
           <Stat label="AI 리포트" value={c.reports} />
@@ -149,7 +149,7 @@ export default async function AdminUserDetail(props: PageProps<"/admin/users/[id
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title={`관심 물건 ${items.length}`} />
+          <CardHeader title={`관심 부동산 ${items.length}`} />
           <ul className="divide-y divide-border px-4 pb-2 text-sm">
             {items.map((i) => (
               <li key={i.id} className="flex items-center justify-between gap-2 py-2">
@@ -160,7 +160,7 @@ export default async function AdminUserDetail(props: PageProps<"/admin/users/[id
                 <span className="shrink-0 text-xs text-muted">{formatDate(i.created_at)}</span>
               </li>
             ))}
-            {!items.length ? <li className="py-2 text-muted">등록한 물건이 없습니다.</li> : null}
+            {!items.length ? <li className="py-2 text-muted">등록한 부동산이 없습니다.</li> : null}
           </ul>
         </Card>
         <Card>
@@ -179,7 +179,7 @@ export default async function AdminUserDetail(props: PageProps<"/admin/users/[id
 
       {!locked ? (
         <Card className="border-up/40">
-          <CardHeader title="계정 삭제" sub="관심 물건·메모·알림·AI 기록·세션이 모두 삭제되며 되돌릴 수 없습니다. 같은 이메일로 다시 가입할 수는 있습니다(막으려면 정지)." />
+          <CardHeader title="계정 삭제" sub="관심 부동산·메모·알림·AI 기록·세션이 모두 삭제되며 되돌릴 수 없습니다. 같은 이메일로 다시 가입할 수는 있습니다(막으려면 정지)." />
           <ActionForm action={deleteUserAction} confirm="정말 삭제할까요? 되돌릴 수 없습니다." className="flex flex-wrap gap-2 px-4 pb-4">
             <input type="hidden" name="id" value={u.id} />
             <Input name="confirm" placeholder={`확인: ${u.email} 입력`} autoComplete="off" className="min-w-56 flex-1" />

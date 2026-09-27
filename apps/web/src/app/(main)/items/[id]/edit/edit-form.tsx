@@ -20,7 +20,7 @@ export function EditItemForm({ item }: { item: WatchItem }) {
             variant="ghost"
             className="text-up"
             onClick={() => {
-              if (confirm("이 물건을 삭제할까요? 관련 알림·메모도 함께 삭제됩니다.")) deleteItemAction(item.id);
+              if (confirm("이 부동산을 삭제할까요? 관련 알림·메모도 함께 삭제됩니다.")) deleteItemAction(item.id);
             }}
           >
             삭제

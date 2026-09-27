@@ -63,7 +63,7 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
   const roadAddr = str(form.get("road_address"));
   const jibunAddr = str(form.get("jibun_address"));
   const buildingName = str(form.get("building_name"));
-  const label = str(form.get("label")) ?? str(form.get("default_label")) ?? buildingName ?? jibunAddr ?? "관심 물건";
+  const label = str(form.get("label")) ?? str(form.get("default_label")) ?? buildingName ?? jibunAddr ?? "관심 부동산";
 
   // 좌표: 단지 좌표 → 지오코딩 → 읍면동 중심
   let pt: [number, number] | null = null;
@@ -121,7 +121,7 @@ export async function updateItemAction(id: string, _: ItemFormState, form: FormD
   if (!(group in GROUP_TAGS)) return { error: "그룹이 올바르지 않습니다." };
   const { loans, lease } = parseFinance(form);
   const [cur] = await sql<{ property_type: string }[]>`select property_type from watch_items where id = ${id} and user_id = ${user.id}`;
-  if (!cur) return { error: "물건을 찾을 수 없습니다." };
+  if (!cur) return { error: "부동산을 찾을 수 없습니다." };
   const isLand = cur.property_type === "land" || cur.property_type === "forest";
   const area = num(form.get("area_m2"));
   const keywords = String(form.get("keywords") ?? "")
@@ -130,7 +130,7 @@ export async function updateItemAction(id: string, _: ItemFormState, form: FormD
     .filter(Boolean);
   const res = await sql`
     update watch_items set
-      label = ${str(form.get("label")) ?? "관심 물건"},
+      label = ${str(form.get("label")) ?? "관심 부동산"},
       group_tag = ${group},
       dong_ho = ${str(form.get("dong_ho"))},
       area_m2 = ${isLand ? null : area},
@@ -144,7 +144,7 @@ export async function updateItemAction(id: string, _: ItemFormState, form: FormD
       radius_m = ${num(form.get("radius_m")) ?? 1000},
       updated_at = now()
     where id = ${id} and user_id = ${user.id}`;
-  if (res.count === 0) return { error: "물건을 찾을 수 없습니다." };
+  if (res.count === 0) return { error: "부동산을 찾을 수 없습니다." };
   redirect(`/items/${id}`);
 }
 
@@ -165,7 +165,7 @@ export async function analyzeItemAction(id: string): Promise<{ error?: string }>
   const { getItem } = await import("@/lib/queries/items");
   const { generateAnalysis } = await import("@/lib/ai/analysis");
   const item = await getItem(user.id, id);
-  if (!item) return { error: "물건을 찾을 수 없습니다." };
+  if (!item) return { error: "부동산을 찾을 수 없습니다." };
   try {
     await generateAnalysis(user.id, item);
   } catch (e) {

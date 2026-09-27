@@ -32,7 +32,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
     seriesValues(macroCodes, since),
     seriesMeta(macroCodes),
     listItems(uid),
-    // 깡통전세 점검용: 내 물건 공시가격
+    // 깡통전세 점검용: 내 부동산 공시가격
     sql<{ id: string; price: number }[]>`
       select distinct on (w.id) w.id, o.price from watch_items w
       join official_prices o on o.target_key = w.pnu or o.target_key like w.pnu || '|%'
@@ -84,7 +84,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
 
       {!sgg ? (
         <Card>
-          <EmptyState title="아직 계산된 지역 지표가 없습니다" desc="관심 물건을 등록하고 실거래가 수집되면 ETL indicators 단계에서 계산됩니다." />
+          <EmptyState title="아직 계산된 지역 지표가 없습니다" desc="관심 부동산을 등록하고 실거래가 수집되면 ETL indicators 단계에서 계산됩니다." />
         </Card>
       ) : (
         <>

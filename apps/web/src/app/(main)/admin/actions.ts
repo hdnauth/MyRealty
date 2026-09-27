@@ -98,7 +98,7 @@ export async function deleteUserAction(_: AdminActionState, form: FormData): Pro
   if (reason) return { error: reason };
   if (normalizeEmail(String(form.get("confirm") ?? "")) !== t.email) return { error: "확인을 위해 이메일 주소를 정확히 입력하세요." };
   const [{ items }] = await sql<{ items: number }[]>`select count(*)::int as items from watch_items where user_id = ${t.id}`;
-  await sql`delete from users where id = ${t.id}`; // 물건·메모·알림·세션 등은 cascade
+  await sql`delete from users where id = ${t.id}`; // 부동산·메모·알림·세션 등은 cascade
   await audit(admin, "user.delete", t.email, { items });
   redirect("/admin/users");
 }

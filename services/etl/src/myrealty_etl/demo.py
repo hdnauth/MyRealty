@@ -169,7 +169,7 @@ def seed_demo(conn, email: str, *, today: date | None = None, years: int = 8) ->
             n_tx += 1
         m += relativedelta(months=1)
 
-    # 관심 물건
+    # 관심 부동산
     conn.execute("delete from watch_items where user_id = %s and label like '[데모]%%'", (uid,))
     items = [
         ("apt", "[데모] 우리집 잠실엘스", "owned", "서울특별시 송파구 올림픽로 99", "서울특별시 송파구 잠실동 19",

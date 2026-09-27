@@ -24,7 +24,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
 
   const rows = await Promise.all(
     ids.map(async (id) => {
-      // 물건별로 필요한 조회를 동시에(물건 정보가 필요한 것만 한 단계 뒤)
+      // 부동산별로 필요한 조회를 동시에(부동산 정보가 필요한 것만 한 단계 뒤)
       const [it, [v], [loc], [news]] = await Promise.all([
         getItem(uid, id).then((x) => x!),
         sql<{ estimate: number; low: number; high: number; confidence: string }[]>`
@@ -81,7 +81,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="비교" sub="최대 5개 물건을 나란히 비교" />
+      <PageHeader title="비교" sub="최대 5개 부동산을 나란히 비교" />
       <div className="flex flex-wrap gap-1.5">
         {all.map((i) => (
           <Link key={i.id} href={toggle(i.id)} className={`rounded-full border px-3 py-1 text-[13px] ${ids.includes(i.id) ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted"}`}>

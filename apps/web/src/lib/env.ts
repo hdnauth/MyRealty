@@ -27,10 +27,10 @@ export const env = {
     from: opt("MAIL_FROM") ?? "MyRealty <no-reply@example.com>",
   },
   jusoKey: opt("JUSO_KEY"),
-  /** 공공데이터포털 일반 인증키(Decoding) — 물건 등록 시 건축물대장(용도·동·호·면적) 조회 */
+  /** 공공데이터포털 일반 인증키(Decoding) — 부동산 등록 시 건축물대장(용도·동·호·면적) 조회 */
   dataGoKrKey: opt("DATA_GO_KR_KEY"),
   quotaDataGoKr: Number(opt("QUOTA_DATA_GO_KR") ?? 900),
-  /** 브이월드 — 물건 등록 시 토지특성(지목·면적), 지오코딩 보조, 대체 지도 배경 */
+  /** 브이월드 — 부동산 등록 시 토지특성(지목·면적), 지오코딩 보조, 대체 지도 배경 */
   vworldKey: opt("VWORLD_KEY"),
   vworldDomain: opt("VWORLD_DOMAIN"),
   ncpKeyId: opt("NCP_MAPS_KEY_ID"),

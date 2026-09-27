@@ -22,7 +22,7 @@ import { usePathname } from "next/navigation";
 const PRIMARY = [
   { href: "/", label: "홈", icon: Home },
   { href: "/map", label: "지도", icon: MapIcon },
-  { href: "/items", label: "내 물건", icon: Building2 },
+  { href: "/items", label: "내 부동산", icon: Building2 },
   { href: "/indicators", label: "지표", icon: LineChart },
   { href: "/ai", label: "AI", icon: Bot },
 ];

@@ -42,7 +42,7 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
     <div>
       <PageHeader
         title="캘린더"
-        sub="청약·입주·공시가격·세금 일정과 내 물건 만기"
+        sub="청약·입주·공시가격·세금 일정과 내 부동산 만기"
         action={
           <div className="flex items-center gap-1">
             <Link href={`/calendar?m=${ym(prev)}`} className="rounded-lg p-2 hover:bg-surface-2" aria-label="이전 달"><ChevronLeft size={18} /></Link>

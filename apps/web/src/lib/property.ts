@@ -1,4 +1,4 @@
-// 물건 유형 정의 (서버·클라이언트 공용)
+// 부동산 유형 정의 (서버·클라이언트 공용)
 
 export const PROPERTY_TYPES = {
   apt: { label: "아파트", tx: "apt", hasComplex: true },

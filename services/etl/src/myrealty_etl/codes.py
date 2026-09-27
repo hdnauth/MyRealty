@@ -15,7 +15,7 @@ PROPERTY_TYPES = {
     "presale": "분양권/입주권",
 }
 
-# 관심물건 유형 → 실거래 수집 유형 (임야는 토지 거래에서 지목='임야'로 필터)
+# 관심 부동산 유형 → 실거래 수집 유형 (임야는 토지 거래에서 지목='임야'로 필터)
 WATCH_TO_TX_TYPE = {
     "apt": "apt",
     "officetel": "officetel",

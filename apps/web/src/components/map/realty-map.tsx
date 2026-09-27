@@ -113,7 +113,7 @@ export function RealtyMap({
       } catch {
         if (engine === "naver") fallback("네이버 지도 스크립트를 불러오지 못했습니다(네트워크·광고 차단 확장 등). 대체 지도를 표시합니다.");
         else {
-          setNotice("지도를 불러오지 못했습니다. 아래 목록에서 관심 물건 주변 거래를 볼 수 있습니다.");
+          setNotice("지도를 불러오지 못했습니다. 아래 목록에서 관심 부동산 주변 거래를 볼 수 있습니다.");
           setBbox([lng0 - 0.05, lat0 - 0.04, lng0 + 0.05, lat0 + 0.04]);
         }
         return;
@@ -121,7 +121,7 @@ export function RealtyMap({
       const map = handle;
       mapRef.current = map;
 
-      // 관심 물건 핀 + 탐색 반경
+      // 관심 부동산 핀 + 탐색 반경
       for (const it of items) {
         map.addCircle({ lng: it.lng, lat: it.lat, radius: it.radius_m, color: "#2563eb" });
         map.addHtmlMarker({
@@ -342,7 +342,11 @@ export function RealtyMap({
         </div>
 
         <div className="relative order-1 min-h-0 flex-1 lg:order-2">
-          <div ref={el} className="map-canvas absolute inset-0 z-0 bg-surface-2" />
+          {/* 네이버 지도는 컨테이너에 position:relative 를 인라인으로 넣어 absolute inset-0 을 덮어쓴다(높이 0 → 빈 화면).
+              위치는 바깥 div 가 잡고, 지도는 크기만 채우는 안쪽 div 에 그린다. */}
+          <div className="absolute inset-0 z-0">
+            <div ref={el} className="map-canvas h-full w-full bg-surface-2" />
+          </div>
           {engine === "leaflet" && !keyId && !notice ? (
             <div className="pointer-events-none absolute bottom-6 left-2 z-[500] rounded-md bg-surface/90 px-2 py-1 text-[11px] text-muted shadow">
               대체 지도 · NCP_MAPS_KEY_ID 를 설정하면 네이버 지도로 표시됩니다

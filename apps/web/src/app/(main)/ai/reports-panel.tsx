@@ -14,7 +14,7 @@ export async function ReportsPanel({ userId, enabled }: { userId: string; enable
       <Card>
         <CardHeader title={latest?.title ?? "리포트"} sub={latest ? `${formatDate(latest.created_at, "long")} · ${latest.model ?? ""}` : "매주 월요일·매월 1일 자동 생성(스케줄 설정 시)"} action={<GenerateButtons enabled={enabled} />} />
         <div className="px-4 pb-4">
-          {latest ? <Markdown>{latest.content_md}</Markdown> : <EmptyState title="아직 리포트가 없습니다" desc="‘주간 리포트 생성’을 누르면 내 물건·지표·뉴스·일정을 요약합니다." />}
+          {latest ? <Markdown>{latest.content_md}</Markdown> : <EmptyState title="아직 리포트가 없습니다" desc="‘주간 리포트 생성’을 누르면 내 부동산·지표·뉴스·일정을 요약합니다." />}
         </div>
       </Card>
       <Card className="h-fit">

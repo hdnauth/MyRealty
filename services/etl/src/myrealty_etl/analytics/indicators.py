@@ -310,7 +310,7 @@ def temp_band(v: float) -> str:
 
 
 def temperature_alerts(conn) -> int:
-    """온도계 구간이 바뀐 시군구 → 그 지역에 물건이 있는 사용자에게 알림."""
+    """온도계 구간이 바뀐 시군구 → 그 지역에 부동산이 있는 사용자에게 알림."""
     from ..alerts.rules import notify
 
     n = 0

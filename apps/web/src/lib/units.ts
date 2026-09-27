@@ -1,4 +1,4 @@
-// 물건 등록 자동 입력용 순수 함수(서버·클라이언트 공용): 평형 묶기, 동·호 정리, 건물 용도 → 유형
+// 부동산 등록 자동 입력용 순수 함수(서버·클라이언트 공용): 평형 묶기, 동·호 정리, 건물 용도 → 유형
 
 import type { PropertyType } from "./property";
 
@@ -114,7 +114,7 @@ export function sortDongs(ds: string[]) {
   return [...ds].sort((a, b) => numPrefix(a) - numPrefix(b) || a.localeCompare(b, "ko"));
 }
 
-/** 건축물대장 주용도·기타용도 → 물건 유형 */
+/** 건축물대장 주용도·기타용도 → 부동산 유형 */
 export function typeFromPurpose(mainPurpose: string | null | undefined, etcPurpose: string | null | undefined): PropertyType | null {
   const s = `${mainPurpose ?? ""} ${etcPurpose ?? ""}`;
   if (!s.trim()) return null;

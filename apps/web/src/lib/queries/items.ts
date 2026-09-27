@@ -102,7 +102,7 @@ const TX_COLUMNS = sql`
   t.is_canceled, t.is_direct, t.name, t.umd_nm, t.jibun, t.jimok, t.build_year, t.house_type`;
 
 /**
- * 물건 기준 거래 이력.
+ * 부동산 기준 거래 이력.
  * - 단지형(아파트·오피스텔·빌라): 같은 단지, 면적 ±3㎡
  * - 그 외: 같은 읍면동·유형(임야는 지목=임야), 면적 ±40%
  */

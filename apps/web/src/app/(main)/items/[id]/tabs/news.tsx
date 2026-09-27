@@ -69,7 +69,7 @@ export async function NewsTab({ item }: { item: WatchItem }) {
           )}
         </Card>
         <Card className="overflow-hidden">
-          <CardHeader title="이 물건 알림" />
+          <CardHeader title="이 부동산 알림" />
           {notes.length ? (
             <div className="divide-y divide-border">
               {notes.map((n) => (

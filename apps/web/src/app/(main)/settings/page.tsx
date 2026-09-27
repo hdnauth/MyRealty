@@ -109,7 +109,7 @@ export default async function SettingsPage() {
       </Card>
 
       <Card className="border-up/30">
-        <CardHeader title="회원 탈퇴" sub="관심 물건·메모·알림·AI 기록이 모두 삭제되며 되돌릴 수 없습니다." />
+        <CardHeader title="회원 탈퇴" sub="관심 부동산·메모·알림·AI 기록이 모두 삭제되며 되돌릴 수 없습니다." />
         <DeleteAccount email={user.email} disabled={user.isEnvAdmin} />
       </Card>
     </div>

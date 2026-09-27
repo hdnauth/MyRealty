@@ -18,7 +18,7 @@ import { PriceTab } from "./tabs/price";
 export async function generateMetadata(props: PageProps<"/items/[id]">): Promise<Metadata> {
   const [uid, { id }] = await Promise.all([sessionUserId(), props.params]);
   const [, item] = await Promise.all([requireUser(), getItem(uid, id)]);
-  return { title: item?.label ?? "물건" };
+  return { title: item?.label ?? "부동산" };
 }
 
 const TABS = [

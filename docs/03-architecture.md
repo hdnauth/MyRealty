@@ -146,7 +146,7 @@ create index on transactions (complex_id, deal_date);
 create index on transactions using gist (geom);
 create index on transactions (lawd_cd, property_type, deal_date);
 
--- 관심 물건
+-- 관심 부동산
 create table watch_items (
   id           uuid primary key default gen_random_uuid(),
   user_id      uuid not null references auth.users,
@@ -245,18 +245,18 @@ create table push_subscriptions (user_id uuid, endpoint text primary key, keys j
 | `backfill_rtms` | 매일 02:00 | 남은 호출 한도로 과거 월 백필(최대 10년) |
 | `geocode` | 수집 후 | 신규 지번/단지 좌표 지오코딩(캐시 우선) |
 | `match_complex` | 수집 후 | 실거래 단지명·지번 ↔ `complexes` 매칭(정규화 + 별칭 + 지번) |
-| `collect_attrs` | 물건 등록 시 + 월 1회 | 건축물대장·토지이용계획·토지특성·공시가격 |
+| `collect_attrs` | 부동산 등록 시 + 월 1회 | 건축물대장·토지이용계획·토지특성·공시가격 |
 | `collect_macro` | 매일(변경 시만 저장) | ECOS, KOSIS, R-ONE 지표 |
 | `collect_events` | 매일 | 청약홈 분양정보, 온비드, 금통위·공시가격 일정 |
-| `collect_news` | 하루 3회 | 물건/지역 키워드별 네이버 뉴스 → 중복 제거 → 신규분 AI 분류(Batch) |
+| `collect_news` | 하루 3회 | 부동산/지역 키워드별 네이버 뉴스 → 중복 제거 → 신규분 AI 분류(Batch) |
 | `compute_indicators` | 수집 후 | 조합 지표·온도계 재계산 → `series_values` |
-| `compute_avm` | 매일 | 관심 물건 추정 시세 스냅샷 |
+| `compute_avm` | 매일 | 관심 부동산 추정 시세 스냅샷 |
 | `detect_alerts` | 매일 07:00 | 규칙 평가 → `notifications` → 즉시 푸시/다이제스트 메일 |
 | `weekly_report` | 월 07:30 | AI 주간 브리핑 생성·발송 |
 
 - 모든 잡은 **멱등(idempotent)** 하게: 원천 해시 기반 upsert, 재실행 안전.
 - 호출 한도 관리: API별 일일 카운터 테이블(`api_quota`)로 잔여량 추적, 초과 시 다음 날로 이월.
-- 물건 등록 시 해당 시군구가 `collect_targets` 에 추가되어 다음 daily 실행부터 수집된다. 급하면 GitHub Actions 의 `workflow_dispatch`(only: rtms backfill geocode link …)로 즉시 실행.
+- 부동산 등록 시 해당 시군구가 `collect_targets` 에 추가되어 다음 daily 실행부터 수집된다. 급하면 GitHub Actions 의 `workflow_dispatch`(only: rtms backfill geocode link …)로 즉시 실행.
 
 ## 7. 디렉터리 구조 (구현)
 
@@ -266,7 +266,7 @@ MyRealty/
 │  └─ src/
 │     ├─ proxy.ts                   # 비로그인 → /login (Next 16 middleware 대체)
 │     ├─ app/(auth)/login/          # 이메일 OTP
-│     ├─ app/(main)/                # 홈·지도·내 물건(탭: 개요/시세/주변/입지/소식/분석/메모)·지표(+커스텀)
+│     ├─ app/(main)/                # 홈·지도·내 부동산(탭: 개요/시세/주변/입지/소식/분석/메모)·지표(+커스텀)
 │     │                             # ·AI(질문/리포트)·비교·포트폴리오·캘린더·개발사업·알림·설정
 │     ├─ app/api/                   # address, complexes, map/*, push, ai/chat(SSE), cron/reports
 │     ├─ components/                # ui, shell, charts(ECharts), map(Naver), items, feed, indicators, ai
@@ -274,7 +274,7 @@ MyRealty/
 │                                   # finance, tax, expr(커스텀 지표 파서), format, property
 ├─ services/etl/src/myrealty_etl/
 │  ├─ collectors/                   # rtms, building, vworld, naver_news, applyhome, macro, pois, projects
-│  ├─ transforms/                   # complexes(단지 매칭·물건 연결), geocode
+│  ├─ transforms/                   # complexes(단지 매칭·부동산 연결), geocode
 │  ├─ analytics/                    # indicators(자체 지수·온도계), location(생활편의), avm
 │  ├─ ai/                           # client(사용량·예산), news_classifier(Batch/동기)
 │  ├─ alerts/                       # rules(알림 규칙), notify(웹푸시·다이제스트)
@@ -290,5 +290,5 @@ MyRealty/
 
 - 브레이크포인트: `<640` 모바일(하단 탭), `640–1023` 태블릿, `≥1024` 데스크톱(사이드바 + 2단).
 - 지도 화면: 모바일은 지도 전체 + 드래그 가능한 바텀시트 목록, PC는 좌측 목록/우측 지도.
-- 오프라인: 최근 본 물건 상세·피드 캐시(Stale-While-Revalidate), 지도 타일은 캐시하지 않음(약관).
+- 오프라인: 최근 본 부동산 상세·피드 캐시(Stale-While-Revalidate), 지도 타일은 캐시하지 않음(약관).
 - Web Push: VAPID 키, iOS는 홈 화면 설치 후 권한 요청 가능 → 설정 화면에서 설치 안내.

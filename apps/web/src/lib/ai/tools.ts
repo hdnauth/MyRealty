@@ -30,14 +30,14 @@ const MACRO = ["ecos.base_rate", "ecos.mortgage_rate", "ecos.bond_3y", "ecos.cpi
 export function buildTools(userId: string) {
   const ownItem = async (id: string) => {
     const it = await getItem(userId, id);
-    if (!it) throw new Error("해당 ID 의 관심 물건이 없습니다. list_watch_items 로 확인하세요.");
+    if (!it) throw new Error("해당 ID 의 관심 부동산이 없습니다. list_watch_items 로 확인하세요.");
     return it;
   };
 
   return [
     betaZodTool({
       name: "list_watch_items",
-      description: "사용자가 등록한 관심 물건 목록(ID, 이름, 유형, 그룹, 주소, 면적, 단지, 최근 추정 시세, 매입가, 시군구코드).",
+      description: "사용자가 등록한 관심 부동산 목록(ID, 이름, 유형, 그룹, 주소, 면적, 단지, 최근 추정 시세, 매입가, 시군구코드).",
       inputSchema: z.object({}),
       run: async () => {
         const rows = await sql`
@@ -53,7 +53,7 @@ export function buildTools(userId: string) {
     }),
     betaZodTool({
       name: "get_item_detail",
-      description: "관심 물건 1건의 상세: 요약 통계(최근 매매, 6개월 중위, 1년 변화, 전세가율), 추정 시세 구간, 공시가격, 대출·임대, 건축물·토지 정보.",
+      description: "관심 부동산 1건의 상세: 요약 통계(최근 매매, 6개월 중위, 1년 변화, 전세가율), 추정 시세 구간, 공시가격, 대출·임대, 건축물·토지 정보.",
       inputSchema: z.object({ item_id: z.string().describe("watch item UUID") }),
       run: async ({ item_id }) => {
         const it = await ownItem(item_id);
@@ -77,7 +77,7 @@ export function buildTools(userId: string) {
     betaZodTool({
       name: "query_transactions",
       description:
-        "실거래 조회. item_id 를 주면 그 물건 기준(단지·면적 또는 같은 읍면동 유사 면적), 아니면 sgg_cd(시군구 5자리)+유형으로 조회. 최대 50건과 요약 통계를 돌려준다.",
+        "실거래 조회. item_id 를 주면 그 부동산 기준(단지·면적 또는 같은 읍면동 유사 면적), 아니면 sgg_cd(시군구 5자리)+유형으로 조회. 최대 50건과 요약 통계를 돌려준다.",
       inputSchema: z.object({
         item_id: z.string().optional(),
         sgg_cd: z.string().regex(/^\d{5}$/).optional(),
@@ -118,7 +118,7 @@ export function buildTools(userId: string) {
     }),
     betaZodTool({
       name: "similar_complexes",
-      description: "단지형 물건의 유사 단지(유사도 점수, 거리, 준공, 평당가, 1년 변화)와 상대 성과(내 단지 vs 유사 단지 vs 시군구).",
+      description: "단지형 부동산의 유사 단지(유사도 점수, 거리, 준공, 평당가, 1년 변화)와 상대 성과(내 단지 vs 유사 단지 vs 시군구).",
       inputSchema: z.object({ item_id: z.string() }),
       run: async ({ item_id }) => {
         const it = await ownItem(item_id);
@@ -157,7 +157,7 @@ export function buildTools(userId: string) {
     }),
     betaZodTool({
       name: "search_news",
-      description: "관심 물건에 연결된 뉴스(AI 관련도·카테고리·호재/악재·요약). item_id 없으면 전체 물건.",
+      description: "관심 부동산에 연결된 뉴스(AI 관련도·카테고리·호재/악재·요약). item_id 없으면 전체 부동산.",
       inputSchema: z.object({ item_id: z.string().optional(), days: z.number().int().min(1).max(180).default(60), min_relevance: z.number().min(0).max(1).default(0.6) }),
       run: async (q) => {
         const rows = await sql`
@@ -189,7 +189,7 @@ export function buildTools(userId: string) {
     }),
     betaZodTool({
       name: "get_location",
-      description: "물건의 생활편의 점수(0~100, 교통·학교·쇼핑·공원·학원·의료·음식)와 개발 요인(주변 정비구역, 신설역, 재건축 연한, 용적률 여유).",
+      description: "부동산의 생활편의 점수(0~100, 교통·학교·쇼핑·공원·학원·의료·음식)와 개발 요인(주변 정비구역, 신설역, 재건축 연한, 용적률 여유).",
       inputSchema: z.object({ item_id: z.string() }),
       run: async ({ item_id }) => {
         await ownItem(item_id);

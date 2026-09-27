@@ -56,11 +56,11 @@ def _geocode(ns):
 
 
 def _demo_args(p):
-    p.add_argument("--email", help="데모 물건을 등록할 사용자 이메일(허용 목록에도 추가)")
+    p.add_argument("--email", help="데모 부동산을 등록할 사용자 이메일(허용 목록에도 추가)")
     p.add_argument("--reset", action="store_true", help="데모 데이터만 삭제")
 
 
-@command("link", "관심 물건 ↔ 단지 연결")
+@command("link", "관심 부동산 ↔ 단지 연결")
 def _link(ns):
     from .transforms.complexes import link_watch_items
     return _with_job("link", link_watch_items)
@@ -82,7 +82,7 @@ def _simple(name: str, target: str, help_: str, args=None):
 
 _simple("attrs", "myrealty_etl.jobs.attrs_job:refresh_attrs", "건축물대장·토지·공시가격 수집")
 _simple("events", "myrealty_etl.jobs.events_job:collect_events", "청약·연례 일정 이벤트 수집")
-_simple("news", "myrealty_etl.jobs.news_job:collect_news", "관심 물건 뉴스 수집")
+_simple("news", "myrealty_etl.jobs.news_job:collect_news", "관심 부동산 뉴스 수집")
 _simple("classify", "myrealty_etl.ai.news_classifier:classify_pending", "뉴스 AI 분류(배치/동기)",
         lambda p: p.add_argument("--mode", choices=["auto", "sync", "batch"]))
 _simple("macro", "myrealty_etl.collectors.macro:collect_macro", "ECOS·KOSIS·R-ONE 지표 수집")

@@ -1,0 +1,44 @@
+name: DB migrate
+
+# main 에 새 마이그레이션이 들어오면 바로 운영 DB 에 적용한다(Vercel 배포와 거의 동시에).
+# 매일 ETL(etl-daily.yml)도 시작할 때 migrate 를 돌리지만, 그때까지 새 코드가 없는 컬럼을 조회하지 않도록.
+# 적용된 파일은 schema_migrations 에 기록되므로 여러 번 실행해도 안전하다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "db/migrations/**"
+  workflow_dispatch:
+
+# 매일 ETL 과 같은 그룹: 동시에 돌지 않고 순서대로
+concurrency:
+  group: etl
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/etl
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --no-dev
+      - name: Apply migrations
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL 시크릿이 없습니다 (Settings › Secrets and variables › Actions)."
+            exit 1
+          fi
+          out=$(uv run myrealty migrate)
+          echo "$out"
+          {
+            echo "### DB 마이그레이션"
+            echo '```json'
+            echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

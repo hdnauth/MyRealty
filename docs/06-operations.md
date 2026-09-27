@@ -74,8 +74,9 @@ uv run myrealty import-geo rail.geojson --kind infra
 | `etl-daily.yml` | 매일 05:50 | `myrealty daily` — 아래 단계 전체 |
 | `reports.yml` | 월 07:40 / 매월 1일 07:50 | `GET /api/cron/reports?kind=weekly|monthly` |
 | `ci.yml` | push·PR | 웹 lint·typecheck·test·build, ETL ruff·pytest(PostGIS) |
+| `migrate.yml` | main 에 `db/migrations/**` 변경이 들어올 때 · 수동 | `myrealty migrate` — 운영 DB 스키마를 배포와 함께 맞춘다(매일 ETL 도 시작 전에 한 번 더 확인) |
 
-GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 **Secrets** 로, `APP_URL`·`ANTHROPIC_MODEL`·`ANTHROPIC_BULK_MODEL` 은 **Variables** 로 넣는다. 수동 실행: Actions → ETL daily → Run workflow (`only` 에 `rtms news` 처럼 단계 지정 가능).
+GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 **Secrets** 로, `APP_URL`·`ANTHROPIC_MODEL`·`ANTHROPIC_BULK_MODEL` 은 **Variables** 로 넣는다. 수동 실행: Actions → ETL daily → Run workflow (`only` 에 `rtms news` 처럼 단계 지정 가능). 마이그레이션만 따로: Actions → DB migrate → Run workflow.
 
 ### daily 단계
 | 단계 | 하는 일 | 필요 키 |

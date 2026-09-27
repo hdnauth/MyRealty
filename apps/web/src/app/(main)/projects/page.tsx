@@ -18,7 +18,7 @@ export default async function ProjectsPage() {
   ]);
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <PageHeader title="개발사업" sub="재개발·재건축 구역과 철도·도로 사업. 입지 점수와 지도·물건 입지 탭에 반영됩니다." />
+      <PageHeader title="개발사업" sub="재개발·재건축 구역과 철도·도로 사업. 입지 점수와 지도와 부동산 상세의 입지 탭에 반영됩니다." />
       {user.isAdmin ? (
         <Card>
           <CardHeader title="직접 등록" sub="GeoJSON/CSV 일괄 등록: uv run myrealty import-geo 파일 --kind zones|infra" />

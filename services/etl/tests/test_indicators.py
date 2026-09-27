@@ -33,3 +33,13 @@ def test_compute_region_on_demo(conn):
     assert trough < peak
     jr = conn.execute("select value from series_values where code = 'jr.11710' order by period desc limit 1").fetchone()["value"]
     assert 0.4 < jr < 0.7
+    # 실거래 상세 지표: 합성 데이터는 법인 약 4%, 갱신 전세가 신규보다 약 5% 낮음
+    def latest(code):
+        r = conn.execute("select value from series_values where code = %s order by period desc limit 1", (code,)).fetchone()
+        return r["value"] if r else None
+
+    assert 0 <= latest("corp.11710") < 0.2
+    assert 0.02 < latest("jgap.11710") < 0.1
+    assert 0.3 < latest("rrr.11710") < 0.9
+    unreg = conn.execute("select value from series_values where code = 'unreg.11710' order by period desc offset 4 limit 1").fetchone()
+    assert unreg is None or 0 <= unreg["value"] <= 0.3

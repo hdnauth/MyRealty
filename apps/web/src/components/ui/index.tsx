@@ -119,7 +119,7 @@ export function Change({ value, digits = 1, className }: { value: number | null 
   );
 }
 
-export function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
+export function Stat({ label, value, sub }: { label: ReactNode; value: ReactNode; sub?: ReactNode }) {
   return (
     <div className="min-w-0">
       <div className="text-xs text-muted">{label}</div>

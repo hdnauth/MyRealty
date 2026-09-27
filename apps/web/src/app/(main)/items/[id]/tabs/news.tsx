@@ -1,7 +1,8 @@
 import { ExternalLink } from "lucide-react";
 import { NotificationRow } from "@/components/feed/notification-row";
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
-import { formatDate, safeHref } from "@/lib/format";
+import { formatDate, formatManwon, formatPct, safeHref } from "@/lib/format";
+import { type PresaleModel, presaleVsMarket } from "@/lib/queries/presale";
 import { eventsNear, itemArticles, listNotifications } from "@/lib/queries/feed";
 import type { WatchItem } from "@/lib/queries/items";
 
@@ -13,6 +14,14 @@ export async function NewsTab({ item }: { item: WatchItem }) {
     item.lng !== null && item.lat !== null ? eventsNear(item.lng, item.lat, 5000) : Promise.resolve([]),
     listNotifications(item.user_id, { itemId: item.id, limit: 20 }),
   ]);
+  // 청약 공고 중 주택형별 분양가가 있는 것: 주변 시세와 비교
+  const presale = new Map(
+    await Promise.all(
+      events
+        .filter((e) => e.kind === "subscription" && Array.isArray(e.payload?.models) && (e.payload.models as unknown[]).length && e.lng !== null)
+        .map(async (e) => [e.id, await presaleVsMarket(e.lng!, e.lat!, e.payload.models as PresaleModel[])] as const),
+    ),
+  );
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-2">
@@ -61,6 +70,29 @@ export async function NewsTab({ item }: { item: WatchItem }) {
                   </div>
                   <p className="mt-1 font-medium">{e.title}</p>
                   {e.payload?.households ? <p className="text-xs text-muted">{String(e.payload.households)}세대</p> : null}
+                  {presale.get(e.id)?.length ? (
+                    <table className="mt-1.5 w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-muted">
+                          <th className="py-0.5 font-medium">주택형</th>
+                          <th className="py-0.5 text-right font-medium">분양가</th>
+                          <th className="py-0.5 text-right font-medium">주변 시세 대비</th>
+                        </tr>
+                      </thead>
+                      <tbody className="tabular">
+                        {presale.get(e.id)!.map((m) => (
+                          <tr key={m.type} className="border-t border-border/60">
+                            <td className="py-1">{Math.floor(m.area)}㎡</td>
+                            <td className="py-1 text-right">{formatManwon(m.top_price, { short: true })}</td>
+                            <td className={`py-1 text-right ${m.gap === null ? "text-muted" : m.gap < 0 ? "text-down" : "text-up"}`} title={m.market ? `주변 ${m.marketN}건 중위 ${formatManwon(m.market, { short: true })}${m.marketNew ? ` · 10년 이내 신축 ${formatManwon(m.marketNew, { short: true })}` : ""}` : "주변 거래 부족"}>
+                              {m.gap === null ? "거래 부족" : formatPct(m.gap, 0)}
+                              {m.gapNew !== null ? <span className="block text-[10px] text-muted">신축 대비 {formatPct(m.gapNew, 0)}</span> : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -69,7 +101,7 @@ export async function NewsTab({ item }: { item: WatchItem }) {
           )}
         </Card>
         <Card className="overflow-hidden">
-          <CardHeader title="이 물건 알림" />
+          <CardHeader title="이 부동산 알림" />
           {notes.length ? (
             <div className="divide-y divide-border">
               {notes.map((n) => (

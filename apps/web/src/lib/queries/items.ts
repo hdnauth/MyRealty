@@ -95,14 +95,23 @@ export type TxPoint = {
   jimok: string | null;
   build_year: number | null;
   house_type: string | null;
+  buyer_type: string | null;
+  registered_at: string | null;
+  contract_type: "new" | "renewal" | null;
+  prev_deposit: number | null;
+  /** 계약 후 90일~2년 사이인데 등기가 없는 매매(원천에 매수자 구분이 있는 자료만) */
+  unregistered: boolean;
 };
 
 const TX_COLUMNS = sql`
   t.id, t.deal_kind, t.deal_date::text as deal_date, t.price, t.monthly_rent, t.area_m2, t.land_area_m2, t.floor,
-  t.is_canceled, t.is_direct, t.name, t.umd_nm, t.jibun, t.jimok, t.build_year, t.house_type`;
+  t.is_canceled, t.is_direct, t.name, t.umd_nm, t.jibun, t.jimok, t.build_year, t.house_type,
+  t.buyer_type, t.registered_at::text as registered_at, t.contract_type, t.prev_deposit,
+  (t.deal_kind = 'sale' and not t.is_canceled and t.registered_at is null and t.buyer_type is not null
+    and t.deal_date between current_date - 730 and current_date - 90) as unregistered`;
 
 /**
- * 물건 기준 거래 이력.
+ * 부동산 기준 거래 이력.
  * - 단지형(아파트·오피스텔·빌라): 같은 단지, 면적 ±3㎡
  * - 그 외: 같은 읍면동·유형(임야는 지목=임야), 면적 ±40%
  */
@@ -232,4 +241,31 @@ export async function itemAttrs(item: WatchItem): Promise<ItemAttrs> {
       order by target_type, year`,
   ]);
   return { building: b ?? null, parcel: p ?? null, prices };
+}
+
+export type ItemDataStatus = { trades: number; building: boolean; officialPrice: boolean; parcel: boolean; location: boolean; valuation: boolean; news: number };
+
+/** 등록 직후 안내: 지금 볼 수 있는 데이터와 다음 수집 때 채워질 데이터 */
+export async function itemDataStatus(item: WatchItem): Promise<ItemDataStatus> {
+  const [[r]] = await Promise.all([
+    sql<ItemDataStatus[]>`
+      select
+        (select count(*)::int from transactions t where t.complex_id = ${item.complex_id} and ${item.complex_id}::bigint is not null) as trades,
+        exists (select 1 from building_registers b where b.pnu = ${item.pnu}) as building,
+        exists (select 1 from official_prices o where o.target_key = ${item.pnu} or o.target_key like ${(item.pnu ?? "-") + "|%"}) as "officialPrice",
+        exists (select 1 from parcels p where p.pnu = ${item.pnu}) as parcel,
+        exists (select 1 from location_scores l where l.target_type = 'item' and l.target_id = ${item.id}) as location,
+        exists (select 1 from valuations v where v.watch_item_id = ${item.id}) as valuation,
+        (select count(*)::int from article_links a where a.watch_item_id = ${item.id}) as news`,
+  ]);
+  return r;
+}
+
+/** 단지 전체(모든 평형) 매매 — 평형별 추이 겹쳐 보기 */
+export async function complexSales(complexId: number, years = 5) {
+  return sql<{ deal_date: string; price: number; area_m2: number }[]>`
+    select deal_date::text, price, area_m2::float8 as area_m2 from transactions
+    where complex_id = ${complexId} and deal_kind = 'sale' and not is_canceled and area_m2 > 0
+      and deal_date >= current_date - ${`${years} years`}::interval
+    order by deal_date`;
 }

@@ -220,6 +220,7 @@ export function NewItemForm() {
           <DetailFields
             isLand={isLand}
             labelPlaceholder={defaultLabel ? `비워 두면 "${defaultLabel}"` : "예) 우리집, 매수후보 A"}
+            defaultRadius={PROPERTY_TYPES[type].hasComplex ? 1000 : 2000}
             unitSlot={
               inspecting ? (
                 <div className="flex items-center gap-2 rounded-lg bg-surface-2 p-3 text-sm text-muted">

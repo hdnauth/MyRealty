@@ -42,16 +42,22 @@ export function TxTable({
                   {r.jimok ? <span className="ml-1 text-xs text-muted">{r.jimok}</span> : null}
                 </td>
               ) : null}
-              <td className="px-2 py-2">{DEAL_KIND_LABEL[r.deal_kind]}</td>
+              <td className="px-2 py-2">
+                {DEAL_KIND_LABEL[r.deal_kind]}
+                {r.contract_type === "renewal" ? <span className="ml-1 text-xs text-muted">갱신</span> : null}
+              </td>
               <td className="px-2 py-2 text-right font-medium">
                 {formatManwon(r.price)}
                 {r.monthly_rent ? <span className="text-muted"> / {r.monthly_rent}</span> : null}
+                {r.contract_type === "renewal" && r.prev_deposit ? (
+                  <span className="block text-[11px] font-normal text-muted">종전 {formatManwon(r.prev_deposit, { short: true })}</span>
+                ) : null}
               </td>
               <td className="px-2 py-2 text-right">{r.area_m2 ? `${Number(r.area_m2).toFixed(1)}㎡` : "-"}</td>
               <td className="px-2 py-2 text-right">{r.floor ?? "-"}</td>
               <td className="px-4 py-2 text-right">
                 {extra === "dist" && r.dist_m !== undefined ? `${r.dist_m.toLocaleString()}m` : null}
-                {r.is_canceled ? <Badge tone="warn">해제</Badge> : r.is_direct ? <Badge>직거래</Badge> : null}
+                <TxBadges r={r} />
               </td>
             </tr>
           ))}
@@ -63,5 +69,17 @@ export function TxTable({
         </Link>
       ) : null}
     </div>
+  );
+}
+
+/** 거래 표식: 해제 · 미등기(계약 후 90일이 지나도 소유권 이전 등기가 없는 매매) · 법인 매수 · 직거래 */
+function TxBadges({ r }: { r: TxPoint }) {
+  if (r.is_canceled) return <Badge tone="warn">해제</Badge>;
+  return (
+    <span className="inline-flex gap-1">
+      {r.unregistered ? <Badge tone="warn" title="계약 후 90일이 지나도 등기되지 않은 거래 — 신고가라면 신뢰도를 낮춰 보세요">미등기</Badge> : null}
+      {r.buyer_type === "법인" ? <Badge>법인</Badge> : null}
+      {r.is_direct ? <Badge title="중개 없이 직접 거래 — 가족 간 거래 등 시세와 다를 수 있음">직거래</Badge> : null}
+    </span>
   );
 }

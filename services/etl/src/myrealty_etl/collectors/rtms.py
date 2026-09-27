@@ -152,6 +152,12 @@ def normalize(item: dict, svc: Service, sgg_cd: str) -> dict | None:
         "renewal_used": (renewal == "사용") if renewal else None,
         "is_direct": (_g(item, "dealingGbn", "거래유형") == "직거래") if _g(item, "dealingGbn", "거래유형") else None,
         "is_canceled": cdeal == "O",
+        "buyer_type": _g(item, "buyerGbn", "매수자"),
+        "seller_type": _g(item, "slerGbn", "매도자"),
+        "registered_at": _cancel_date(_g(item, "rgstDate", "등기일자")),
+        "contract_type": {"신규": "new", "갱신": "renewal"}.get(_g(item, "contractType", "계약구분") or ""),
+        "prev_deposit": to_int(_g(item, "preDeposit", "종전계약보증금")),
+        "prev_rent": to_int(_g(item, "preMonthlyRent", "종전계약월세")),
         "canceled_at": _cancel_date(_g(item, "cdealDay", "해제사유발생일")),
         "raw": item,
     }
@@ -205,23 +211,34 @@ def fetch(svc: Service, sgg_cd: str, ym: str, *, conn=None, num_rows: int = 1000
 UPSERT_SQL = """
 insert into transactions (src_hash, property_type, deal_kind, sgg_cd, lawd_cd, umd_nm, jibun, name, house_type,
   jimok, land_use, area_m2, land_area_m2, floor, build_year, deal_date, price, monthly_rent, contract_term,
-  renewal_used, is_direct, is_canceled, canceled_at, raw, complex_id)
+  renewal_used, is_direct, is_canceled, canceled_at, buyer_type, seller_type, registered_at, contract_type,
+  prev_deposit, prev_rent, raw, complex_id)
 values (%(src_hash)s, %(property_type)s, %(deal_kind)s, %(sgg_cd)s, %(lawd_cd)s, %(umd_nm)s, %(jibun)s, %(name)s,
   %(house_type)s, %(jimok)s, %(land_use)s, %(area_m2)s, %(land_area_m2)s, %(floor)s, %(build_year)s, %(deal_date)s,
   %(price)s, %(monthly_rent)s, %(contract_term)s, %(renewal_used)s, %(is_direct)s, %(is_canceled)s, %(canceled_at)s,
+  %(buyer_type)s, %(seller_type)s, %(registered_at)s, %(contract_type)s, %(prev_deposit)s, %(prev_rent)s,
   %(raw_json)s, %(complex_id)s)
 on conflict (src_hash) do update set
   is_canceled = excluded.is_canceled,
   canceled_at = excluded.canceled_at,
   lawd_cd = coalesce(excluded.lawd_cd, transactions.lawd_cd),
   complex_id = coalesce(transactions.complex_id, excluded.complex_id),
+  registered_at = coalesce(excluded.registered_at, transactions.registered_at),
+  buyer_type = coalesce(excluded.buyer_type, transactions.buyer_type),
+  seller_type = coalesce(excluded.seller_type, transactions.seller_type),
   raw = excluded.raw,
   updated_at = now()
 where transactions.is_canceled is distinct from excluded.is_canceled
    or transactions.canceled_at is distinct from excluded.canceled_at
    or (transactions.complex_id is null and excluded.complex_id is not null)
+   -- 등기는 신고 몇 달 뒤에 붙는다(최근 3개월 재수집 때 반영)
+   or (transactions.registered_at is null and excluded.registered_at is not null)
 returning id, (xmax = 0) as inserted
 """
+
+
+# 상세 필드가 없는 행(테스트·구 명세)도 upsert 되도록
+DETAIL_DEFAULTS = {k: None for k in ("buyer_type", "seller_type", "registered_at", "contract_type", "prev_deposit", "prev_rent")}
 
 
 def upsert(conn, rows: list[dict]) -> dict:
@@ -231,7 +248,7 @@ def upsert(conn, rows: list[dict]) -> dict:
     stats = {"inserted": 0, "updated": 0}
     with conn.cursor() as cur:
         for row in rows:
-            params = {**row, "raw_json": jsonb(row["raw"]), "complex_id": row.get("complex_id")}
+            params = {**DETAIL_DEFAULTS, **row, "raw_json": jsonb(row["raw"]), "complex_id": row.get("complex_id")}
             cur.execute(UPSERT_SQL, params)
             res = cur.fetchone()
             if res:

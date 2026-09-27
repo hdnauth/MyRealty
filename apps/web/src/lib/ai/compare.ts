@@ -15,9 +15,9 @@ export const CompareResult = z.object({
 });
 export type CompareResult = z.infer<typeof CompareResult>;
 
-const SYSTEM = `당신은 한국 부동산 비교 분석가입니다. 여러 관심 물건의 데이터(JSON)만 근거로 차이를 정리합니다.
+const SYSTEM = `당신은 한국 부동산 비교 분석가입니다. 여러 관심 부동산의 데이터(JSON)만 근거로 차이를 정리합니다.
 - 장단점은 수치 인용이 있는 구체 문장으로. 데이터가 없는 비교는 하지 않습니다.
-- "fits" 는 조건별로 어느 물건이 데이터상 더 부합하는지와 근거를 적되, 매수 권유 표현은 쓰지 않습니다.
+- "fits" 는 조건별로 어느 부동산이 데이터상 더 부합하는지와 근거를 적되, 매수 권유 표현은 쓰지 않습니다.
 - 금액은 만원 입력을 억/만으로 표기합니다. 데모(합성) 데이터면 summary 에 밝힙니다.`;
 
 export async function generateCompare(userId: string, items: WatchItem[]) {
@@ -31,7 +31,7 @@ export async function generateCompare(userId: string, items: WatchItem[]) {
       { type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } },
       { type: "text", text: todayLine() },
     ],
-    messages: [{ role: "user", content: `다음 물건들을 비교하세요.\n\n${JSON.stringify(snaps)}` }],
+    messages: [{ role: "user", content: `다음 부동산들을 비교하세요.\n\n${JSON.stringify(snaps)}` }],
     output_config: { format: betaZodOutputFormat(CompareResult), ...effortConfig("high") },
     ...fallbackParams(),
   });

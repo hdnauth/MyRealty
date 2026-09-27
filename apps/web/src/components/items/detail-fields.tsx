@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { Field, Input, Select } from "@/components/ui";
 import { GROUP_TAGS } from "@/lib/property";
 import type { Lease, Loan } from "@/lib/queries/items";
+import { ChoiceChips, DongHoField, MoneyField, RADIUS_OPTIONS } from "./smart-inputs";
 
 export type DetailDefaults = {
   label?: string | null;
@@ -28,7 +29,10 @@ export function DetailFields({
   showKeywords = false,
   unitSlot,
   labelPlaceholder = "예) 우리집, 매수후보 A",
+  defaultRadius = 1000,
 }: {
+  /** 새로 등록할 때 유형별 기본 반경(아파트 1km, 토지 2km) */
+  defaultRadius?: number;
   d?: DetailDefaults;
   isLand?: boolean;
   areaOptions?: { area: number; n: number }[];
@@ -42,37 +46,24 @@ export function DetailFields({
   const [finance, setFinance] = useState(Boolean(d.purchase_price || loan || d.lease));
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="이름(표시용)">
-          <Input name="label" defaultValue={d.label ?? ""} placeholder={labelPlaceholder} />
-        </Field>
-        <Field label="그룹">
-          <Select name="group_tag" defaultValue={d.group_tag ?? "watch"}>
-            {Object.entries(GROUP_TAGS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      </div>
+      <ChoiceChips
+        name="group_tag"
+        label="이 부동산은"
+        options={Object.entries(GROUP_TAGS).map(([value, label]) => ({ value, label }))}
+        defaultValue={d.group_tag ?? "watch"}
+        hint="보유는 포트폴리오·손익에, 전월세 거주는 보증금 안전 점검에 쓰입니다."
+      />
+      <Field label="이름(표시용)">
+        <Input name="label" defaultValue={d.label ?? ""} placeholder={labelPlaceholder} />
+      </Field>
 
       {unitSlot ?? (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label={isLand ? "토지 면적(㎡)" : "전용면적(㎡)"}>
               <Input name="area_m2" inputMode="decimal" value={area} onChange={(e) => setArea(e.target.value)} placeholder="84.9" />
             </Field>
-            {!isLand ? (
-              <>
-                <Field label="층">
-                  <Input name="floor" inputMode="numeric" defaultValue={d.floor ?? ""} />
-                </Field>
-                <Field label="동/호">
-                  <Input name="dong_ho" defaultValue={d.dong_ho ?? ""} placeholder="101동 1502호" />
-                </Field>
-              </>
-            ) : null}
+            {!isLand ? <DongHoField defaultValue={d.dong_ho} defaultFloor={d.floor} /> : null}
           </div>
           {areaOptions && areaOptions.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
@@ -97,17 +88,13 @@ export function DetailFields({
       {finance ? (
         <div className="space-y-4 rounded-xl bg-surface-2 p-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="매입가(만원)">
-              <Input name="purchase_price" inputMode="numeric" defaultValue={d.purchase_price ?? ""} placeholder="150000 = 15억" />
-            </Field>
+            <MoneyField label="매입가" name="purchase_price" defaultValue={d.purchase_price} />
             <Field label="매입일">
               <Input name="purchase_date" type="date" defaultValue={d.purchase_date ?? ""} />
             </Field>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-            <Field label="대출금(만원)">
-              <Input name="loan_amount" inputMode="numeric" defaultValue={loan?.amount ?? ""} />
-            </Field>
+            <MoneyField label="대출금" name="loan_amount" defaultValue={loan?.amount} placeholder="예) 6억" />
             <Field label="금리(%)">
               <Input name="loan_rate" inputMode="decimal" defaultValue={loan?.rate ?? ""} />
             </Field>
@@ -119,12 +106,8 @@ export function DetailFields({
             </Field>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-            <Field label="임대 보증금(만원)">
-              <Input name="lease_deposit" inputMode="numeric" defaultValue={d.lease?.deposit ?? ""} />
-            </Field>
-            <Field label="월세(만원)">
-              <Input name="lease_rent" inputMode="numeric" defaultValue={d.lease?.rent ?? ""} />
-            </Field>
+            <MoneyField label="보증금" name="lease_deposit" defaultValue={d.lease?.deposit} placeholder="예) 5억" />
+            <MoneyField label="월세" name="lease_rent" defaultValue={d.lease?.rent || null} placeholder="예) 150만" />
             <Field label="계약 만기">
               <Input name="lease_end" type="date" defaultValue={d.lease?.end_date ?? ""} />
             </Field>
@@ -138,20 +121,27 @@ export function DetailFields({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="주변 탐색 반경(m)">
-          <Input name="radius_m" inputMode="numeric" defaultValue={d.radius_m ?? ""} placeholder="아파트 1000 / 토지 2000" />
-        </Field>
+      <ChoiceChips
+        key={d.radius_m ?? defaultRadius}
+        name="radius_m"
+        label="주변 거래·입지를 볼 범위"
+        options={RADIUS_OPTIONS}
+        defaultValue={String(d.radius_m ?? defaultRadius)}
+        hint="아파트는 1km, 토지·단독은 2km 가 보통입니다."
+      />
+
+      <details className="group rounded-xl border border-border px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium text-muted group-open:mb-3">고급 설정 · 뉴스 키워드</summary>
         {showKeywords ? (
-          <Field label="뉴스 키워드(쉼표 구분)">
+          <Field label="뉴스 키워드(쉼표 구분)" hint="단지명·동네·시군구 키워드는 자동으로 만들어집니다.">
             <Input name="keywords" defaultValue={(d.keywords ?? []).join(", ")} />
           </Field>
         ) : (
-          <Field label="추가 뉴스 키워드(선택, 쉼표 구분)">
+          <Field label="추가 뉴스 키워드(선택, 쉼표 구분)" hint="단지명·동네·시군구 키워드는 자동으로 만들어집니다.">
             <Input name="keywords" placeholder="예) GTX-A, 잠실 재건축" />
           </Field>
         )}
-      </div>
+      </details>
     </div>
   );
 }

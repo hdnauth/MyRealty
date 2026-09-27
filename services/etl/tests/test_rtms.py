@@ -21,6 +21,7 @@ def test_parse_apt_trade(fixture_text):
     assert r["price"] == 275000 and r["area_m2"] == 84.8 and r["floor"] == 15
     assert r["deal_date"] == date(2026, 8, 12) and r["lawd_cd"] == "1171010100"
     assert r["apt_seq"] == "11710-6183" and r["is_direct"] is False
+    assert r["buyer_type"] == "개인" and r["registered_at"] is None
     canceled = rows[1]
     assert canceled["is_canceled"] and canceled["canceled_at"] == date(2026, 8, 20) and canceled["is_direct"]
     # 완전히 같은 두 거래는 서로 다른 해시를 가져야 한다
@@ -37,6 +38,7 @@ def test_hash_ignores_cancel_flag(fixture_text):
 def test_parse_apt_rent(fixture_text):
     rows, _ = _rows(fixture_text("rtms_apt_rent.xml"), APT_RENT, "11710")
     assert rows[0]["deal_kind"] == "jeonse" and rows[0]["price"] == 120000 and rows[0]["renewal_used"] is True
+    assert rows[0]["contract_type"] == "renewal"
     assert rows[1]["deal_kind"] == "wolse" and rows[1]["monthly_rent"] == 150
     assert rows[0]["lawd_cd"] is None  # 전월세 응답에는 umdCd 가 없을 수 있음
 
@@ -73,3 +75,14 @@ def test_upsert_and_complex_matching(conn, fixture_text):
     assert s2 == {"inserted": 0, "updated": 1}
     n = conn.execute("select count(*) as n from complexes").fetchone()["n"]
     assert n == 2
+
+
+def test_parse_trade_details():
+    svc = rtms.SERVICES[0]
+    item = {"dealYear": "2026", "dealMonth": "5", "dealDay": "3", "dealAmount": "150,000", "aptNm": "A", "excluUseAr": "84.9",
+            "buyerGbn": "법인", "slerGbn": "개인", "rgstDate": "26.07.01"}
+    r = rtms.normalize(item, svc, "11710")
+    assert (r["buyer_type"], r["seller_type"], r["registered_at"]) == ("법인", "개인", date(2026, 7, 1))
+    rent = rtms.normalize({"dealYear": "2026", "dealMonth": "5", "dealDay": "3", "deposit": "50,000", "monthlyRent": "0",
+                           "contractType": "갱신", "preDeposit": "47,000", "preMonthlyRent": "0"}, rtms.SERVICES[1], "11710")
+    assert (rent["contract_type"], rent["prev_deposit"], rent["prev_rent"]) == ("renewal", 47000, 0)

@@ -55,7 +55,7 @@ export default async function AdminUsers(props: PageProps<"/admin/users">) {
               <tr className="border-b border-border">
                 <th className="px-4 py-2 font-medium">이메일</th>
                 <th className="px-2 py-2 font-medium">상태</th>
-                <th className="px-2 py-2 text-right font-medium">물건</th>
+                <th className="px-2 py-2 text-right font-medium">부동산</th>
                 <th className="px-2 py-2 text-right font-medium">기기</th>
                 <th className="px-2 py-2 text-right font-medium">AI(월)</th>
                 <th className="px-2 py-2 font-medium">가입</th>

@@ -19,6 +19,8 @@ export type ChartTokens = {
   s1: string;
   s2: string;
   s3: string;
+  s4: string;
+  s5: string;
   grid: string;
   axis: string;
   ink: string;
@@ -34,6 +36,8 @@ function readTokens(): ChartTokens {
     s1: v("--series-1"),
     s2: v("--series-2"),
     s3: v("--series-3"),
+    s4: v("--series-4"),
+    s5: v("--series-5"),
     grid: v("--chart-grid"),
     axis: v("--chart-axis"),
     ink: v("--chart-ink"),
@@ -99,7 +103,7 @@ export function baseAxes(t: ChartTokens) {
     xAxisStyle: {
       axisLine: { lineStyle: { color: t.axis } },
       axisTick: { show: false },
-      axisLabel: { color: t.muted, fontSize: 11 },
+      axisLabel: { color: t.muted, fontSize: 11, hideOverlap: true },
       splitLine: { show: false },
     },
     yAxisStyle: {

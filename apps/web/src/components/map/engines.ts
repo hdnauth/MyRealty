@@ -24,7 +24,37 @@ export interface MapHandle {
   addHtmlMarker(o: HtmlMarkerOptions): Removable;
   addCircle(o: { lng: number; lat: number; radius: number; color: string }): Removable;
   panTo(lng: number, lat: number): void;
+  /** 현재 화면 크기·범위의 이미지(WMS GetMap 등)를 지도 위에 덮는다 */
+  addImageOverlay(o: { url: string; bbox: BBox; opacity?: number }): Removable;
+  /** 엔진 자체 지적도가 있으면 켠다(네이버 CadastralLayer). 없으면 false */
+  setCadastral(on: boolean): boolean;
+  size(): { width: number; height: number };
+  zoom(): number;
   destroy(): void;
+}
+
+/**
+ * 브이월드 WMS(1.3.0, EPSG:4326 은 위도·경도 순서) 한 장 URL.
+ * 레이어: 연속지적도 lp_pa_cbnd_bubun·lp_pa_cbnd_bonbun, 용도지역 lt_c_uq111(도시)·112(관리)·113(농림)·114(자연환경보전)
+ */
+export function vworldWmsUrl(p: { key: string; domain?: string | null; layers: string[]; bbox: BBox; width: number; height: number }) {
+  const [w, s, e, n] = p.bbox;
+  const q = new URLSearchParams({
+    service: "WMS",
+    request: "GetMap",
+    version: "1.3.0",
+    layers: p.layers.join(","),
+    styles: p.layers.join(","),
+    crs: "EPSG:4326",
+    bbox: [s, w, n, e].join(","),
+    width: String(Math.min(2048, Math.round(p.width))),
+    height: String(Math.min(2048, Math.round(p.height))),
+    format: "image/png",
+    transparent: "true",
+    key: p.key,
+  });
+  if (p.domain) q.set("domain", p.domain);
+  return `https://api.vworld.kr/req/wms?${q}`;
 }
 
 export type TileSource = { url: string; attribution: string; maxZoom: number };
@@ -99,6 +129,7 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
   // 목록 패널 높이가 바뀌는 등 컨테이너 크기가 변하면 다시 맞춘다
   const ro = new ResizeObserver(() => map.setSize(new naver.maps.Size(el.clientWidth, el.clientHeight)));
   ro.observe(el);
+  let cadastral: any = null;
   return {
     engine: "naver",
     onIdle(cb) {
@@ -139,8 +170,26 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
     panTo(lng, lat) {
       map.panTo(new naver.maps.LatLng(lat, lng));
     },
+    addImageOverlay(o) {
+      const [w, s, e, n] = o.bbox;
+      const g = new naver.maps.GroundOverlay(o.url, new naver.maps.LatLngBounds(new naver.maps.LatLng(s, w), new naver.maps.LatLng(n, e)), {
+        opacity: o.opacity ?? 0.6,
+        clickable: false,
+      });
+      g.setMap(map);
+      return { remove: () => g.setMap(null) };
+    },
+    setCadastral(on) {
+      if (!naver.maps.CadastralLayer) return false;
+      cadastral ??= new naver.maps.CadastralLayer();
+      cadastral.setMap(on ? map : null);
+      return true;
+    },
+    size: () => ({ width: el.clientWidth, height: el.clientHeight }),
+    zoom: () => map.getZoom(),
     destroy() {
       ro.disconnect();
+      cadastral?.setMap(null);
       try {
         map.destroy();
       } catch {
@@ -230,6 +279,14 @@ export function createLeafletMap(
     panTo(lng, lat) {
       map.panTo([lat, lng]);
     },
+    addImageOverlay(o) {
+      const [w, s, e, n] = o.bbox;
+      const img = L.imageOverlay(o.url, [[s, w], [n, e]], { opacity: o.opacity ?? 0.6, interactive: false }).addTo(map);
+      return { remove: () => img.remove() };
+    },
+    setCadastral: () => false,
+    size: () => ({ width: el.clientWidth, height: el.clientHeight }),
+    zoom: () => map.getZoom(),
     destroy() {
       ro.disconnect();
       map.remove();

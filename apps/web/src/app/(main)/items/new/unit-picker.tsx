@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import { useMemo, useState } from "react";
+import { DongHoField, FloorField } from "@/components/items/smart-inputs";
 import { Field, Input, Select } from "@/components/ui";
 import { formatManwon } from "@/lib/format";
 import { type AreaType, areaTypeLabel, dongHo, dongLabel, floorFromHo, hoLabel, matchAreaType, type UnitTuple } from "@/lib/units";
@@ -27,7 +28,6 @@ export function UnitPicker({
   const [manualArea, setManualArea] = useState(areaTypes.length === 0);
   const [dong, setDong] = useState(() => (dongs.length === 1 ? dongs[0] : ""));
   const [ho, setHo] = useState("");
-  const [floor, setFloor] = useState("");
 
   const setArea = (v: string) => {
     setAreaRaw(v);
@@ -49,16 +49,16 @@ export function UnitPicker({
     return [...m.entries()];
   }, [hoOptions]);
 
+  // 층은 대장의 호별 층 → 없으면 호수 규칙(903호 → 9층)
+  const pickedUnit = dongUnits.find((x) => x[1] === ho);
+  const derivedFloor = pickedUnit?.[2] ?? (ho ? floorFromHo(ho) : null);
+
   const pickHo = (h: string) => {
     setHo(h);
     const u = dongUnits.find((x) => x[1] === h);
     if (u) {
-      if (u[2] !== null) setFloor(String(u[2]));
       setArea(String(u[3]));
       setManualArea(false);
-    } else {
-      const f = floorFromHo(h);
-      if (f) setFloor(String(f));
     }
   };
 
@@ -149,7 +149,7 @@ export function UnitPicker({
             ))}
           </div>
         ) : null}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {dongs.length === 0 ? (
             <Mini label="동">
               <Input value={dong} onChange={(e) => setDong(e.target.value)} placeholder="예: 101" />
@@ -170,13 +170,11 @@ export function UnitPicker({
                 ))}
               </Select>
             ) : (
-              <Input value={ho} onChange={(e) => pickHo(e.target.value.trim())} placeholder="예: 1502" inputMode="numeric" />
+              <Input value={ho} onChange={(e) => pickHo(e.target.value.trim())} placeholder="예: 903" inputMode="numeric" />
             )}
           </Mini>
-          <Mini label="층">
-            <Input name="floor" value={floor} onChange={(e) => setFloor(e.target.value)} inputMode="numeric" placeholder="호에서 자동" />
-          </Mini>
         </div>
+        <FloorField derived={derivedFloor} />
         {partial && dong && dongUnits.length === 0 ? (
           <p className="text-xs text-muted">대단지라 이 동의 호 목록은 일부만 불러왔습니다. 호를 직접 입력하면 층은 자동으로 채워집니다.</p>
         ) : null}
@@ -207,18 +205,13 @@ export function SimpleArea({
   landArea: number | null;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <Field label={areaLabel} hint={defaultArea ? "공공데이터에서 자동으로 채웠습니다" : undefined}>
         <Input name="area_m2" inputMode="decimal" defaultValue={defaultArea ?? ""} placeholder={isLand ? "예: 330" : "예: 84.9"} />
       </Field>
       {!isLand ? (
         <>
-          <Field label="층">
-            <Input name="floor" inputMode="numeric" />
-          </Field>
-          <Field label="동/호">
-            <Input name="dong_ho" placeholder="예: 101호" />
-          </Field>
+          <DongHoField />
           {landArea ? <input type="hidden" name="land_area_m2" value={landArea} /> : null}
         </>
       ) : null}

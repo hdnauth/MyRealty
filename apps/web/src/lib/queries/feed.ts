@@ -64,11 +64,13 @@ export type NearEvent = {
   source_url: string | null;
   payload: Record<string, unknown>;
   dist_m: number | null;
+  lng: number | null;
+  lat: number | null;
 };
 
 export async function eventsNear(lng: number, lat: number, radiusM: number, fromDaysAgo = 60) {
   return sql<NearEvent[]>`
-    select id, kind, title, starts_on::text, ends_on::text, address, source_url, payload,
+    select id, kind, title, starts_on::text, ends_on::text, address, source_url, payload, ST_X(geom) as lng, ST_Y(geom) as lat,
       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography)::int as dist_m
     from events
     where geom is not null and ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})
@@ -79,7 +81,7 @@ export async function eventsNear(lng: number, lat: number, radiusM: number, from
 
 export type CalendarEntry = { date: string; kind: string; title: string; sub?: string | null; href?: string | null };
 
-/** 캘린더: 이벤트(청약·입주·공시·세금) + 내 물건 만기(대출·임대) */
+/** 캘린더: 이벤트(청약·입주·공시·세금) + 관심 부동산 만기(대출·임대) */
 export async function calendarEntries(userId: string, from: string, to: string): Promise<CalendarEntry[]> {
   const evs = await sql<{ starts_on: string; ends_on: string | null; kind: string; title: string; source_url: string | null; near: string | null }[]>`
     select e.starts_on::text, e.ends_on::text, e.kind, e.title, e.source_url,

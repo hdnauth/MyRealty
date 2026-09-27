@@ -6,6 +6,7 @@ import { normalizeEmail } from "@/lib/auth/otp";
 import { cookies } from "next/headers";
 import { destroySession, requireUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
+import { AREA_UNIT_COOKIE, isAreaUnit } from "@/lib/format";
 
 export async function logoutAction() {
   await destroySession();
@@ -36,11 +37,19 @@ export async function updateNotificationSettingsAction(form: FormData) {
   refresh();
 }
 
+export async function setAreaUnitAction(form: FormData) {
+  await requireUser();
+  const unit = form.get("unit");
+  if (!isAreaUnit(unit)) return;
+  (await cookies()).set(AREA_UNIT_COOKIE, unit, { path: "/", maxAge: 60 * 60 * 24 * 365 * 2, sameSite: "lax" });
+  refresh();
+}
+
 export async function deleteAccountAction(_: { error?: string }, form: FormData): Promise<{ error?: string }> {
   const user = await requireUser();
   if (user.isEnvAdmin) return { error: "ADMIN_EMAILS 로 지정된 관리자 계정은 탈퇴할 수 없습니다." };
   if (normalizeEmail(String(form.get("confirm") ?? "")) !== user.email) return { error: "확인을 위해 이메일 주소를 정확히 입력하세요." };
-  await sql`delete from users where id = ${user.id}`; // 물건·메모·알림·세션 등은 cascade
+  await sql`delete from users where id = ${user.id}`; // 부동산·메모·알림·세션 등은 cascade
   (await cookies()).delete(SESSION_COOKIE);
   redirect("/login");
 }

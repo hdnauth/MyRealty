@@ -126,14 +126,24 @@ def seed_demo(conn, email: str, *, today: date | None = None, years: int = 8) ->
             m += relativedelta(months=1)
         for i, (kind, day, area, floor, price, rent) in enumerate(rows):
             canceled = kind == "sale" and rnd.random() < 0.02
+            # 실거래 상세: 법인 매수 약 4%, 등기는 30~70일 뒤(5%는 미등기), 전세는 갱신 35%(종전 보증금 약 5% 낮음)
+            sale = kind == "sale"
+            buyer = ("법인" if rnd.random() < 0.04 else "개인") if sale else None
+            reg = day + timedelta(days=rnd.randint(30, 70)) if sale and not canceled and rnd.random() > 0.05 else None
+            reg = reg if reg and reg <= today else None
+            renewal = kind != "sale" and rnd.random() < 0.35
             conn.execute(
                 """insert into transactions (src_hash, property_type, deal_kind, sgg_cd, lawd_cd, umd_nm, jibun, complex_id, name,
-                     area_m2, floor, build_year, deal_date, price, monthly_rent, is_direct, is_canceled, canceled_at, geom, raw)
+                     area_m2, floor, build_year, deal_date, price, monthly_rent, is_direct, is_canceled, canceled_at, geom, raw,
+                     buyer_type, seller_type, registered_at, contract_type, prev_deposit, renewal_used)
                    values (%s, 'apt', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                     ST_SetSRID(ST_MakePoint(%s, %s), 4326), %s)""",
-                (_hash(key, i, day, price), kind, SGG, lawd, umd, jibun, cid, name, area, floor, by, day, price,
+                     ST_SetSRID(ST_MakePoint(%s, %s), 4326), %s, %s, %s, %s, %s, %s, %s)""",
+                (_hash(key, i, day, price), kind, SGG, lawd, umd, jibun, cid, name, area, floor, by, day,
+                 round(price * 0.95 / 500) * 500 if renewal else price,
                  rent if kind == "wolse" else None, rnd.random() < 0.05, canceled,
-                 day + timedelta(days=20) if canceled else None, lng, lat, jsonb({"demo": True})),
+                 day + timedelta(days=20) if canceled else None, lng, lat, jsonb({"demo": True}),
+                 buyer, "개인" if sale else None, reg, ("renewal" if renewal else "new") if not sale else None,
+                 round(price * 0.9 / 500) * 500 if renewal else None, (rnd.random() < 0.6) if renewal else None),
             )
             n_tx += 1
 
@@ -169,7 +179,7 @@ def seed_demo(conn, email: str, *, today: date | None = None, years: int = 8) ->
             n_tx += 1
         m += relativedelta(months=1)
 
-    # 관심 물건
+    # 관심 부동산
     conn.execute("delete from watch_items where user_id = %s and label like '[데모]%%'", (uid,))
     items = [
         ("apt", "[데모] 우리집 잠실엘스", "owned", "서울특별시 송파구 올림픽로 99", "서울특별시 송파구 잠실동 19",
@@ -246,7 +256,8 @@ def _seed_news_events(conn, uid, today: date) -> dict:
     conn.execute(
         """insert into events (source_key, kind, title, starts_on, ends_on, address, geom, payload, source_url)
            values ('demo:sub1', 'subscription', '[데모] 잠실 르엘', %s, %s, '서울특별시 송파구 잠실동 일대',
-             ST_SetSRID(ST_MakePoint(127.0930, 37.5105), 4326), '{"households": 1865, "house_type": "APT"}',
+             ST_SetSRID(ST_MakePoint(127.0930, 37.5105), 4326),
+             '{"households": 1865, "house_type": "APT", "models": [{"type": "059.9800A", "area": 59.98, "supply_area": 84.1, "top_price": 139000, "households": 420}, {"type": "084.9700A", "area": 84.97, "supply_area": 114.2, "top_price": 185000, "households": 610}]}',
              'https://www.applyhome.co.kr'),
                   ('demo:movein1', 'move_in', '[데모] 잠실 르엘 입주 예정', %s, null, '서울특별시 송파구 잠실동 일대',
              ST_SetSRID(ST_MakePoint(127.0930, 37.5105), 4326), '{"households": 1865}', null)
@@ -325,6 +336,17 @@ def _seed_macro(conn, today: date) -> None:
         "ecos.bond_3y": ("[데모] 국고채 3년", "%", [(d, round(base_rate(d) + 0.2 + 0.25 * math.sin(t(d) / 5), 2)) for d in months]),
         "ecos.cpi": ("[데모] 소비자물가지수", "2020=100", [(d, round(96.5 * (1.0022 ** t(d)) * (1.01 if d >= date(2022, 3, 1) else 1), 2)) for d in months]),
         "ecos.m2": ("[데모] M2 평잔", "십억원", [(d, round(2_350_000 * (1.0062 ** t(d)))) for d in months]),
+        # 수요 심리·신용·공급(합성): 2021 과열 → 2022 급랭 → 회복
+        "ecos.housing_csi": ("[데모] 주택가격전망 CSI", "지수(100=중립)",
+                             [(d, round(100 + 25 * math.sin((t(d) - 30) / 11) - (30 if date(2022, 6, 1) <= d <= date(2023, 3, 1) else 0), 1)) for d in months]),
+        "ecos.household_mortgage": ("[데모] 주택담보대출 잔액", "십억원",
+                                    [(d, round(600_000 * (1.0045 ** t(d)) * (0.97 if d >= date(2022, 9, 1) else 1))) for d in months]),
+        "reb.supply_demand": ("[데모] 아파트 매매수급지수", "지수(100=균형)",
+                              [(d, round(95 + 12 * math.sin((t(d) - 28) / 10), 1)) for d in months]),
+        "kosis.unsold_done": ("[데모] 준공 후 미분양", "호",
+                              [(d, round(8000 + 5000 * max(0, math.sin((t(d) - 70) / 14)))) for d in months]),
+        "kosis.permits": ("[데모] 주택 인허가", "호",
+                          [(d, round(40000 * (0.6 if d >= date(2023, 1, 1) else 1) * (1 + 0.15 * math.sin(t(d) / 3)))) for d in months]),
     }
     for code, (name, unit, vals) in series.items():
         upsert_series(conn, code, {"name": name, "unit": unit, "freq": "M", "source": "demo"}, vals)

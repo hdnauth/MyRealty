@@ -1,7 +1,7 @@
 import { Building, Building2, Home, Landmark, Store, Trees } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui";
-import { formatArea, formatDate, formatManwon } from "@/lib/format";
+import { type AreaUnit, formatArea, formatDate, formatManwon } from "@/lib/format";
 import { GROUP_TAGS, PROPERTY_TYPES, type PropertyType } from "@/lib/property";
 
 const ICONS: Record<PropertyType, typeof Home> = {
@@ -21,7 +21,9 @@ export function TypeIcon({ type, size = 18 }: { type: PropertyType; size?: numbe
 
 export function ItemCard({
   item,
+  unit = "m2",
 }: {
+  unit?: AreaUnit;
   item: {
     id: string;
     label: string;
@@ -52,7 +54,7 @@ export function ItemCard({
         </div>
         <div className="mt-0.5 truncate text-xs text-muted">
           {GROUP_TAGS[item.group_tag as keyof typeof GROUP_TAGS] ?? item.group_tag} · {PROPERTY_TYPES[item.property_type]?.label} ·{" "}
-          {formatArea(item.area_m2 ?? item.land_area_m2)} · {item.road_address ?? item.jibun_address}
+          {formatArea(item.area_m2 ?? item.land_area_m2, unit)} · {item.road_address ?? item.jibun_address}
         </div>
       </div>
       <div className="shrink-0 text-right">

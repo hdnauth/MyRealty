@@ -86,7 +86,7 @@ export async function AnalysisTab({ item }: { item: WatchItem }) {
             <p className="text-xs text-muted">투자 권유가 아닌 데이터 요약입니다. <Link href="/ai" className="text-accent">AI에게 더 묻기 →</Link></p>
           </div>
         ) : enabled ? (
-          <EmptyState title="아직 분석 카드가 없습니다" desc="‘분석 생성’을 누르면 이 물건의 데이터로 강점·리스크·체크리스트를 정리합니다." />
+          <EmptyState title="아직 분석 카드가 없습니다" desc="‘분석 생성’을 누르면 이 부동산의 데이터로 강점·리스크·체크리스트를 정리합니다." />
         ) : null}
       </Card>
     </div>

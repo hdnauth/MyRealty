@@ -27,3 +27,16 @@ def test_annual_and_upsert(conn):
     conn.commit()
     row = conn.execute("select ST_X(geom) as x from events where kind = 'subscription'").fetchone()
     assert abs(row["x"] - 127.09) < 1e-9
+
+
+def test_parse_models():
+    rows = [
+        {"HOUSE_TY": "084.9800A", "SUPLY_AR": "112.45", "LTTOT_TOP_AMOUNT": "125,000", "SUPLY_HSHLDCO": "120"},
+        {"HOUSE_TY": "059.9900", "SUPLY_AR": "", "LTTOT_TOP_AMOUNT": "89000", "SUPLY_HSHLDCO": ""},
+        {"HOUSE_TY": "", "LTTOT_TOP_AMOUNT": "1"},
+    ]
+    m = applyhome.parse_models(rows)
+    assert m == [
+        {"type": "084.9800A", "area": 84.98, "supply_area": 112.45, "top_price": 125000, "households": 120},
+        {"type": "059.9900", "area": 59.99, "supply_area": None, "top_price": 89000, "households": None},
+    ]

@@ -30,3 +30,20 @@ def test_upsert_series(conn):
     conn.commit()
     assert n == 1
     assert conn.execute("select value from series_values where code = 'ecos.base_rate'").fetchone()["value"] == 2.5
+
+
+def test_check_series_reports_each_entry(monkeypatch):
+    import dataclasses
+
+    monkeypatch.setattr(macro, "settings", dataclasses.replace(macro.settings, ecos_key="k", kosis_key=None, reb_key=None))
+
+    def fake_ecos(s, start, end, conn=None):
+        if s["code"] == "ecos.housing_csi":
+            raise RuntimeError("ECOS 오류 INFO-100: 인증키 또는 항목코드 확인")
+        return [(date(2026, 7, 1), 1.0), (date(2026, 8, 1), 2.0)]
+
+    monkeypatch.setattr(macro, "fetch_ecos", fake_ecos)
+    res = {r["code"]: r for r in macro.check_series(today=date(2026, 9, 1))}
+    assert res["ecos.base_rate"]["ok"] is True and res["ecos.base_rate"]["last"] == ["2026-08-01", 2.0]
+    assert res["ecos.housing_csi"]["ok"] is False and "INFO-100" in res["ecos.housing_csi"]["note"]
+    assert res["kosis.permits"]["ok"] is None and "키 없음" in res["kosis.permits"]["note"]

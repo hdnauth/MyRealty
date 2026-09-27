@@ -18,6 +18,11 @@
 | ind.turnover.{sgg}| 거래 회전율 = 월 매매 / 세대수 ×1000                          |
 | ind.supply.{sgg}  | 공급압력 = 향후 24개월 입주예정 세대 / 재고 세대 ×100(최신값) |
 | ind.temp.{sgg}    | 시장 온도계 0~100, ind.temp_c.<요인>.{sgg} 는 요인별 기여     |
+| corp.{sgg}        | 법인 매수 비중(매수자 구분 기준, 3M)                         |
+| direct.{sgg}      | 직거래 비중(3M) — 특수관계 거래가 섞이는 정도                 |
+| unreg.{sgg}       | 미등기 신고가 비율(90일 지나도 등기 없는 신고가, 6M)           |
+| jgap.{sgg}        | 신규 전세 평당가 중위 ÷ 갱신 전세 평당가 중위 − 1(3M)          |
+| rrr.{sgg}         | 갱신 계약 중 갱신요구권 사용 비율(3M)                          |
 """
 
 from __future__ import annotations
@@ -115,7 +120,8 @@ def asof(m: dict[date, float], d: date) -> float | None:
 def compute_region(conn, sgg: str, today: date | None = None, income: float = DEFAULT_ANNUAL_INCOME_MANWON) -> dict:
     today = today or date.today()
     rows = conn.execute(
-        """select complex_id, deal_kind, deal_date, price, area_m2 from transactions
+        """select complex_id, deal_kind, deal_date, price, area_m2, buyer_type, is_direct, registered_at,
+                  contract_type, renewal_used from transactions
            where sgg_cd = %s and property_type = 'apt' and not is_canceled and price > 0 and area_m2 > 0
            order by deal_date, id""",
         (sgg,),
@@ -141,6 +147,15 @@ def compute_region(conn, sgg: str, today: date | None = None, income: float = DE
     hi_m, dn_m, tot_m = [0] * n, [0] * n, [0] * n
     last_price: dict = {}
     max_price: dict = {}
+    # 실거래 상세: 법인 매수, 직거래, 신고가의 등기 여부, 전세 신규/갱신
+    corp_m, buyer_known_m = [0] * n, [0] * n
+    direct_m, direct_known_m = [0] * n, [0] * n
+    hi_unreg_m, hi_aged_m = [0] * n, [0] * n
+    j_new_m: list[list[float]] = [[] for _ in months]
+    j_ren_m: list[list[float]] = [[] for _ in months]
+    rrr_m, ren_m = [0] * n, [0] * n
+    has_registration = any(r["registered_at"] for r in rows if r["deal_kind"] == "sale")
+    aged = today - relativedelta(days=90)  # 등기는 보통 잔금 후 60일 안 — 90일 지나도 없으면 '미등기'
     for r in rows:
         i = mi.get(month_start(r["deal_date"]))
         if i is None:
@@ -149,11 +164,23 @@ def compute_region(conn, sgg: str, today: date | None = None, income: float = DE
         ppy = r["price"] / (area / PY)
         if r["deal_kind"] == "jeonse":
             j_ppy_m[i].append(ppy)
+            if r["contract_type"] == "new":
+                j_new_m[i].append(ppy)
+            elif r["contract_type"] == "renewal":
+                j_ren_m[i].append(ppy)
+                ren_m[i] += 1
+                rrr_m[i] += 1 if r["renewal_used"] else 0
             continue
         if r["deal_kind"] != "sale":
             continue
         vol[i] += 1
         ppy_m[i].append(ppy)
+        if r["buyer_type"]:
+            buyer_known_m[i] += 1
+            corp_m[i] += 1 if r["buyer_type"] == "법인" else 0
+        if r["is_direct"] is not None:
+            direct_known_m[i] += 1
+            direct_m[i] += 1 if r["is_direct"] else 0
         if 75 <= area <= 95:
             p84_m[i].append(r["price"])
         if r["complex_id"] in base:
@@ -164,6 +191,9 @@ def compute_region(conn, sgg: str, today: date | None = None, income: float = DE
                 tot_m[i] += 1
                 if r["price"] > max_price[key]:
                     hi_m[i] += 1
+                    if has_registration and r["deal_date"] <= aged:
+                        hi_aged_m[i] += 1
+                        hi_unreg_m[i] += 0 if r["registered_at"] else 1
                 if r["price"] < last_price[key]:
                     dn_m[i] += 1
             last_price[key] = r["price"]
@@ -191,6 +221,13 @@ def compute_region(conn, sgg: str, today: date | None = None, income: float = DE
         return out
 
     nhr, dr = ratio3(hi_m, tot_m), ratio3(dn_m, tot_m)
+    corp = ratio3(corp_m, buyer_known_m)
+    direct = ratio3(direct_m, direct_known_m)
+    rrr = ratio3(rrr_m, ren_m)
+    # 미등기 신고가는 표본이 적어 6개월 창
+    unreg = [(sum(hi_unreg_m[max(0, i - 5): i + 1]) / d) if (d := sum(hi_aged_m[max(0, i - 5): i + 1])) >= 5 else None
+             for i in range(n)]
+    jgap = [(a / b - 1) if a and b else None for a, b in zip(med(j_new_m), med(j_ren_m), strict=True)]
 
     # 거시 지표
     rate_s = series_map(conn, "ecos.mortgage_rate")
@@ -254,6 +291,11 @@ def compute_region(conn, sgg: str, today: date | None = None, income: float = DE
         f"ind.liq.{sgg}": ("indicator", f"유동성 대비 가격({name})", "시작월=100", liq),
         f"ind.turnover.{sgg}": ("indicator", f"거래 회전율({name})", "‰", turnover),
         f"ind.temp.{sgg}": ("indicator", f"시장 온도계({name})", "0~100", temp),
+        f"corp.{sgg}": ("indicator", f"법인 매수 비중({name})", "비율", corp),
+        f"direct.{sgg}": ("indicator", f"직거래 비중({name})", "비율", direct),
+        f"unreg.{sgg}": ("indicator", f"미등기 신고가 비율({name})", "비율", unreg),
+        f"jgap.{sgg}": ("indicator", f"신규−갱신 전세 괴리({name})", "비율", jgap),
+        f"rrr.{sgg}": ("indicator", f"갱신요구권 사용률({name})", "비율", rrr),
     }
     for k, label, _ in TEMP_FACTORS:
         out[f"ind.temp_c.{k}.{sgg}"] = ("indicator", f"온도계 요인: {label}({name})", "z", contrib[k])
@@ -310,7 +352,7 @@ def temp_band(v: float) -> str:
 
 
 def temperature_alerts(conn) -> int:
-    """온도계 구간이 바뀐 시군구 → 그 지역에 물건이 있는 사용자에게 알림."""
+    """온도계 구간이 바뀐 시군구 → 그 지역에 부동산이 있는 사용자에게 알림."""
     from ..alerts.rules import notify
 
     n = 0

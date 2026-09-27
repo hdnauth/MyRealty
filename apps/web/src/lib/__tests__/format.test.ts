@@ -1,7 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { formatManwon, formatPct, perPyeong } from "../format";
+import { formatManwon, formatPct, parseManwon, perPyeong } from "../format";
 import { makePnu } from "../property";
 import { buildKeywords } from "../keywords";
+
+describe("parseManwon", () => {
+  it("억·천·만·원 표기를 만원으로", () => {
+    expect(parseManwon("15억")).toBe(150000);
+    expect(parseManwon("15억 3,000")).toBe(153000);
+    expect(parseManwon("15억3천만")).toBe(153000);
+    expect(parseManwon("3.5억")).toBe(35000);
+    expect(parseManwon("8,500만")).toBe(8500);
+    expect(parseManwon("5천만원")).toBe(5000);
+    expect(parseManwon("150000")).toBe(150000);
+    expect(parseManwon("1,500,000,000원")).toBe(150000);
+  });
+  it("읽을 수 없으면 null", () => {
+    expect(parseManwon("")).toBeNull();
+    expect(parseManwon("abc")).toBeNull();
+    expect(parseManwon("억")).toBeNull();
+  });
+});
 
 describe("formatManwon", () => {
   it("억/만 단위", () => {

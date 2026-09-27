@@ -6,7 +6,9 @@ import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { geocode } from "@/lib/external/geocode";
 import { GROUP_TAGS, isPropertyType, makePnu, PROPERTY_TYPES } from "@/lib/property";
+import { parseManwon } from "@/lib/format";
 import { buildKeywords } from "@/lib/keywords";
+import { parseDongHo } from "@/lib/units";
 
 export type ItemFormState = { error?: string };
 
@@ -20,10 +22,29 @@ function str(v: FormDataEntryValue | null): string | null {
   return s ? s : null;
 }
 
+const MONEY_FIELDS = { purchase_price: "매입가", loan_amount: "대출금", lease_deposit: "보증금", lease_rent: "월세" } as const;
+
+/** 금액 칸("15억 3000", "8500만", 만원 숫자)을 만원으로. 읽을 수 없는 칸이 있으면 오류 문구 */
+function readMoney(form: FormData): { values: Record<keyof typeof MONEY_FIELDS, number | null>; error?: string } {
+  const values = {} as Record<keyof typeof MONEY_FIELDS, number | null>;
+  for (const [k, label] of Object.entries(MONEY_FIELDS) as [keyof typeof MONEY_FIELDS, string][]) {
+    const raw = str(form.get(k));
+    const v = parseManwon(raw);
+    if (raw && v === null) return { values, error: `${label} 금액을 읽을 수 없습니다. 예) 15억 3000, 8500만` };
+    values[k] = v;
+  }
+  return { values };
+}
+
+/** 층: 직접 입력 → 없으면 동·호의 호수에서(903호 → 9층) */
+function readFloor(form: FormData): number | null {
+  return num(form.get("floor")) ?? parseDongHo(str(form.get("dong_ho"))).floor;
+}
+
 /** 폼 → 대출/임대 JSON */
-function parseFinance(form: FormData) {
+function parseFinance(form: FormData, money: Record<keyof typeof MONEY_FIELDS, number | null>) {
   const loans = [];
-  const loanAmount = num(form.get("loan_amount"));
+  const loanAmount = money.loan_amount;
   if (loanAmount) {
     loans.push({
       name: str(form.get("loan_name")) ?? "주택담보대출",
@@ -33,12 +54,12 @@ function parseFinance(form: FormData) {
       maturity: str(form.get("loan_maturity")),
     });
   }
-  const leaseDeposit = num(form.get("lease_deposit"));
+  const leaseDeposit = money.lease_deposit;
   const lease = leaseDeposit
     ? {
-        kind: (num(form.get("lease_rent")) ?? 0) > 0 ? "wolse" : "jeonse",
+        kind: (money.lease_rent ?? 0) > 0 ? "wolse" : "jeonse",
         deposit: leaseDeposit,
-        rent: num(form.get("lease_rent")) ?? 0,
+        rent: money.lease_rent ?? 0,
         end_date: str(form.get("lease_end")),
         role: str(form.get("lease_role")) ?? "landlord",
       }
@@ -55,6 +76,8 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
   if (!sggCd || !/^\d{5}$/.test(sggCd)) return { error: "주소를 검색해 선택하세요." };
   const group = String(form.get("group_tag") ?? "watch");
   if (!(group in GROUP_TAGS)) return { error: "그룹이 올바르지 않습니다." };
+  const money = readMoney(form);
+  if (money.error) return { error: money.error };
 
   const bonbun = num(form.get("bonbun"));
   const mountain = form.get("mountain") === "1";
@@ -63,7 +86,7 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
   const roadAddr = str(form.get("road_address"));
   const jibunAddr = str(form.get("jibun_address"));
   const buildingName = str(form.get("building_name"));
-  const label = str(form.get("label")) ?? str(form.get("default_label")) ?? buildingName ?? jibunAddr ?? "관심 물건";
+  const label = str(form.get("label")) ?? str(form.get("default_label")) ?? buildingName ?? jibunAddr ?? "관심 부동산";
 
   // 좌표: 단지 좌표 → 지오코딩 → 읍면동 중심
   let pt: [number, number] | null = null;
@@ -80,7 +103,7 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
     if (r?.lng != null && r.lat != null) pt = [r.lng, r.lat];
   }
 
-  const { loans, lease } = parseFinance(form);
+  const { loans, lease } = parseFinance(form, money.values);
   const sidoName = str(form.get("sido_name"));
   const sggName = str(form.get("sgg_name"));
   const emdName = str(form.get("emd_name"));
@@ -105,23 +128,25 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
         loans, lease, keywords, radius_m)
       values (${user.id}, ${type}, ${label}, ${group}, ${roadAddr}, ${jibunAddr}, ${buildingName},
         ${lawdCd}, ${sggCd}, ${pnu}, ${complexId}, ${str(form.get("dong_ho"))},
-        ${isLand ? null : area}, ${isLand ? area : num(form.get("land_area_m2"))}, ${num(form.get("floor"))},
+        ${isLand ? null : area}, ${isLand ? area : num(form.get("land_area_m2"))}, ${isLand ? null : readFloor(form)},
         ${pt ? sql`ST_SetSRID(ST_MakePoint(${pt[0]}, ${pt[1]}), 4326)` : null},
-        ${num(form.get("purchase_price"))}, ${str(form.get("purchase_date"))},
+        ${money.values.purchase_price}, ${str(form.get("purchase_date"))},
         ${sql.json(loans)}, ${lease ? sql.json(lease) : null}, ${keywords},
         ${num(form.get("radius_m")) ?? (PROPERTY_TYPES[type].hasComplex ? 1000 : 2000)})
       returning id`;
   });
-  redirect(`/items/${row.id}`);
+  redirect(`/items/${row.id}?welcome=1`);
 }
 
 export async function updateItemAction(id: string, _: ItemFormState, form: FormData): Promise<ItemFormState> {
   const user = await requireUser();
   const group = String(form.get("group_tag") ?? "watch");
   if (!(group in GROUP_TAGS)) return { error: "그룹이 올바르지 않습니다." };
-  const { loans, lease } = parseFinance(form);
+  const money = readMoney(form);
+  if (money.error) return { error: money.error };
+  const { loans, lease } = parseFinance(form, money.values);
   const [cur] = await sql<{ property_type: string }[]>`select property_type from watch_items where id = ${id} and user_id = ${user.id}`;
-  if (!cur) return { error: "물건을 찾을 수 없습니다." };
+  if (!cur) return { error: "부동산을 찾을 수 없습니다." };
   const isLand = cur.property_type === "land" || cur.property_type === "forest";
   const area = num(form.get("area_m2"));
   const keywords = String(form.get("keywords") ?? "")
@@ -130,21 +155,21 @@ export async function updateItemAction(id: string, _: ItemFormState, form: FormD
     .filter(Boolean);
   const res = await sql`
     update watch_items set
-      label = ${str(form.get("label")) ?? "관심 물건"},
+      label = ${str(form.get("label")) ?? "관심 부동산"},
       group_tag = ${group},
       dong_ho = ${str(form.get("dong_ho"))},
       area_m2 = ${isLand ? null : area},
       land_area_m2 = ${isLand ? area : sql`land_area_m2`},
-      floor = ${num(form.get("floor"))},
-      purchase_price = ${num(form.get("purchase_price"))},
+      floor = ${isLand ? null : readFloor(form)},
+      purchase_price = ${money.values.purchase_price},
       purchase_date = ${str(form.get("purchase_date"))},
       loans = ${sql.json(loans)},
       lease = ${lease ? sql.json(lease) : null},
       keywords = ${keywords},
-      radius_m = ${num(form.get("radius_m")) ?? 1000},
+      radius_m = ${num(form.get("radius_m")) ?? sql`radius_m`},
       updated_at = now()
     where id = ${id} and user_id = ${user.id}`;
-  if (res.count === 0) return { error: "물건을 찾을 수 없습니다." };
+  if (res.count === 0) return { error: "부동산을 찾을 수 없습니다." };
   redirect(`/items/${id}`);
 }
 
@@ -165,7 +190,7 @@ export async function analyzeItemAction(id: string): Promise<{ error?: string }>
   const { getItem } = await import("@/lib/queries/items");
   const { generateAnalysis } = await import("@/lib/ai/analysis");
   const item = await getItem(user.id, id);
-  if (!item) return { error: "물건을 찾을 수 없습니다." };
+  if (!item) return { error: "부동산을 찾을 수 없습니다." };
   try {
     await generateAnalysis(user.id, item);
   } catch (e) {

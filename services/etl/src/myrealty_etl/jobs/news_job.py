@@ -1,4 +1,4 @@
-"""관심 물건 키워드별 뉴스 수집 → article_links(pending) 생성. 분류는 ai.news_classifier."""
+"""관심 부동산 키워드별 뉴스 수집 → article_links(pending) 생성. 분류는 ai.news_classifier."""
 
 from __future__ import annotations
 

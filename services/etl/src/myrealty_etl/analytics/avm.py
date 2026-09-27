@@ -76,7 +76,7 @@ def value_complex(conn, item: dict, today: date) -> dict | None:
         adj.append(p)
         weights.append(math.exp(-months / 9))
         comps.append({"id": r["id"], "date": str(r["deal_date"]), "price": r["price"], "adj": round(p), "floor": r["floor"]})
-    # 층 보정: 각 거래를 '평균 층' 가격으로 환산한 뒤 내 물건 층 구간 비율을 곱한다
+    # 층 보정: 각 거래를 '평균 층' 가격으로 환산한 뒤 대상 부동산 층 구간 비율을 곱한다
     if len(adj) >= 8 and item.get("floor") is not None:
         ratios = bucket_ratios(adj, [c["floor"] for c in comps])
         mine = ratios.get(floor_bucket(item["floor"]), 1.0)
@@ -212,7 +212,7 @@ def compute_valuations(conn, today: date | None = None) -> dict:
     for it in items:
         try:
             v = value_item(conn, dict(it), today)
-        except Exception as e:  # 한 물건 실패가 전체를 막지 않게
+        except Exception as e:  # 한 부동산 실패가 전체를 막지 않게
             log.warning("AVM 실패 %s: %s", it["id"], e)
             v = None
         if not v:

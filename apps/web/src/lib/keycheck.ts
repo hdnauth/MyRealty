@@ -95,7 +95,7 @@ const checks: Checker[] = [
   },
   async (live) => {
     const key = env.jusoKey;
-    if (!key) return { key: "JUSO_KEY", label: "도로명주소 검색", status: "optional", detail: "물건 등록 시 수집된 단지명만 검색됩니다.", fix: "business.juso.go.kr 에서 '도로명주소 검색 API' 승인키 발급" };
+    if (!key) return { key: "JUSO_KEY", label: "도로명주소 검색", status: "optional", detail: "부동산 등록 시 수집된 단지명만 검색됩니다.", fix: "business.juso.go.kr 에서 '도로명주소 검색 API' 승인키 발급" };
     if (!live) return { key: "JUSO_KEY", label: "도로명주소 검색", status: "unchecked", detail: "설정됨", fp: fingerprint(key) };
     try {
       const q = new URLSearchParams({ confmKey: key, currentPage: "1", countPerPage: "1", keyword: "세종대로 110", resultType: "json" });
@@ -134,7 +134,7 @@ const checks: Checker[] = [
   async (live) => {
     const key = env.dataGoKrKey;
     const label = "공공데이터포털(건축물대장)";
-    if (!key) return { key: "DATA_GO_KR_KEY", label, status: "optional", detail: "물건 등록 시 용도·평형·동·호를 자동으로 채우지 못합니다(ETL 에는 필수).", fix: "Vercel 에도 GitHub 와 같은 DATA_GO_KR_KEY 를 넣으세요." };
+    if (!key) return { key: "DATA_GO_KR_KEY", label, status: "optional", detail: "부동산 등록 시 용도·평형·동·호를 자동으로 채우지 못합니다(ETL 에는 필수).", fix: "Vercel 에도 GitHub 와 같은 DATA_GO_KR_KEY 를 넣으세요." };
     if (!live) return { key: "DATA_GO_KR_KEY", label, status: "unchecked", detail: "설정됨", fp: fingerprint(key) };
     try {
       const q = new URLSearchParams({ serviceKey: key, sigunguCd: "11110", bjdongCd: "10100", platGbCd: "0", bun: "0001", ji: "0000", _type: "json", numOfRows: "1", pageNo: "1" });

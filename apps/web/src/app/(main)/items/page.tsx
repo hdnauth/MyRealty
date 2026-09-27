@@ -5,19 +5,20 @@ import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { GROUP_TAGS } from "@/lib/property";
 import { listItems } from "@/lib/queries/items";
+import { getAreaUnit } from "@/lib/area-unit";
 
-export const metadata: Metadata = { title: "내 물건" };
+export const metadata: Metadata = { title: "관심 부동산" };
 
 export default async function ItemsPage() {
   const uid = await sessionUserId();
-  const [, items] = await Promise.all([requireUser(), listItems(uid)]);
+  const [, items, unit] = await Promise.all([requireUser(), listItems(uid), getAreaUnit()]);
   const groups = Object.entries(GROUP_TAGS)
     .map(([k, label]) => ({ k, label, items: items.filter((i) => i.group_tag === k) }))
     .filter((g) => g.items.length);
   return (
     <div>
       <PageHeader
-        title="내 물건"
+        title="관심 부동산"
         sub={`${items.length}개 등록`}
         action={
           <LinkButton href="/items/new">
@@ -28,9 +29,9 @@ export default async function ItemsPage() {
       {items.length === 0 ? (
         <Card>
           <EmptyState
-            title="아직 등록한 물건이 없습니다"
+            title="아직 등록한 부동산이 없습니다"
             desc="보유 중이거나 관심 있는 아파트·빌라·토지 등을 등록하면 실거래·주변 시세·뉴스를 자동으로 모아 드립니다."
-            action={<LinkButton href="/items/new">첫 물건 등록하기</LinkButton>}
+            action={<LinkButton href="/items/new">관심 부동산 등록하기</LinkButton>}
           />
         </Card>
       ) : (
@@ -42,7 +43,7 @@ export default async function ItemsPage() {
               </h2>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 {g.items.map((i) => (
-                  <ItemCard key={i.id} item={i} />
+                  <ItemCard key={i.id} item={i} unit={unit} />
                 ))}
               </div>
             </section>

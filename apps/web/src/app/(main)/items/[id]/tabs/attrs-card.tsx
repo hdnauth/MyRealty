@@ -26,7 +26,7 @@ export function AttrsCard({ item, attrs, marketPrice }: { item: WatchItem; attrs
   }
   return (
     <Card className="lg:col-span-3">
-      <CardHeader title="물건 정보" sub="건축물대장 · 토지특성 · 공시가격" />
+      <CardHeader title="건물·토지 정보" sub="건축물대장 · 토지특성 · 공시가격" />
       <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 pb-4 text-sm sm:grid-cols-4">
         {recap || title0 ? (
           <>

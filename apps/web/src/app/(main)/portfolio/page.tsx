@@ -24,7 +24,7 @@ type Row = {
 
 export default async function PortfolioPage(props: PageProps<"/portfolio">) {
   const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
-  // 보유 물건 목록과 월별 합계를 동시에 조회(합계는 같은 조건의 하위 쿼리로 물건을 고른다)
+  // 보유 부동산 목록과 월별 합계를 동시에 조회(합계는 같은 조건의 하위 쿼리로 부동산을 고른다)
   const [, rows, history] = await Promise.all([
     requireUser(),
     sql<Row[]>`
@@ -45,7 +45,7 @@ export default async function PortfolioPage(props: PageProps<"/portfolio">) {
     return (
       <div>
         <PageHeader title="포트폴리오" />
-        <Card><EmptyState title="보유 물건이 없습니다" desc="물건을 등록할 때 그룹을 ‘보유’로 지정하면 자산·대출·보유세를 모아 보여줍니다." /></Card>
+        <Card><EmptyState title="보유 부동산이 없습니다" desc="부동산을 등록할 때 그룹을 ‘보유’로 지정하면 자산·대출·보유세를 모아 보여줍니다." /></Card>
       </div>
     );
   }
@@ -67,7 +67,7 @@ export default async function PortfolioPage(props: PageProps<"/portfolio">) {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="포트폴리오" sub="보유 물건의 추정 시세·대출·임대·보유세(개략)" />
+      <PageHeader title="포트폴리오" sub="보유 부동산의 추정 시세·대출·임대·보유세(개략)" />
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Stat label="보유 자산(추정)" value={formatManwon(value, { short: true })} sub={<span className="text-muted">{rows.length}건</span>} />
@@ -87,12 +87,12 @@ export default async function PortfolioPage(props: PageProps<"/portfolio">) {
       ) : null}
 
       <Card>
-        <CardHeader title="보유 물건" />
+        <CardHeader title="보유 부동산" />
         <div className="overflow-x-auto pb-2">
           <table className="w-full min-w-[640px] whitespace-nowrap text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted">
-                <th className="px-4 py-2 font-medium">물건</th>
+                <th className="px-4 py-2 font-medium">부동산</th>
                 <th className="px-2 py-2 text-right font-medium">추정가</th>
                 <th className="px-2 py-2 text-right font-medium">매입가</th>
                 <th className="px-2 py-2 text-right font-medium">손익</th>

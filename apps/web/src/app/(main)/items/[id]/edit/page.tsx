@@ -5,7 +5,7 @@ import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { getItem } from "@/lib/queries/items";
 import { EditItemForm } from "./edit-form";
 
-export const metadata: Metadata = { title: "물건 수정" };
+export const metadata: Metadata = { title: "부동산 수정" };
 
 export default async function EditItemPage(props: PageProps<"/items/[id]/edit">) {
   const [uid, { id }] = await Promise.all([sessionUserId(), props.params]);
@@ -13,7 +13,7 @@ export default async function EditItemPage(props: PageProps<"/items/[id]/edit">)
   if (!item) notFound();
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader title="물건 수정" sub={item.road_address ?? item.jibun_address ?? undefined} />
+      <PageHeader title="부동산 수정" sub={item.road_address ?? item.jibun_address ?? undefined} />
       <EditItemForm item={item} />
     </div>
   );

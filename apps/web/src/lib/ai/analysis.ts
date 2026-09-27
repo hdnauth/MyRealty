@@ -8,7 +8,7 @@ import { anthropic, aiQuotaError, effortConfig, fallbackParams, MODEL, recordUsa
 import { ANALYSIS_SYSTEM, todayLine } from "./prompts";
 
 export const AnalysisCard = z.object({
-  one_liner: z.string().describe("물건 현황 한 문장 요약"),
+  one_liner: z.string().describe("부동산 현황 한 문장 요약"),
   strengths: z.array(z.string()).describe("데이터 근거가 있는 강점 2~5개"),
   risks: z.array(z.string()).describe("데이터 근거가 있는 리스크 2~5개"),
   checklist: z.array(z.string()).describe("이 유형에서 직접 확인해야 할 항목 3~6개"),
@@ -84,7 +84,7 @@ export async function generateAnalysis(userId: string, item: WatchItem) {
       { type: "text", text: ANALYSIS_SYSTEM, cache_control: { type: "ephemeral" } },
       { type: "text", text: todayLine() },
     ],
-    messages: [{ role: "user", content: `다음 물건의 분석 카드를 작성하세요.\n\n${JSON.stringify(snap)}` }],
+    messages: [{ role: "user", content: `다음 부동산의 분석 카드를 작성하세요.\n\n${JSON.stringify(snap)}` }],
     output_config: { format: betaZodOutputFormat(AnalysisCard), ...effortConfig("high") },
     ...fallbackParams(),
   });

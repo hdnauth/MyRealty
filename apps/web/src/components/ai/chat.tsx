@@ -8,8 +8,8 @@ import { Markdown } from "./markdown";
 export type ChatMsg = { role: "user" | "assistant"; text: string; tools?: string[] };
 
 const TOOL_LABEL: Record<string, string> = {
-  list_watch_items: "내 물건 목록",
-  get_item_detail: "물건 상세",
+  list_watch_items: "관심 부동산 목록",
+  get_item_detail: "부동산 상세",
   query_transactions: "실거래 조회",
   similar_complexes: "유사 단지",
   get_indicators: "지표",
@@ -20,10 +20,10 @@ const TOOL_LABEL: Record<string, string> = {
 };
 
 const SUGGESTIONS = [
-  "내 물건들 최근 1년 시세 흐름을 주변과 비교해줘",
+  "관심 부동산의 최근 1년 시세 흐름을 주변과 비교해줘",
   "지금 우리 동네 매수 여건을 지표로 설명해줘",
   "금리가 1%p 오르면 내 대출 월 상환액은?",
-  "관심 물건 관련 최근 뉴스 중 중요한 것만 요약해줘",
+  "관심 부동산 관련 최근 뉴스 중 중요한 것만 요약해줘",
   "매수 후보들의 입지와 가격을 표로 비교해줘",
 ];
 
@@ -89,7 +89,7 @@ export function Chat({ conversationId, initial, enabled }: { conversationId: str
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-4">
         {msgs.length === 0 ? (
           <div className="space-y-3 py-6">
-            <p className="text-sm text-muted">내 물건·실거래·지표·뉴스·입지 데이터를 조회해 답합니다. 수치는 모두 조회 결과에서 인용합니다.</p>
+            <p className="text-sm text-muted">관심 부동산·실거래·지표·뉴스·입지 데이터를 조회해 답합니다. 수치는 모두 조회 결과에서 인용합니다.</p>
             <div className="flex flex-wrap gap-2">
               {SUGGESTIONS.map((s) => (
                 <button key={s} type="button" disabled={!enabled} onClick={() => send(s)} className="rounded-full border border-border bg-surface px-3 py-1.5 text-left text-sm hover:border-accent disabled:opacity-50">

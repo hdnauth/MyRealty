@@ -190,7 +190,30 @@ export function marketInsights(s: SeriesMap): Insight[] {
     }
   }
 
-  // 9) 입주 물량
+  // 9) 실거래 상세: 신규·갱신 전세 괴리, 법인 매수, 미등기 신고가, 직거래
+  const jgap = lastV(s["jgap"]);
+  const rrr = lastV(s["rrr"]);
+  if (jgap !== null && jgap >= 0.08) {
+    out.push({ key: "jgap", tone: "up", title: "신규 전세가 갱신보다 크게 비쌈", detail: `최근 3개월 신규 전세가 갱신 계약보다 ${pct(jgap)}${rrr !== null ? `, 갱신 중 ${(rrr * 100).toFixed(0)}%가 갱신요구권(5% 상한) 사용` : ""}. 새로 구하는 세입자의 부담이 커 전세 수요가 매매로 옮겨 가기 쉽습니다.` });
+  } else if (jgap !== null && jgap <= -0.03) {
+    out.push({ key: "jgap", tone: "down", title: "신규 전세가 갱신보다 낮음", detail: `최근 3개월 신규 전세가 갱신 계약보다 ${pct(jgap)}. 전세 시장이 약해 재계약보다 새 계약이 싸게 이뤄집니다.` });
+  }
+  const corp = s["corp"];
+  const c1 = lastV(corp);
+  const c12 = ago(corp, 12);
+  if (c1 !== null && c12 !== null && c1 - c12 >= 0.03 && c1 >= 0.08) {
+    out.push({ key: "corp", tone: "up", title: "법인 매수 증가", detail: `매매 중 법인 매수 비중 ${(c1 * 100).toFixed(0)}% (1년 ${pp((c1 - c12) * 100, 1)}). 투자 수요가 들어오는 신호이지만, 규제 변화에 민감한 수요입니다.` });
+  }
+  const unreg = lastV(s["unreg"]);
+  if (unreg !== null && unreg >= 0.2) {
+    out.push({ key: "unreg", tone: "neutral", title: "등기 안 된 신고가가 많음", detail: `계약 후 90일이 지나도 등기되지 않은 신고가가 ${(unreg * 100).toFixed(0)}%. 해제·허위 신고 가능성이 있어 신고가를 곧이곧대로 보기 어렵습니다.` });
+  }
+  const direct = lastV(s["direct"]);
+  if (direct !== null && direct >= 0.15) {
+    out.push({ key: "direct", tone: "neutral", title: "직거래 비중 높음", detail: `최근 3개월 매매의 ${(direct * 100).toFixed(0)}%가 직거래. 가족 간 거래 등 시세보다 낮은 거래가 섞여 중위가가 눌릴 수 있습니다.` });
+  }
+
+  // 10) 입주 물량
   const sup = lastV(s["ind.supply"]);
   if (sup !== null && sup > 0) {
     if (sup >= 8) out.push({ key: "supply", tone: "down", title: "입주 물량 많음", detail: `향후 24개월 입주 예정이 재고의 ${sup.toFixed(1)}%. 입주 시기 전후로 전세·매매 가격이 눌릴 수 있습니다.` });

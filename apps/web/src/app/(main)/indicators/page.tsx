@@ -11,7 +11,7 @@ import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatManwon, formatPct } from "@/lib/format";
 import { marketInsights } from "@/lib/insights";
-import { change, indicatorRegions, last, type Point, seriesMeta, seriesValues, TEMP_FACTORS, tempBand } from "@/lib/queries/indicators";
+import { change, INSIGHT_REGION_KEYS, indicatorRegions, last, type Point, seriesMeta, seriesValues, TEMP_FACTORS, tempBand } from "@/lib/queries/indicators";
 import { listItems } from "@/lib/queries/items";
 
 export const metadata: Metadata = { title: "지표" };
@@ -59,7 +59,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
   const sgg = regions.find((r) => r.sgg === sp.sgg)?.sgg ?? regions[0]?.sgg;
 
   const regionCodes = sgg
-    ? ["idx", "vol", "med84", "jr", "nhr", "dr"].map((k) => `${k}.${sgg}`).concat(
+    ? ["idx", "vol", "med84", "jr", "nhr", "dr", "jgap", "rrr", "corp", "unreg", "direct"].map((k) => `${k}.${sgg}`).concat(
         ["burden", "pir", "real", "liq", "turnover", "temp", "supply"].map((k) => `ind.${k}.${sgg}`),
         TEMP_FACTORS.map((f) => `ind.temp_c.${f.key}.${sgg}`),
       )
@@ -69,7 +69,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
 
   const insights = marketInsights({
     ...v,
-    ...Object.fromEntries(["idx", "vol", "jr", "nhr", "dr", "ind.burden", "ind.real", "ind.liq", "ind.supply"].map((k) => [k, r(k)])),
+    ...Object.fromEntries(INSIGHT_REGION_KEYS.map((k) => [k, r(k)])),
   });
   const regionName = regions.find((g) => g.sgg === sgg)?.name ?? null;
 
@@ -193,6 +193,29 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
                   fmt="ratio"
                   endLabels
                 />
+              </div>
+            </Card>
+            <Card>
+              <CardHeader title={<Term k="deal_quality">거래의 질</Term>} sub="법인 매수 · 직거래 비중(3개월) · 미등기 신고가 비율(6개월)" />
+              <div className="px-2 pb-3">
+                <LineSeriesChart
+                  lines={[
+                    { name: "법인 매수", points: r("corp"), slot: 1 },
+                    { name: "직거래", points: r("direct"), slot: 2 },
+                    { name: "미등기 신고가", points: r("unreg"), slot: 3 },
+                  ]}
+                  fmt="ratio"
+                  endLabels
+                />
+              </div>
+            </Card>
+            <Card>
+              <CardHeader
+                title={<Term k="jgap">신규 전세 − 갱신 전세</Term>}
+                sub={`같은 시기 신규 계약이 갱신 계약보다 몇 % 비싼지(3개월)${last(r("rrr")) !== null ? ` · 갱신요구권 사용 ${formatPct(last(r("rrr")), 0, false)}` : ""}`}
+              />
+              <div className="px-2 pb-3">
+                <LineSeriesChart lines={[{ name: "신규−갱신 괴리", points: r("jgap") }]} fmt="pct100" bands={[0]} />
               </div>
             </Card>
           </div>

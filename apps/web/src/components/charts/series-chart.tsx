@@ -57,7 +57,7 @@ export function LineSeriesChart({
       const crowded = ends.some((v, i) => i > 0 && span > 0 && (v - ends[i - 1]) / span < 0.07);
       const labelEnds = endLabels && lines.length <= 4 && !crowded;
       return {
-        grid: { ...b.grid, top: lines.length > 1 ? 36 : 16, right: labelEnds ? 72 : b.grid.right },
+        grid: { ...b.grid, top: lines.length > 1 ? 36 : 16, right: labelEnds ? 84 : b.grid.right },
         legend: lines.length > 1 ? { ...b.legend, data: lines.map((l) => l.name) } : undefined,
         tooltip: {
           ...b.tooltip,
@@ -85,7 +85,7 @@ export function LineSeriesChart({
                 showSymbol: false,
                 lineStyle: { width: 2, color, type: l.dashed ? "dotted" : "solid" },
                 itemStyle: { color },
-                endLabel: labelEnds ? { show: true, formatter: l.name.length > 7 ? `${l.name.slice(0, 7)}…` : l.name, color: t.ink, fontSize: 11 } : undefined,
+                endLabel: labelEnds ? { show: true, formatter: l.name.length > 6 ? `${l.name.slice(0, 6)}…` : l.name, color: t.ink, fontSize: 11 } : undefined,
                 markLine:
                   i === 0 && bands?.length
                     ? { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: t.grid, type: "solid", width: 1 }, data: bands.map((y) => ({ yAxis: y })) }

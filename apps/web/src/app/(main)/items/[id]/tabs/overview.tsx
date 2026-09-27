@@ -181,6 +181,9 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
           <div className="space-y-2 px-4 pb-4 text-sm">
             <Row k="현재 전세 시세(6개월)" v={formatManwon(jc.current)} sub={jc.samples ? `${jc.samples}건` : undefined} />
             <Row k="2년 전 전세 시세" v={formatManwon(jc.twoYearsAgo)} sub={jc.trend !== null ? formatPct(jc.trend) : undefined} />
+            {jc.newMedian && jc.renewalMedian ? (
+              <Row k="신규 / 갱신 계약" v={`${formatManwon(jc.newMedian, { short: true })} / ${formatManwon(jc.renewalMedian, { short: true })}`} sub={formatPct(jc.newMedian / jc.renewalMedian - 1)} />
+            ) : null}
             <Row k={item.lease?.role === "tenant" ? "내 보증금" : "받은 보증금"} v={formatManwon(item.lease?.deposit ?? null)} sub={item.lease?.end_date ? `만기 ${formatDate(item.lease.end_date)}` : undefined} />
             {jc.gap !== null ? (
               <p className="border-t border-border pt-2 text-[13px] leading-relaxed">

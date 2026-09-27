@@ -95,11 +95,20 @@ export type TxPoint = {
   jimok: string | null;
   build_year: number | null;
   house_type: string | null;
+  buyer_type: string | null;
+  registered_at: string | null;
+  contract_type: "new" | "renewal" | null;
+  prev_deposit: number | null;
+  /** 계약 후 90일~2년 사이인데 등기가 없는 매매(원천에 매수자 구분이 있는 자료만) */
+  unregistered: boolean;
 };
 
 const TX_COLUMNS = sql`
   t.id, t.deal_kind, t.deal_date::text as deal_date, t.price, t.monthly_rent, t.area_m2, t.land_area_m2, t.floor,
-  t.is_canceled, t.is_direct, t.name, t.umd_nm, t.jibun, t.jimok, t.build_year, t.house_type`;
+  t.is_canceled, t.is_direct, t.name, t.umd_nm, t.jibun, t.jimok, t.build_year, t.house_type,
+  t.buyer_type, t.registered_at::text as registered_at, t.contract_type, t.prev_deposit,
+  (t.deal_kind = 'sale' and not t.is_canceled and t.registered_at is null and t.buyer_type is not null
+    and t.deal_date between current_date - 730 and current_date - 90) as unregistered`;
 
 /**
  * 부동산 기준 거래 이력.

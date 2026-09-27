@@ -69,7 +69,7 @@ export function tempBand(v: number | null) {
 
 export const MACRO_CODES = ["ecos.base_rate", "ecos.mortgage_rate", "ecos.bond_3y", "ecos.cpi", "ecos.m2"];
 /** 시장 해석(lib/insights)이 쓰는 지역 지표 키(접미사 `.{시군구}` 없이) */
-export const INSIGHT_REGION_KEYS = ["idx", "vol", "jr", "nhr", "dr", "ind.burden", "ind.real", "ind.liq", "ind.supply"];
+export const INSIGHT_REGION_KEYS = ["idx", "vol", "jr", "nhr", "dr", "ind.burden", "ind.real", "ind.liq", "ind.supply", "jgap", "rrr", "corp", "unreg", "direct"];
 
 /** 한 시군구의 시장 해석 입력(거시 + 지역 지표, 최근 8년) */
 export async function insightInputs(sgg: string | null) {

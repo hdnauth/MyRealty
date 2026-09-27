@@ -5,9 +5,11 @@ import { refresh } from "next/cache";
 import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { geocode } from "@/lib/external/geocode";
-import { GROUP_TAGS, isPropertyType, makePnu, PROPERTY_TYPES } from "@/lib/property";
+import { defaultRadius, GROUP_TAGS, isPropertyType, makePnu } from "@/lib/property";
 import { parseManwon } from "@/lib/format";
 import { buildKeywords } from "@/lib/keywords";
+import { requestCollect } from "@/lib/collect";
+import { checkUnitArea } from "@/lib/unit-check";
 import { parseDongHo } from "@/lib/units";
 
 export type ItemFormState = { error?: string };
@@ -109,7 +111,11 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
   const emdName = str(form.get("emd_name"));
   const keywords = buildKeywords({ type, buildingName, emdName, sggName, extra: str(form.get("keywords")) });
   const isLand = type === "land" || type === "forest";
-  const area = num(form.get("area_m2"));
+  // 면적은 실제 건물에 있는 평형, 호를 골랐으면 그 호의 면적
+  const unit = isLand ? null : await checkUnitArea(pnu, type, str(form.get("dong_ho")), num(form.get("area_m2")));
+  if (unit?.error) return { error: unit.error };
+  const area = unit ? unit.area : num(form.get("area_m2"));
+  const floor = isLand ? null : (num(form.get("floor")) ?? unit?.floor ?? readFloor(form));
 
   const [row] = await sql.begin(async (tx) => {
     // 지역·수집 대상 등록 (ETL 이 이 시군구 실거래를 모으기 시작)
@@ -128,13 +134,19 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
         loans, lease, keywords, radius_m)
       values (${user.id}, ${type}, ${label}, ${group}, ${roadAddr}, ${jibunAddr}, ${buildingName},
         ${lawdCd}, ${sggCd}, ${pnu}, ${complexId}, ${str(form.get("dong_ho"))},
-        ${isLand ? null : area}, ${isLand ? area : num(form.get("land_area_m2"))}, ${isLand ? null : readFloor(form)},
+        ${isLand ? null : area}, ${isLand ? area : num(form.get("land_area_m2"))}, ${floor},
         ${pt ? sql`ST_SetSRID(ST_MakePoint(${pt[0]}, ${pt[1]}), 4326)` : null},
         ${money.values.purchase_price}, ${str(form.get("purchase_date"))},
         ${sql.json(loans)}, ${lease ? sql.json(lease) : null}, ${keywords},
-        ${num(form.get("radius_m")) ?? (PROPERTY_TYPES[type].hasComplex ? 1000 : 2000)})
+        ${num(form.get("radius_m")) ?? defaultRadius(type)})
       returning id`;
   });
+  // 매일 아침 수집을 기다리지 않고 이 부동산만 바로 수집(실행기는 응답 뒤에 깨운다). 실패해도 등록은 유지
+  try {
+    await requestCollect(row.id, "register");
+  } catch (e) {
+    console.error("[collect] 요청 실패", e);
+  }
   redirect(`/items/${row.id}?welcome=1`);
 }
 
@@ -145,10 +157,13 @@ export async function updateItemAction(id: string, _: ItemFormState, form: FormD
   const money = readMoney(form);
   if (money.error) return { error: money.error };
   const { loans, lease } = parseFinance(form, money.values);
-  const [cur] = await sql<{ property_type: string }[]>`select property_type from watch_items where id = ${id} and user_id = ${user.id}`;
-  if (!cur) return { error: "부동산을 찾을 수 없습니다." };
+  const [cur] = await sql<{ property_type: string; pnu: string | null }[]>`
+    select property_type, pnu from watch_items where id = ${id} and user_id = ${user.id}`;
+  if (!cur || !isPropertyType(cur.property_type)) return { error: "부동산을 찾을 수 없습니다." };
   const isLand = cur.property_type === "land" || cur.property_type === "forest";
-  const area = num(form.get("area_m2"));
+  const unit = isLand ? null : await checkUnitArea(cur.pnu, cur.property_type, str(form.get("dong_ho")), num(form.get("area_m2")));
+  if (unit?.error) return { error: unit.error };
+  const area = unit ? unit.area : num(form.get("area_m2"));
   const keywords = String(form.get("keywords") ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -160,7 +175,7 @@ export async function updateItemAction(id: string, _: ItemFormState, form: FormD
       dong_ho = ${str(form.get("dong_ho"))},
       area_m2 = ${isLand ? null : area},
       land_area_m2 = ${isLand ? area : sql`land_area_m2`},
-      floor = ${isLand ? null : readFloor(form)},
+      floor = ${isLand ? null : (num(form.get("floor")) ?? unit?.floor ?? readFloor(form))},
       purchase_price = ${money.values.purchase_price},
       purchase_date = ${str(form.get("purchase_date"))},
       loans = ${sql.json(loans)},

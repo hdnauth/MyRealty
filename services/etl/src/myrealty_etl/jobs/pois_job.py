@@ -12,11 +12,13 @@ from ..http import QuotaExceeded
 log = logging.getLogger(__name__)
 
 
-def collect_pois(conn, max_age_days: int = 30) -> dict:
+def collect_pois(conn, max_age_days: int = 30, item_id: str | None = None) -> dict:
+    """item_id 를 주면 그 부동산 주변만 모으고 점수도 그 부동산(과 같은 시군구 단지)만 계산한다."""
     stats = {"semas": 0, "hira": 0, "points": 0}
     if settings.data_go_kr_key:
         pts = conn.execute("select distinct round(ST_X(geom)::numeric, 3)::float8 as lng, round(ST_Y(geom)::numeric, 3)::float8 as lat "
-                           "from watch_items where geom is not null").fetchall()
+                           "from watch_items where geom is not null and (%(id)s::uuid is null or id = %(id)s::uuid)",
+                           {"id": item_id}).fetchall()
         try:
             for p in pts:
                 for source, radius, fn in (("semas", 1000, pois.fetch_semas), ("hira", 5000, pois.fetch_hira)):
@@ -47,5 +49,5 @@ def collect_pois(conn, max_age_days: int = 30) -> dict:
             stats["quota_stop"] = True
     else:
         stats["skipped"] = "DATA_GO_KR_KEY 미설정(표준데이터 CSV 는 import-poi 로 가져올 수 있음)"
-    stats["scores"] = compute_locations(conn)
+    stats["scores"] = compute_locations(conn, item_id=item_id)
     return stats

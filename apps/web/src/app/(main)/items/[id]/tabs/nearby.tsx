@@ -4,12 +4,14 @@ import { TxTable } from "@/components/items/tx-table";
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
 import { getAreaUnit } from "@/lib/area-unit";
 import { type AreaUnit, formatManwon, formatPct, fromPerPyeong, unitPriceName } from "@/lib/format";
-import { PROPERTY_TYPES } from "@/lib/property";
+import { nearbyMonths, PROPERTY_TYPES } from "@/lib/property";
+import { landMarket } from "@/lib/queries/special";
+import { LandMarketCard } from "./land-market-card";
 import { groupChange, regionChange, relativePosition, similarComplexes } from "@/lib/queries/comps";
 import { LineSeriesChart } from "@/components/charts/series-chart";
-import { nearbyTransactions, type WatchItem } from "@/lib/queries/items";
+import { nearbyTransactions, similarCriteria, type WatchItem } from "@/lib/queries/items";
 
-export async function NearbyTab({ item }: { item: WatchItem }) {
+export async function NearbyTab({ item, all = false }: { item: WatchItem; all?: boolean }) {
   if (item.lng === null) {
     return (
       <Card>
@@ -17,11 +19,15 @@ export async function NearbyTab({ item }: { item: WatchItem }) {
       </Card>
     );
   }
-  const [rows, sim, sgg, unit] = await Promise.all([
-    nearbyTransactions(item, { months: 6 }),
+  const isLand = item.property_type === "land" || item.property_type === "forest";
+  const months = nearbyMonths(item.property_type);
+  const [rows, sim, sgg, unit, land] = await Promise.all([
+    // 기본은 내 부동산과 비슷한 거래만(면적·연식·지목), 전체 보기로 바꿀 수 있다
+    nearbyTransactions(item, { months, similar: !all }),
     similarComplexes(item),
     item.sgg_cd ? regionChange(item.sgg_cd, PROPERTY_TYPES[item.property_type].tx, item.area_m2) : Promise.resolve(null),
     getAreaUnit(),
+    isLand ? landMarket(item) : Promise.resolve(null),
   ]);
   const compChange = groupChange(sim.comps);
   const pos = await relativePosition(item, sim.comps);
@@ -29,6 +35,7 @@ export async function NearbyTab({ item }: { item: WatchItem }) {
 
   return (
     <div className="space-y-4">
+      {land ? <LandMarketCard m={land} item={item} /> : null}
       {sim.self ? (
         <Card>
           <CardHeader title="상대 성과" sub="단위면적당 가격 중위 변화 · 최근 6개월 vs 1년 전(12~18개월) · 같은 면적대" />
@@ -109,14 +116,31 @@ export async function NearbyTab({ item }: { item: WatchItem }) {
 
       <Card>
         <CardHeader
-          title="반경 내 최근 매매"
-          sub={`반경 ${item.radius_m.toLocaleString()}m · 최근 6개월 · ${rows.length}건`}
-          action={<Link href={`/map?item=${item.id}`} className="text-accent">지도로 보기</Link>}
+          title={all ? "반경 내 최근 매매" : "반경 내 비슷한 매매"}
+          sub={`반경 ${item.radius_m.toLocaleString()}m · 최근 ${months >= 12 ? `${months / 12}년` : `${months}개월`}${all ? "" : similarText(item)} · ${rows.length}건`}
+          action={
+            <span className="flex gap-3 text-sm">
+              <Link href={`/items/${item.id}?tab=nearby${all ? "" : "&all=1"}`} className="text-accent">
+                {all ? "비슷한 것만" : "전체 보기"}
+              </Link>
+              <Link href={`/map?item=${item.id}`} className="text-accent">지도로 보기</Link>
+            </span>
+          }
         />
         <TxTable rows={rows} showName extra="dist" />
       </Card>
     </div>
   );
+}
+
+function similarText(item: WatchItem) {
+  const { areaRange, yearRange } = similarCriteria(item);
+  const parts = [
+    areaRange ? `면적 ${areaRange[0].toLocaleString()}~${areaRange[1].toLocaleString()}㎡` : null,
+    yearRange ? `준공 ${yearRange[0]}~${yearRange[1]}년` : null,
+    item.property_type === "land" ? "같은 지목" : item.property_type === "forest" ? "임야" : null,
+  ].filter(Boolean);
+  return parts.length ? ` · ${parts.join(" · ")}` : "";
 }
 
 function CompRow({ c, unit, self = false }: { unit: AreaUnit; c: { id: number; name: string; score: number; dist_m: number; build_year: number | null; ppy_recent: number | null; change: number | null; last_price: number | null }; self?: boolean }) {

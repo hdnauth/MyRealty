@@ -29,7 +29,7 @@ type AreaSample = { area: number; count: number; supply?: number | null; units?:
 
 /**
  * 비슷한 전용면적(±0.5㎡, 예: 84.97·84.98·84.99)을 한 평형으로 묶는다.
- * 대표 면적은 건수가 가장 많은 값, 공급면적은 대표 값의 것(없으면 묶음 내 첫 값).
+ * 대표 면적은 건수가 가장 많은 값(건축물대장 호가 있으면 그중에서), 공급면적은 대표 값의 것(없으면 묶음 내 첫 값).
  */
 export function clusterAreas(samples: AreaSample[], tolerance = 0.5): AreaType[] {
   const sorted = samples.filter((s) => s.area > 0).sort((a, b) => a.area - b.area);
@@ -40,7 +40,9 @@ export function clusterAreas(samples: AreaSample[], tolerance = 0.5): AreaType[]
     else groups.push([s]);
   }
   return groups.map((g) => {
-    const rep = g.reduce((a, b) => (b.count > a.count ? b : a));
+    // 대장에 있는 면적을 대표로(실거래 신고 면적은 소수점이 조금 다를 수 있다) → 고른 평형이 실제 호의 면적이 되게
+    const withUnits = g.filter((s) => (s.units ?? 0) > 0);
+    const rep = (withUnits.length ? withUnits : g).reduce((a, b) => (b.count > a.count ? b : a));
     const units = g.reduce((n, s) => n + (s.units ?? 0), 0);
     const priced = g.filter((s) => s.medianPrice != null);
     return {
@@ -51,6 +53,14 @@ export function clusterAreas(samples: AreaSample[], tolerance = 0.5): AreaType[]
       medianPrice: priced.length ? priced.reduce((a, b) => ((b.trades ?? 0) > (a.trades ?? 0) ? b : a)).medianPrice ?? null : null,
     };
   });
+}
+
+/** 동·호 표기 비교용: "101동"·"101" → "101", "903호" → "903" */
+export function normDong(d: string | null | undefined) {
+  return (d ?? "").replace(/\s+/g, "").replace(/동$/, "");
+}
+export function normHo(h: string | null | undefined) {
+  return (h ?? "").replace(/\s+/g, "").replace(/호$/, "");
 }
 
 /** 전용면적이 속한 평형(대표 면적). 없으면 null */

@@ -146,7 +146,7 @@ def score_target(conn, target_type: str, target_id: str, lng: float, lat: float,
     return total
 
 
-def compute_locations(conn) -> dict:
+def compute_locations(conn, item_id: str | None = None) -> dict:
     stats = {"items": 0, "complexes": 0}
     items = conn.execute(
         """select w.id, ST_X(w.geom) as lng, ST_Y(w.geom) as lat,
@@ -155,7 +155,8 @@ def compute_locations(conn) -> dict:
              (select (b.recap->>'vl_rat')::float8 from building_registers b where b.pnu = coalesce(c.pnu, w.pnu)) as vl_rat,
              (select p.land_use_zone from parcels p where p.pnu = coalesce(c.pnu, w.pnu)) as zones
            from watch_items w left join complexes c on c.id = w.complex_id
-           where w.geom is not null"""
+           where w.geom is not null and (%(id)s::uuid is null or w.id = %(id)s::uuid)""",
+        {"id": item_id},
     ).fetchall()
     avail_cache: dict = {}
     for it in items:
@@ -168,7 +169,9 @@ def compute_locations(conn) -> dict:
     cxs = conn.execute(
         """select c.id, ST_X(c.geom) as lng, ST_Y(c.geom) as lat, c.build_year from complexes c
            where c.geom is not null and c.sgg_cd in (select sgg_cd from collect_targets where enabled)
-             and c.property_type = 'apt'"""
+             and c.property_type = 'apt'
+             and (%(id)s::uuid is null or c.sgg_cd = (select sgg_cd from watch_items where id = %(id)s::uuid))""",
+        {"id": item_id},
     ).fetchall()
     for c in cxs:
         k = (round(c["lng"], 1), round(c["lat"], 1))

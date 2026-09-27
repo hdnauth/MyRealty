@@ -38,11 +38,14 @@ def link(conn, article_id: int, item_id: str, sgg_cd: str | None, query: str) ->
     return res.rowcount > 0
 
 
-def collect_news(conn, per_query: int = 30) -> dict:
+def collect_news(conn, per_query: int = 30, item_id: str | None = None) -> dict:
     if not (settings.naver_client_id and settings.naver_client_secret):
         return {"skipped": "NAVER_CLIENT_ID/SECRET 미설정"}
     stats = {"queries": 0, "articles": 0, "links": 0}
-    items = conn.execute("select id, sgg_cd, keywords from watch_items where cardinality(keywords) > 0").fetchall()
+    items = conn.execute(
+        "select id, sgg_cd, keywords from watch_items where cardinality(keywords) > 0 and (%(id)s::uuid is null or id = %(id)s::uuid)",
+        {"id": item_id},
+    ).fetchall()
     cache: dict[str, list[dict]] = {}
     for it in items:
         for q in it["keywords"]:

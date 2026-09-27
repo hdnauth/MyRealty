@@ -12,8 +12,16 @@ export default async function MapPage(props: PageProps<"/map">) {
   const [, items, events, projects, unit] = await Promise.all([
     requireUser(),
     sql<MapWatchItem[]>`
-      select id, label, property_type, radius_m, ST_X(geom) as lng, ST_Y(geom) as lat
-      from watch_items where user_id = ${uid} and geom is not null order by sort_order, created_at`,
+      select w.id, w.label, w.property_type, w.group_tag, w.radius_m, w.complex_id, w.area_m2::float8 as area_m2,
+        ST_X(w.geom) as lng, ST_Y(w.geom) as lat, v.estimate, lt.price as last_price, lt.deal_date::text as last_date
+      from watch_items w
+      left join lateral (select estimate from valuations where watch_item_id = w.id order by as_of desc limit 1) v on true
+      left join lateral (
+        select t.price, t.deal_date from transactions t
+        where t.complex_id = w.complex_id and w.complex_id is not null and t.deal_kind = 'sale' and not t.is_canceled
+          and (w.area_m2 is null or abs(t.area_m2 - w.area_m2) <= 3)
+        order by t.deal_date desc limit 1) lt on true
+      where w.user_id = ${uid} and w.geom is not null order by w.sort_order, w.created_at`,
     sql<MapEvent[]>`
       select id, title, kind, ST_X(geom) as lng, ST_Y(geom) as lat, starts_on::text as starts_on,
         nullif(regexp_replace(coalesce(payload->>'households', ''), '[^0-9]', '', 'g'), '')::int as households
@@ -34,5 +42,5 @@ export default async function MapPage(props: PageProps<"/map">) {
   ]);
   const focus = typeof sp.item === "string" ? items.find((i) => i.id === sp.item) : undefined;
   const center: [number, number] = focus ? [focus.lng, focus.lat] : items[0] ? [items[0].lng, items[0].lat] : [126.978, 37.5665];
-  return <RealtyMap keyId={env.ncpKeyId ?? null} vworldKey={env.vworldKey ?? null} vworldDomain={env.vworldDomain ?? null} items={items} events={events} projects={projects} initialCenter={center} unit={unit} />;
+  return <RealtyMap keyId={env.ncpKeyId ?? null} vworldKey={env.vworldKey ?? null} vworldDomain={env.vworldDomain ?? null} items={items} events={events} projects={projects} initialCenter={center} focusItemId={focus?.id ?? null} unit={unit} />;
 }

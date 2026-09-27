@@ -18,6 +18,13 @@ export function formatManwon(v: number | null | undefined, opts: { short?: boole
   return `${sign}${man.toLocaleString("ko-KR")}만`;
 }
 
+/** 단위면적당 가격처럼 작은 만원 값: 100만 미만은 원 단위로("12,300원"), 그 이상은 만원 표기 */
+export function formatUnitPrice(v: number | null | undefined): string {
+  if (v === null || v === undefined || Number.isNaN(v)) return "-";
+  if (Math.abs(v) < 100) return `${Math.round(v * 10000).toLocaleString("ko-KR")}원`;
+  return formatManwon(v, { short: true });
+}
+
 /**
  * 사람이 쓰는 금액 → 만원. "15억", "15억 3,000", "15억3천만", "3.5억", "8,500만", "150000"(만원), "1,500,000,000원".
  * 단위 없는 숫자는 만원으로 본다. 읽을 수 없으면 null.

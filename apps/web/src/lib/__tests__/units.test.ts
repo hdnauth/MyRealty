@@ -25,6 +25,15 @@ describe("clusterAreas", () => {
     expect(r[0]).toMatchObject({ trades: 5, medianPrice: 98000, units: null });
   });
 
+  it("대장에 있는 면적을 대표로(실거래 신고 면적이 더 많아도)", () => {
+    const r = clusterAreas([
+      { area: 84.97, count: 50, trades: 50, medianPrice: 150000 },
+      { area: 84.9699, count: 12, units: 12 },
+    ]);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ area: 84.9699, units: 12, trades: 50, medianPrice: 150000 });
+  });
+
   it("평형 찾기와 표기", () => {
     const types = clusterAreas([{ area: 84.99, count: 1, supply: 112.4 }, { area: 59.9, count: 1 }]);
     expect(matchAreaType(types, 84.8)?.area).toBe(84.99);

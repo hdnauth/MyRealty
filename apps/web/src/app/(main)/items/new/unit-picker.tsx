@@ -25,6 +25,8 @@ export function UnitPicker({
   onAreaChange?: (area: number | null) => void;
 }) {
   const [area, setAreaRaw] = useState(() => (areaTypes.length === 1 ? String(areaTypes[0].area) : ""));
+  // 건축물대장 호 목록이 있으면 대장에 있는 평형·호에서만 고른다(없는 면적 입력 방지)
+  const allowManual = !units?.length || areaTypes.length === 0;
   const [manualArea, setManualArea] = useState(areaTypes.length === 0);
   const [dong, setDong] = useState(() => (dongs.length === 1 ? dongs[0] : ""));
   const [ho, setHo] = useState("");
@@ -101,6 +103,7 @@ export function UnitPicker({
                 </button>
               );
             })}
+            {allowManual ? (
             <button
               type="button"
               onClick={() => setManualArea(true)}
@@ -111,8 +114,10 @@ export function UnitPicker({
             >
               직접 입력
             </button>
+            ) : null}
           </div>
         ) : null}
+        {!allowManual ? <p className="mt-1 text-[11px] text-muted">건축물대장에 있는 평형입니다. 호를 고르면 그 호의 전용면적으로 맞춥니다.</p> : null}
         {manualArea ? (
           <Input
             className={areaTypes.length ? "mt-2" : undefined}

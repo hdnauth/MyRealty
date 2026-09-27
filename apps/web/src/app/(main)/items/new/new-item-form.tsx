@@ -5,10 +5,15 @@ import { Loader2, Search } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 import type { AddressCandidate } from "@/app/api/address/route";
 import type { InspectResult } from "@/app/api/address/inspect/route";
+import type { TradePreview } from "@/app/api/address/trades/route";
+import { MiniMap, type MapKeys } from "@/components/map/mini-map";
 import { DetailFields } from "@/components/items/detail-fields";
 import { Badge, Button, Card, Field, Input, Notice } from "@/components/ui";
-import { PROPERTY_TYPES, type PropertyType } from "@/lib/property";
+import type { AreaUnit } from "@/lib/format";
+import { defaultRadius, PROPERTY_TYPES, type PropertyType } from "@/lib/property";
+import type { AreaType } from "@/lib/units";
 import { createItemAction, type ItemFormState } from "../actions";
+import { TradePreviewCard } from "./trade-preview";
 import { SimpleArea, UnitPicker } from "./unit-picker";
 
 /** 건물 정보를 받기 전 임시 판별(검색 결과만으로) */
@@ -44,7 +49,17 @@ function inspectQuery(c: AddressCandidate) {
   }).toString();
 }
 
-export function NewItemForm() {
+/** 평형 목록에 실거래 미리보기(수집 전 단지)의 가격·건수를 채운다 */
+function withLivePrices(types: AreaType[], preview: TradePreview | null): AreaType[] {
+  if (!preview || preview.source !== "live") return types;
+  return types.map((t) => {
+    if (t.medianPrice) return t;
+    const b = preview.byArea.find((x) => Math.abs(x.area - t.area) <= 0.5);
+    return b ? { ...t, medianPrice: b.median, trades: t.trades + b.sales } : t;
+  });
+}
+
+export function NewItemForm({ mapKeys, unit }: { mapKeys: MapKeys; unit: AreaUnit }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<AddressCandidate[]>([]);
   const [meta, setMeta] = useState<{ jusoEnabled?: boolean; jusoError?: string | null }>({});
@@ -102,6 +117,39 @@ export function NewItemForm() {
   const pickedArea = area ?? (info?.areaTypes.length === 1 ? info.areaTypes[0].area : null);
   const defaultLabel = name ? `${name}${pickedArea && !isLand ? ` ${Math.floor(pickedArea)}㎡` : ""}` : "";
   const usePicker = !isLand && (PROPERTY_TYPES[type].hasComplex || Boolean(info?.units?.length));
+  const hasComplex = PROPERTY_TYPES[type].hasComplex;
+
+  // 최근 실거래 미리보기 + 좌표(유형·건물 정보가 정해진 뒤). 단지가 없는 유형은 대장·토지 면적과 비슷한 거래만
+  const previewArea = isLand ? (info?.land?.area ?? null) : type === "house" ? (info?.building?.totalArea ?? null) : null;
+  const previewKey =
+    picked && !inspecting
+      ? new URLSearchParams({
+          type,
+          sgg: picked.sggCd,
+          umd: picked.emdName ?? "",
+          jibun: picked.jibun ?? "",
+          complexId: String(matched?.id ?? picked.complexId ?? ""),
+          area: !hasComplex && previewArea ? String(previewArea) : "",
+          jimok: info?.land?.jimok ?? "",
+          addr: picked.roadAddr ?? picked.jibunAddr,
+          lawd: picked.lawdCd ?? "",
+        }).toString()
+      : null;
+  const [preview, setPreview] = useState<{ key: string; data: TradePreview | null } | null>(null);
+  useEffect(() => {
+    if (!previewKey) return;
+    const ctl = new AbortController();
+    fetch(`/api/address/trades?${previewKey}`, { signal: ctl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: TradePreview | null) => setPreview({ key: previewKey, data }))
+      .catch(() => {
+        if (!ctl.signal.aborted) setPreview({ key: previewKey, data: null });
+      });
+    return () => ctl.abort();
+  }, [previewKey]);
+  const trades = previewKey && preview?.key === previewKey ? preview.data : null;
+  const tradesLoading = Boolean(previewKey && preview?.key !== previewKey);
+  const areaTypes = withLivePrices(info?.areaTypes ?? [], trades);
 
   const reset = () => {
     setPicked(null);
@@ -212,30 +260,52 @@ export function NewItemForm() {
             <input type="hidden" name="property_type" value={type} />
           </Field>
 
-          {PROPERTY_TYPES[type].hasComplex && !inspecting && !matched ? (
-            <Notice tone="warn">아직 이 주소의 실거래가 수집되지 않았습니다. 등록 후 다음 수집 때 자동으로 연결됩니다.</Notice>
+          {hasComplex && !inspecting && !matched && !tradesLoading ? (
+            <Notice>
+              {trades?.source === "live"
+                ? "아직 수집 전인 단지라 실거래 API 에서 바로 불러와 보여 드립니다. 등록하면 이 부동산의 거래·공시가격·입지 데이터를 바로 모읍니다."
+                : "아직 이 주소의 실거래가 수집되지 않았습니다. 등록하면 이 부동산 데이터를 바로 모으기 시작합니다."}
+            </Notice>
           ) : null}
+
+          {trades?.point ? (
+            <MiniMap
+              keys={mapKeys}
+              center={trades.point}
+              radius={defaultRadius(type)}
+              label={name || "선택한 위치"}
+              txType={PROPERTY_TYPES[type].tx}
+              selfComplexId={matched?.id ?? picked.complexId ?? null}
+              unit={unit}
+              height={220}
+            />
+          ) : null}
+
           {isLand ? <Notice>토지·임야 실거래는 지번 일부가 공개되지 않아 같은 읍면동의 유사 면적 거래와 비교합니다.</Notice> : null}
 
           <DetailFields
             isLand={isLand}
             labelPlaceholder={defaultLabel ? `비워 두면 "${defaultLabel}"` : "예) 우리집, 매수후보 A"}
-            defaultRadius={PROPERTY_TYPES[type].hasComplex ? 1000 : 2000}
+            defaultRadius={defaultRadius(type)}
             unitSlot={
               inspecting ? (
                 <div className="flex items-center gap-2 rounded-lg bg-surface-2 p-3 text-sm text-muted">
                   <Loader2 size={16} className="animate-spin" /> 평형·동·호 목록을 불러오는 중…
                 </div>
               ) : usePicker ? (
+                <>
                 <UnitPicker
                   key={`${inspectKey}|${type}`}
-                  areaTypes={info?.areaTypes ?? []}
+                  areaTypes={areaTypes}
                   dongs={info?.dongs.length ? info.dongs : picked.dongs}
                   units={info?.units ?? null}
                   partial={info?.unitsPartial ?? false}
                   onAreaChange={setArea}
                 />
+                <TradePreviewCard preview={trades} loading={tradesLoading} area={hasComplex ? pickedArea : null} hasComplex={hasComplex} unit={unit} />
+                </>
               ) : (
+                <>
                 <SimpleArea
                   key={`${inspectKey}|${type}`}
                   isLand={isLand}
@@ -243,6 +313,8 @@ export function NewItemForm() {
                   defaultArea={isLand ? (info?.land?.area ?? null) : type === "house" ? (info?.building?.totalArea ?? null) : null}
                   landArea={type === "house" ? (info?.building?.platArea ?? info?.land?.area ?? null) : null}
                 />
+                <TradePreviewCard preview={trades} loading={tradesLoading} area={null} hasComplex={hasComplex} unit={unit} />
+                </>
               )
             }
           />

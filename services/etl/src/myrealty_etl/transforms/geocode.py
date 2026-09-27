@@ -69,17 +69,19 @@ def geocode(conn, query: str) -> tuple[float, float] | None:
     return result
 
 
-def geocode_pending(conn, limit: int = 300) -> dict:
-    """좌표가 없는 단지·읍면동을 지오코딩하고, 거래 행에 좌표를 전파한다."""
+def geocode_pending(conn, limit: int = 300, sgg_cd: str | None = None, lawd_cd: str | None = None) -> dict:
+    """좌표가 없는 단지·읍면동을 지오코딩하고, 거래 행에 좌표를 전파한다.
+    sgg_cd 를 주면 그 시군구만, lawd_cd(읍면동)가 같은 단지부터(개별 수집에서 내 동네를 먼저)."""
     stats = {"complexes": 0, "regions": 0}
     rows = conn.execute(
         """select c.id, c.umd_nm, c.jibun, c.name, coalesce(t.name, r.sido || ' ' || r.sigungu, '') as sgg_name
            from complexes c
            left join collect_targets t on t.sgg_cd = c.sgg_cd
            left join regions r on r.lawd_cd = rpad(c.sgg_cd, 10, '0')
-           where c.geom is null
-           limit %s""",
-        (limit,),
+           where c.geom is null and (%(sgg)s::text is null or c.sgg_cd = %(sgg)s)
+           order by (c.lawd_cd is not distinct from %(lawd)s) desc, c.id
+           limit %(limit)s""",
+        {"sgg": sgg_cd, "lawd": lawd_cd, "limit": limit},
     ).fetchall()
     for c in rows:
         pt = None
@@ -94,8 +96,9 @@ def geocode_pending(conn, limit: int = 300) -> dict:
     regs = conn.execute(
         """select r.lawd_cd, coalesce(t.name, r.sido || ' ' || r.sigungu, '') as sgg_name, r.emd
            from regions r left join collect_targets t on t.sgg_cd = substr(r.lawd_cd, 1, 5)
-           where r.level = 3 and r.center is null limit %s""",
-        (limit,),
+           where r.level = 3 and r.center is null and (%(sgg)s::text is null or substr(r.lawd_cd, 1, 5) = %(sgg)s)
+           limit %(limit)s""",
+        {"sgg": sgg_cd, "limit": limit},
     ).fetchall()
     for r in regs:
         pt = geocode(conn, f"{r['sgg_name']} {r['emd']}")

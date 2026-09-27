@@ -208,16 +208,21 @@ def fetch(svc: Service, sgg_cd: str, ym: str, *, conn=None, num_rows: int = 1000
     return dedupe_hashes(rows)
 
 
-UPSERT_SQL = """
-insert into transactions (src_hash, property_type, deal_kind, sgg_cd, lawd_cd, umd_nm, jibun, name, house_type,
-  jimok, land_use, area_m2, land_area_m2, floor, build_year, deal_date, price, monthly_rent, contract_term,
-  renewal_used, is_direct, is_canceled, canceled_at, buyer_type, seller_type, registered_at, contract_type,
-  prev_deposit, prev_rent, raw, complex_id)
-values (%(src_hash)s, %(property_type)s, %(deal_kind)s, %(sgg_cd)s, %(lawd_cd)s, %(umd_nm)s, %(jibun)s, %(name)s,
-  %(house_type)s, %(jimok)s, %(land_use)s, %(area_m2)s, %(land_area_m2)s, %(floor)s, %(build_year)s, %(deal_date)s,
-  %(price)s, %(monthly_rent)s, %(contract_term)s, %(renewal_used)s, %(is_direct)s, %(is_canceled)s, %(canceled_at)s,
-  %(buyer_type)s, %(seller_type)s, %(registered_at)s, %(contract_type)s, %(prev_deposit)s, %(prev_rent)s,
-  %(raw_json)s, %(complex_id)s)
+# (컬럼, 타입) — 한 번에 여러 행을 jsonb_to_recordset 으로 넘겨 DB 왕복을 줄인다(원격 DB 면 행당 왕복이 수집 시간을 좌우)
+TX_COLUMNS: list[tuple[str, str]] = [
+    ("src_hash", "text"), ("property_type", "text"), ("deal_kind", "text"), ("sgg_cd", "text"), ("lawd_cd", "text"),
+    ("umd_nm", "text"), ("jibun", "text"), ("name", "text"), ("house_type", "text"), ("jimok", "text"),
+    ("land_use", "text"), ("area_m2", "numeric"), ("land_area_m2", "numeric"), ("floor", "smallint"),
+    ("build_year", "smallint"), ("deal_date", "date"), ("price", "bigint"), ("monthly_rent", "int"),
+    ("contract_term", "text"), ("renewal_used", "boolean"), ("is_direct", "boolean"), ("is_canceled", "boolean"),
+    ("canceled_at", "date"), ("buyer_type", "text"), ("seller_type", "text"), ("registered_at", "date"),
+    ("contract_type", "text"), ("prev_deposit", "bigint"), ("prev_rent", "int"), ("raw", "jsonb"), ("complex_id", "bigint"),
+]
+_COLS = ", ".join(c for c, _ in TX_COLUMNS)
+
+UPSERT_SQL = f"""
+insert into transactions ({_COLS})
+select {_COLS} from jsonb_to_recordset(%s) as x({", ".join(f"{c} {t}" for c, t in TX_COLUMNS)})
 on conflict (src_hash) do update set
   is_canceled = excluded.is_canceled,
   canceled_at = excluded.canceled_at,
@@ -233,12 +238,10 @@ where transactions.is_canceled is distinct from excluded.is_canceled
    or (transactions.complex_id is null and excluded.complex_id is not null)
    -- 등기는 신고 몇 달 뒤에 붙는다(최근 3개월 재수집 때 반영)
    or (transactions.registered_at is null and excluded.registered_at is not null)
-returning id, (xmax = 0) as inserted
+returning (xmax = 0) as inserted
 """
 
-
-# 상세 필드가 없는 행(테스트·구 명세)도 upsert 되도록
-DETAIL_DEFAULTS = {k: None for k in ("buyer_type", "seller_type", "registered_at", "contract_type", "prev_deposit", "prev_rent")}
+UPSERT_CHUNK = 500
 
 
 def upsert(conn, rows: list[dict]) -> dict:
@@ -246,13 +249,12 @@ def upsert(conn, rows: list[dict]) -> dict:
     from ..db import jsonb
 
     stats = {"inserted": 0, "updated": 0}
-    with conn.cursor() as cur:
-        for row in rows:
-            params = {**DETAIL_DEFAULTS, **row, "raw_json": jsonb(row["raw"]), "complex_id": row.get("complex_id")}
-            cur.execute(UPSERT_SQL, params)
-            res = cur.fetchone()
-            if res:
-                stats["inserted" if res["inserted"] else "updated"] += 1
+    # 한 문장 안에 같은 src_hash 가 두 번 있으면 on conflict 가 실패하므로 마지막 값만 남긴다
+    uniq = list({r["src_hash"]: r for r in rows}.values())
+    for i in range(0, len(uniq), UPSERT_CHUNK):
+        payload = [{c: r.get(c) for c, _ in TX_COLUMNS} for r in uniq[i:i + UPSERT_CHUNK]]
+        for res in conn.execute(UPSERT_SQL, (jsonb(payload),)).fetchall():
+            stats["inserted" if res["inserted"] else "updated"] += 1
     conn.commit()
     return stats
 

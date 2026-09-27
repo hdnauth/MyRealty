@@ -32,6 +32,22 @@ export const GROUP_TAGS = {
 } as const;
 export type GroupTag = keyof typeof GROUP_TAGS;
 
+/**
+ * 주변 거래·입지를 볼 기본 반경(m). 단지형은 촘촘해 1km, 단독·상가 2km,
+ * 토지·임야는 거래가 드물고 읍면동이 넓어 5km·10km(같은 지목·면적대 거래를 모으려면 넓어야 한다)
+ */
+export function defaultRadius(type: PropertyType): number {
+  if (type === "forest") return 10000;
+  if (type === "land") return 5000;
+  return PROPERTY_TYPES[type].hasComplex ? 1000 : 2000;
+}
+
+/** 주변 거래를 볼 기간(개월): 거래가 드문 유형일수록 길게 */
+export function nearbyMonths(type: PropertyType): number {
+  if (type === "land" || type === "forest") return 36;
+  return PROPERTY_TYPES[type].hasComplex ? 6 : 12;
+}
+
 export function isPropertyType(v: string): v is PropertyType {
   return v in PROPERTY_TYPES;
 }

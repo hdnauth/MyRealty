@@ -41,6 +41,16 @@ export const env = {
   vapidPrivateKey: opt("VAPID_PRIVATE_KEY"),
   vapidSubject: opt("VAPID_SUBJECT") ?? "mailto:admin@example.com",
   appUrl: opt("APP_URL") ?? "http://localhost:3000",
+  /**
+   * 관심 부동산 개별 수집(등록 직후 바로 채우기). GitHub Actions 의 etl-item.yml 을 workflow_dispatch 로 실행한다.
+   * 토큰: 이 리포 한정 fine-grained PAT, 권한 Actions: Read and write
+   */
+  githubDispatchToken: opt("GITHUB_DISPATCH_TOKEN"),
+  /** owner/repo */
+  githubDispatchRepo: opt("GITHUB_DISPATCH_REPO"),
+  githubDispatchRef: opt("GITHUB_DISPATCH_REF") ?? "main",
+  /** 로컬 개발: 1 이면 GitHub 대신 services/etl 에서 `uv run myrealty item` 을 직접 띄운다 */
+  itemCollectLocal: opt("ITEM_COLLECT_LOCAL") === "1",
   isDev: process.env.NODE_ENV !== "production",
 };
 

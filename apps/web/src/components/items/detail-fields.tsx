@@ -127,7 +127,7 @@ export function DetailFields({
         label="주변 거래·입지를 볼 범위"
         options={RADIUS_OPTIONS}
         defaultValue={String(d.radius_m ?? defaultRadius)}
-        hint="아파트는 1km, 토지·단독은 2km 가 보통입니다."
+        hint="아파트 1km, 단독·상가 2km, 토지 5km, 임야 10km 가 보통입니다(거래가 드물수록 넓게)."
       />
 
       <details className="group rounded-xl border border-border px-4 py-3">

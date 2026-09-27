@@ -3,11 +3,13 @@ import Link from "next/link";
 import { LineSeriesChart, Sparkline } from "@/components/charts/series-chart";
 import { ContribBars } from "@/components/indicators/contrib-bars";
 import { type JeonseItemOption, JeonseCheck } from "@/components/indicators/jeonse-check";
+import { InsightCard } from "@/components/indicators/insight-card";
 import { Simulator } from "@/components/indicators/simulator";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, Stat } from "@/components/ui";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatManwon, formatPct } from "@/lib/format";
+import { marketInsights } from "@/lib/insights";
 import { change, indicatorRegions, last, type Point, seriesMeta, seriesValues, TEMP_FACTORS, tempBand } from "@/lib/queries/indicators";
 import { listItems } from "@/lib/queries/items";
 
@@ -32,7 +34,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
     seriesValues(macroCodes, since),
     seriesMeta(macroCodes),
     listItems(uid),
-    // 깡통전세 점검용: 내 부동산 공시가격
+    // 깡통전세 점검용: 관심 부동산 공시가격
     sql<{ id: string; price: number }[]>`
       select distinct on (w.id) w.id, o.price from watch_items w
       join official_prices o on o.target_key = w.pnu or o.target_key like w.pnu || '|%'
@@ -49,6 +51,12 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
     : [];
   const v = { ...macroV, ...(await seriesValues(regionCodes, since)) };
   const r = (k: string) => v[`${k}.${sgg}`] ?? [];
+
+  const insights = marketInsights({
+    ...v,
+    ...Object.fromEntries(["idx", "vol", "jr", "nhr", "dr", "ind.burden", "ind.real", "ind.liq", "ind.supply"].map((k) => [k, r(k)])),
+  });
+  const regionName = regions.find((g) => g.sgg === sgg)?.name ?? null;
 
   const temp = last(r("ind.temp"));
   const band = tempBand(temp);
@@ -81,6 +89,8 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
           ))}
         </div>
       ) : null}
+
+      <InsightCard insights={insights} region={regionName} />
 
       {!sgg ? (
         <Card>

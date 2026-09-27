@@ -93,7 +93,7 @@ export default async function HomePage() {
 
         <div className="space-y-4">
           <Card>
-            <CardHeader title="내 부동산" action={<Link href="/items/new" className="flex items-center text-accent"><Plus size={16} />등록</Link>} />
+            <CardHeader title="관심 부동산" action={<Link href="/items/new" className="flex items-center text-accent"><Plus size={16} />등록</Link>} />
             <div className="space-y-2 px-3 pb-3">
               {items.slice(0, 6).map((i) => (
                 <ItemCard key={i.id} item={i} />

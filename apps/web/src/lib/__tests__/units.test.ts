@@ -6,6 +6,7 @@ import {
   dongHo,
   floorFromHo,
   matchAreaType,
+  parseDongHo,
   parseDongList,
   typeFromJimok,
   typeFromPurpose,
@@ -37,8 +38,22 @@ describe("동·호", () => {
   it("호수에서 층을 추정", () => {
     expect(floorFromHo("1502")).toBe(15);
     expect(floorFromHo("302호")).toBe(3);
-    expect(floorFromHo("B102")).toBeNull();
+    expect(floorFromHo("B102")).toBe(-1);
+    expect(floorFromHo("지하201호")).toBe(-2);
     expect(floorFromHo("12")).toBeNull();
+  });
+  it("자유 입력 동·호 → 동·호·층", () => {
+    expect(parseDongHo("101동 903호")).toEqual({ dong: "101", ho: "903", floor: 9 });
+    expect(parseDongHo("101-903")).toEqual({ dong: "101", ho: "903", floor: 9 });
+    expect(parseDongHo("101동-1502호")).toEqual({ dong: "101", ho: "1502", floor: 15 });
+    expect(parseDongHo("101 903")).toEqual({ dong: "101", ho: "903", floor: 9 });
+    expect(parseDongHo("903호")).toEqual({ dong: null, ho: "903", floor: 9 });
+    expect(parseDongHo("1203")).toEqual({ dong: null, ho: "1203", floor: 12 });
+    expect(parseDongHo("제101동 제903호")).toEqual({ dong: "101", ho: "903", floor: 9 });
+    expect(parseDongHo("가동 201호")).toEqual({ dong: "가", ho: "201", floor: 2 });
+    expect(parseDongHo("A동 B102호")).toEqual({ dong: "A", ho: "B102", floor: -1 });
+    expect(parseDongHo("101동")).toEqual({ dong: "101", ho: null, floor: null });
+    expect(parseDongHo("")).toEqual({ dong: null, ho: null, floor: null });
   });
   it("동/호 문자열", () => {
     expect(dongHo("101", "1502")).toBe("101동 1502호");

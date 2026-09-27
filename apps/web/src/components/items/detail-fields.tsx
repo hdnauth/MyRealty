@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { Field, Input, Select } from "@/components/ui";
 import { GROUP_TAGS } from "@/lib/property";
 import type { Lease, Loan } from "@/lib/queries/items";
+import { DongHoField, MoneyField } from "./smart-inputs";
 
 export type DetailDefaults = {
   label?: string | null;
@@ -59,20 +60,11 @@ export function DetailFields({
 
       {unitSlot ?? (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label={isLand ? "토지 면적(㎡)" : "전용면적(㎡)"}>
               <Input name="area_m2" inputMode="decimal" value={area} onChange={(e) => setArea(e.target.value)} placeholder="84.9" />
             </Field>
-            {!isLand ? (
-              <>
-                <Field label="층">
-                  <Input name="floor" inputMode="numeric" defaultValue={d.floor ?? ""} />
-                </Field>
-                <Field label="동/호">
-                  <Input name="dong_ho" defaultValue={d.dong_ho ?? ""} placeholder="101동 1502호" />
-                </Field>
-              </>
-            ) : null}
+            {!isLand ? <DongHoField defaultValue={d.dong_ho} defaultFloor={d.floor} /> : null}
           </div>
           {areaOptions && areaOptions.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
@@ -97,17 +89,13 @@ export function DetailFields({
       {finance ? (
         <div className="space-y-4 rounded-xl bg-surface-2 p-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="매입가(만원)">
-              <Input name="purchase_price" inputMode="numeric" defaultValue={d.purchase_price ?? ""} placeholder="150000 = 15억" />
-            </Field>
+            <MoneyField label="매입가" name="purchase_price" defaultValue={d.purchase_price} />
             <Field label="매입일">
               <Input name="purchase_date" type="date" defaultValue={d.purchase_date ?? ""} />
             </Field>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-            <Field label="대출금(만원)">
-              <Input name="loan_amount" inputMode="numeric" defaultValue={loan?.amount ?? ""} />
-            </Field>
+            <MoneyField label="대출금" name="loan_amount" defaultValue={loan?.amount} placeholder="예) 6억" />
             <Field label="금리(%)">
               <Input name="loan_rate" inputMode="decimal" defaultValue={loan?.rate ?? ""} />
             </Field>
@@ -119,12 +107,8 @@ export function DetailFields({
             </Field>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-            <Field label="임대 보증금(만원)">
-              <Input name="lease_deposit" inputMode="numeric" defaultValue={d.lease?.deposit ?? ""} />
-            </Field>
-            <Field label="월세(만원)">
-              <Input name="lease_rent" inputMode="numeric" defaultValue={d.lease?.rent ?? ""} />
-            </Field>
+            <MoneyField label="보증금" name="lease_deposit" defaultValue={d.lease?.deposit} placeholder="예) 5억" />
+            <MoneyField label="월세" name="lease_rent" defaultValue={d.lease?.rent || null} placeholder="예) 150만" />
             <Field label="계약 만기">
               <Input name="lease_end" type="date" defaultValue={d.lease?.end_date ?? ""} />
             </Field>

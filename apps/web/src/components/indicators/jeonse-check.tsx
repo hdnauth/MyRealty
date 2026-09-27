@@ -28,7 +28,7 @@ export function JeonseCheck({ items }: { items: JeonseItemOption[] }) {
       <CardHeader title="깡통전세 위험 점검" sub="빌라·오피스텔 전세 계약 전 확인 · 공시가격 126%는 HUG 전세보증 가입 기준(현행 기준 확인)" />
       <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-5">
         {items.length ? (
-          <Field label="내 부동산에서 불러오기">
+          <Field label="관심 부동산에서 불러오기">
             <Select
               value={sel}
               onChange={(e) => {

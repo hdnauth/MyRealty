@@ -76,7 +76,7 @@ def value_complex(conn, item: dict, today: date) -> dict | None:
         adj.append(p)
         weights.append(math.exp(-months / 9))
         comps.append({"id": r["id"], "date": str(r["deal_date"]), "price": r["price"], "adj": round(p), "floor": r["floor"]})
-    # 층 보정: 각 거래를 '평균 층' 가격으로 환산한 뒤 내 부동산 층 구간 비율을 곱한다
+    # 층 보정: 각 거래를 '평균 층' 가격으로 환산한 뒤 대상 부동산 층 구간 비율을 곱한다
     if len(adj) >= 8 and item.get("floor") is not None:
         ratios = bucket_ratios(adj, [c["floor"] for c in comps])
         mine = ratios.get(floor_bucket(item["floor"]), 1.0)

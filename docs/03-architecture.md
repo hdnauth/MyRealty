@@ -266,7 +266,7 @@ MyRealty/
 │  └─ src/
 │     ├─ proxy.ts                   # 비로그인 → /login (Next 16 middleware 대체)
 │     ├─ app/(auth)/login/          # 이메일 OTP
-│     ├─ app/(main)/                # 홈·지도·내 부동산(탭: 개요/시세/주변/입지/소식/분석/메모)·지표(+커스텀)
+│     ├─ app/(main)/                # 홈·지도·관심 부동산(탭: 개요/시세/주변/입지/소식/분석/메모)·지표(+커스텀)
 │     │                             # ·AI(질문/리포트)·비교·포트폴리오·캘린더·개발사업·알림·설정
 │     ├─ app/api/                   # address, complexes, map/*, push, ai/chat(SSE), cron/reports
 │     ├─ components/                # ui, shell, charts(ECharts), map(Naver), items, feed, indicators, ai

@@ -68,12 +68,40 @@ export function areaTypeLabel(t: Pick<AreaType, "area" | "supply">) {
   return t.supply ? `${Math.round(pyeong(t.supply))}평형` : `전용 ${pyeong(t.area).toFixed(1)}평`;
 }
 
-/** 호수 → 층 (1502 → 15, 302 → 3, B102·지하 → null) */
+/** 호수 → 층 (1502 → 15, 302 → 3, B102·지하102 → -1). 층을 알 수 없는 표기(12, 가동 1호)는 null */
 export function floorFromHo(ho: string): number | null {
   const s = ho.replace(/\s+/g, "").replace(/호$/, "");
+  const under = s.match(/^(?:B|b|지하|지)(\d{3,4})$/);
+  if (under) {
+    const f = Number(under[1].slice(0, -2));
+    return f > 0 ? -f : null;
+  }
   if (!/^\d{3,5}$/.test(s)) return null;
   const f = Number(s.slice(0, -2));
   return f > 0 ? f : null;
+}
+
+export type ParsedDongHo = { dong: string | null; ho: string | null; floor: number | null };
+
+/**
+ * 자유 입력한 동·호 → 동·호·층. "101동 903호", "101-903", "903호", "903", "B102호", "가동 201호" 를 받는다.
+ * 층은 호수에서 추정한다(1층 = 1xx). 호가 없거나 층을 알 수 없으면 floor = null.
+ */
+export function parseDongHo(input: string | null | undefined): ParsedDongHo {
+  const s = (input ?? "").trim().replace(/\s+/g, " ");
+  if (!s) return { dong: null, ho: null, floor: null };
+  // 101-903, 101동-903호
+  const dash = s.match(/^(?:제\s*)?([0-9A-Za-z가-힣]+?)\s*동?\s*-\s*([Bb지]?\s*\d{2,5})\s*호?$/);
+  if (dash) return withFloor(dash[1], dash[2].replace(/\s+/g, ""));
+  const hoM = s.match(/([Bb]|지하\s*)?(\d{2,5})\s*호/) ?? s.match(/(?:^|\s)([Bb]|지하\s*)?(\d{3,5})$/);
+  const ho = hoM ? `${hoM[1] ? (/지하/.test(hoM[1]) ? "지하" : "B") : ""}${hoM[2]}` : null;
+  const rest = hoM ? s.replace(hoM[0], " ").trim() : s;
+  const dongM = rest.match(/(?:제\s*)?([0-9A-Za-z가-힣]+)\s*동/) ?? (ho && /^\d{1,4}$/.test(rest) ? [rest, rest] : null);
+  return withFloor(dongM ? dongM[1] : null, ho);
+}
+
+function withFloor(dong: string | null, ho: string | null): ParsedDongHo {
+  return { dong: dong || null, ho: ho || null, floor: ho ? floorFromHo(ho) : null };
 }
 
 /** "101", "제101동", "101동" → "101동" (숫자만이면 동을 붙인다) */

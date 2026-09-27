@@ -79,7 +79,7 @@ export async function eventsNear(lng: number, lat: number, radiusM: number, from
 
 export type CalendarEntry = { date: string; kind: string; title: string; sub?: string | null; href?: string | null };
 
-/** 캘린더: 이벤트(청약·입주·공시·세금) + 내 부동산 만기(대출·임대) */
+/** 캘린더: 이벤트(청약·입주·공시·세금) + 관심 부동산 만기(대출·임대) */
 export async function calendarEntries(userId: string, from: string, to: string): Promise<CalendarEntry[]> {
   const evs = await sql<{ starts_on: string; ends_on: string | null; kind: string; title: string; source_url: string | null; near: string | null }[]>`
     select e.starts_on::text, e.ends_on::text, e.kind, e.title, e.source_url,

@@ -6,7 +6,7 @@ import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { GROUP_TAGS } from "@/lib/property";
 import { listItems } from "@/lib/queries/items";
 
-export const metadata: Metadata = { title: "내 부동산" };
+export const metadata: Metadata = { title: "관심 부동산" };
 
 export default async function ItemsPage() {
   const uid = await sessionUserId();
@@ -17,7 +17,7 @@ export default async function ItemsPage() {
   return (
     <div>
       <PageHeader
-        title="내 부동산"
+        title="관심 부동산"
         sub={`${items.length}개 등록`}
         action={
           <LinkButton href="/items/new">

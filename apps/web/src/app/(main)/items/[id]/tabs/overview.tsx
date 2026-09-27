@@ -32,7 +32,18 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
             <Stat label="6개월 중위" value={formatManwon(s.saleMedian6m)} sub={<span className="text-muted">1년 <Change value={s.change1y} /></span>} />
             <Stat label="평당가(6개월)" value={s.saleMedian6m && area ? formatManwon(perPyeong(s.saleMedian6m, area)) : "-"} sub={<span className="text-muted">전용 평당</span>} />
             <Stat label="1년 최고/최저" value={s.high1y ? `${formatManwon(s.high1y, { short: true })} / ${formatManwon(s.low1y, { short: true })}` : "-"} />
-            <Stat label="역대 최고가" value={formatManwon(s.high?.price)} sub={s.high ? <span className="text-muted">{formatDate(s.high.deal_date)}</span> : null} />
+            <Stat
+              label="역대 최고가"
+              value={formatManwon(s.high?.price)}
+              sub={
+                s.high ? (
+                  <span className="text-muted">
+                    {formatDate(s.high.deal_date)}
+                    {current ? <> · 현재 <Change value={current / s.high.price - 1} /></> : null}
+                  </span>
+                ) : null
+              }
+            />
             <Stat label="전세가율" value={s.jeonseRatio ? formatPct(s.jeonseRatio, 1, false) : "-"} sub={<span className="text-muted">전세 {formatManwon(s.jeonseMedian6m, { short: true })}</span>} />
           </div>
         ) : (

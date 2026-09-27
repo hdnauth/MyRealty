@@ -18,6 +18,22 @@ export function formatManwon(v: number | null | undefined, opts: { short?: boole
   return `${sign}${man.toLocaleString("ko-KR")}만`;
 }
 
+/**
+ * 사람이 쓰는 금액 → 만원. "15억", "15억 3,000", "15억3천만", "3.5억", "8,500만", "150000"(만원), "1,500,000,000원".
+ * 단위 없는 숫자는 만원으로 본다. 읽을 수 없으면 null.
+ */
+export function parseManwon(input: string | null | undefined): number | null {
+  const s = (input ?? "").replace(/[,\s]/g, "");
+  if (!s) return null;
+  if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s);
+  const won = s.match(/^(\d+(?:\.\d+)?)원$/);
+  if (won) return Number(won[1]) / 10000;
+  const m = s.match(/^(?:(\d+(?:\.\d+)?)억)?(?:(\d+(?:\.\d+)?)천)?(?:(\d+(?:\.\d+)?))?(?:만)?(?:원)?$/);
+  if (!m || (!m[1] && !m[2] && !m[3])) return null;
+  const v = Number(m[1] ?? 0) * 10000 + Number(m[2] ?? 0) * 1000 + Number(m[3] ?? 0);
+  return Math.round(v * 100) / 100;
+}
+
 export function toPyeong(m2: number | null | undefined): number | null {
   if (!m2) return null;
   return m2 / M2_PER_PYEONG;

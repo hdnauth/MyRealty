@@ -103,7 +103,7 @@ export function baseAxes(t: ChartTokens) {
     xAxisStyle: {
       axisLine: { lineStyle: { color: t.axis } },
       axisTick: { show: false },
-      axisLabel: { color: t.muted, fontSize: 11 },
+      axisLabel: { color: t.muted, fontSize: 11, hideOverlap: true },
       splitLine: { show: false },
     },
     yAxisStyle: {

@@ -66,3 +66,17 @@ export function tempBand(v: number | null) {
   if (v < 80) return { label: "강세", tone: "up" as const };
   return { label: "과열", tone: "up" as const };
 }
+
+export const MACRO_CODES = ["ecos.base_rate", "ecos.mortgage_rate", "ecos.bond_3y", "ecos.cpi", "ecos.m2"];
+/** 시장 해석(lib/insights)이 쓰는 지역 지표 키(접미사 `.{시군구}` 없이) */
+export const INSIGHT_REGION_KEYS = ["idx", "vol", "jr", "nhr", "dr", "ind.burden", "ind.real", "ind.liq", "ind.supply"];
+
+/** 한 시군구의 시장 해석 입력(거시 + 지역 지표, 최근 8년) */
+export async function insightInputs(sgg: string | null) {
+  const since = new Date(new Date().getFullYear() - 8, 0, 1).toISOString().slice(0, 10);
+  const v = await seriesValues([...MACRO_CODES, ...(sgg ? INSIGHT_REGION_KEYS.map((k) => `${k}.${sgg}`) : [])], since);
+  return {
+    ...Object.fromEntries(MACRO_CODES.map((c) => [c, v[c]])),
+    ...(sgg ? Object.fromEntries(INSIGHT_REGION_KEYS.map((k) => [k, v[`${k}.${sgg}`]])) : {}),
+  } as Record<string, Point[]>;
+}

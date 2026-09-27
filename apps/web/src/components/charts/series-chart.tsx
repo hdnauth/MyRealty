@@ -50,7 +50,12 @@ export function LineSeriesChart({
     (t: ChartTokens): EChartsOption => {
       const b = baseAxes(t);
       const colors = { 1: t.s1, 2: t.s2, 3: t.s3, 4: t.s4, 5: t.s5 };
-      const labelEnds = endLabels && lines.length <= 4;
+      // 끝 값이 서로 너무 가까우면(세로 범위의 7% 이내) 이름이 겹치므로 끝 라벨을 끄고 범례로만 구분한다
+      const ends = lines.map((l) => l.points.at(-1)?.[1]).filter((x): x is number => x !== undefined).sort((a, b) => a - b);
+      const all = lines.flatMap((l) => l.points.map((p) => p[1]));
+      const span = all.length ? Math.max(...all) - Math.min(...all) : 0;
+      const crowded = ends.some((v, i) => i > 0 && span > 0 && (v - ends[i - 1]) / span < 0.07);
+      const labelEnds = endLabels && lines.length <= 4 && !crowded;
       return {
         grid: { ...b.grid, top: lines.length > 1 ? 36 : 16, right: labelEnds ? 72 : b.grid.right },
         legend: lines.length > 1 ? { ...b.legend, data: lines.map((l) => l.name) } : undefined,

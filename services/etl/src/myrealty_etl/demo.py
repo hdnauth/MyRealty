@@ -335,6 +335,17 @@ def _seed_macro(conn, today: date) -> None:
         "ecos.bond_3y": ("[데모] 국고채 3년", "%", [(d, round(base_rate(d) + 0.2 + 0.25 * math.sin(t(d) / 5), 2)) for d in months]),
         "ecos.cpi": ("[데모] 소비자물가지수", "2020=100", [(d, round(96.5 * (1.0022 ** t(d)) * (1.01 if d >= date(2022, 3, 1) else 1), 2)) for d in months]),
         "ecos.m2": ("[데모] M2 평잔", "십억원", [(d, round(2_350_000 * (1.0062 ** t(d)))) for d in months]),
+        # 수요 심리·신용·공급(합성): 2021 과열 → 2022 급랭 → 회복
+        "ecos.housing_csi": ("[데모] 주택가격전망 CSI", "지수(100=중립)",
+                             [(d, round(100 + 25 * math.sin((t(d) - 30) / 11) - (30 if date(2022, 6, 1) <= d <= date(2023, 3, 1) else 0), 1)) for d in months]),
+        "ecos.household_mortgage": ("[데모] 주택담보대출 잔액", "십억원",
+                                    [(d, round(600_000 * (1.0045 ** t(d)) * (0.97 if d >= date(2022, 9, 1) else 1))) for d in months]),
+        "reb.supply_demand": ("[데모] 아파트 매매수급지수", "지수(100=균형)",
+                              [(d, round(95 + 12 * math.sin((t(d) - 28) / 10), 1)) for d in months]),
+        "kosis.unsold_done": ("[데모] 준공 후 미분양", "호",
+                              [(d, round(8000 + 5000 * max(0, math.sin((t(d) - 70) / 14)))) for d in months]),
+        "kosis.permits": ("[데모] 주택 인허가", "호",
+                          [(d, round(40000 * (0.6 if d >= date(2023, 1, 1) else 1) * (1 + 0.15 * math.sin(t(d) / 3)))) for d in months]),
     }
     for code, (name, unit, vals) in series.items():
         upsert_series(conn, code, {"name": name, "unit": unit, "freq": "M", "source": "demo"}, vals)

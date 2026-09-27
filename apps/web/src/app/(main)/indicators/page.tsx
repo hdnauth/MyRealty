@@ -3,15 +3,15 @@ import Link from "next/link";
 import { LineSeriesChart, Sparkline } from "@/components/charts/series-chart";
 import { ContribBars } from "@/components/indicators/contrib-bars";
 import { type JeonseItemOption, JeonseCheck } from "@/components/indicators/jeonse-check";
-import { InsightCard } from "@/components/indicators/insight-card";
+import { BacktestCard, InsightCard } from "@/components/indicators/insight-card";
 import { Simulator } from "@/components/indicators/simulator";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, Stat, Tabs } from "@/components/ui";
 import { Term } from "@/components/ui/term";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatManwon, formatPct } from "@/lib/format";
-import { marketInsights } from "@/lib/insights";
-import { change, INSIGHT_REGION_KEYS, indicatorRegions, last, type Point, seriesMeta, seriesValues, TEMP_FACTORS, tempBand } from "@/lib/queries/indicators";
+import { backtestInsights, marketInsights } from "@/lib/insights";
+import { change, INSIGHT_REGION_KEYS, indicatorRegions, MACRO_CODES, last, type Point, seriesMeta, seriesValues, TEMP_FACTORS, tempBand } from "@/lib/queries/indicators";
 import { listItems } from "@/lib/queries/items";
 
 export const metadata: Metadata = { title: "지표" };
@@ -32,6 +32,11 @@ const VIEWS = [
   { key: "tools", label: "계산기" },
 ] as const;
 
+/** 월 시계열의 n개월 합계 */
+function rollingSum(p: Point[], n: number): Point[] {
+  return p.flatMap(([d], i) => (i >= n - 1 ? ([[d, p.slice(i - n + 1, i + 1).reduce((a, [, x]) => a + x, 0)]] as Point[]) : []));
+}
+
 /** 두 월 시계열의 차(같은 달끼리) */
 function spread(a: Point[], b: Point[]): Point[] {
   const m = new Map(b.map(([d, x]) => [d, x]));
@@ -41,7 +46,7 @@ function spread(a: Point[], b: Point[]): Point[] {
 export default async function IndicatorsPage(props: PageProps<"/indicators">) {
   const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
   const since = new Date(new Date().getFullYear() - 8, 0, 1).toISOString().slice(0, 10);
-  const macroCodes = ["ecos.base_rate", "ecos.mortgage_rate", "ecos.bond_3y", "ecos.cpi", "ecos.m2"];
+  const macroCodes = MACRO_CODES;
   // 지역 목록이 있어야 정해지는 지역 지표만 다음 단계로 두고 나머지는 한 번에 조회
   const [, regions, macroV, meta, items, official] = await Promise.all([
     requireUser(),
@@ -67,10 +72,11 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
   const v = { ...macroV, ...(await seriesValues(regionCodes, since)) };
   const r = (k: string) => v[`${k}.${sgg}`] ?? [];
 
-  const insights = marketInsights({
-    ...v,
-    ...Object.fromEntries(INSIGHT_REGION_KEYS.map((k) => [k, r(k)])),
-  });
+  const view = VIEWS.find((x) => x.key === sp.view)?.key ?? "summary";
+  const insightInput = { ...v, ...Object.fromEntries(INSIGHT_REGION_KEYS.map((k) => [k, r(k)])) };
+  const insights = marketInsights(insightInput);
+  const bt = view === "summary" ? backtestInsights(insightInput) : null;
+  const record = new Map((bt?.rules ?? []).map((x) => [x.id, x]));
   const regionName = regions.find((g) => g.sgg === sgg)?.name ?? null;
 
   const temp = last(r("ind.temp"));
@@ -82,7 +88,6 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
     .filter((i) => ["apt", "officetel", "rowhouse", "house"].includes(i.property_type))
     .map((i) => ({ id: i.id, label: i.label, market: i.estimate ?? i.last_trade_price, official: (official.find((o) => o.id === i.id)?.price ?? 0) / 10000 || null }));
   const defaultPrice = last(r("med84")) ?? items[0]?.last_trade_price ?? 100000;
-  const view = VIEWS.find((x) => x.key === sp.view)?.key ?? "summary";
   const q = (o: { sgg?: string; view?: string }) => {
     const u = new URLSearchParams();
     if (o.sgg ?? sgg) u.set("sgg", (o.sgg ?? sgg)!);
@@ -114,7 +119,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
 
       <Tabs active={view} items={VIEWS.map((x) => ({ ...x, href: q({ view: x.key }) }))} />
 
-      {view === "summary" ? <InsightCard insights={insights} region={regionName} /> : null}
+      {view === "summary" ? <InsightCard insights={insights} region={regionName} record={record} /> : null}
 
       {view === "macro" || view === "tools" ? null : !sgg ? (
         <Card>
@@ -155,6 +160,8 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
             </Card>
           </div>
           ) : null}
+
+          {view === "summary" && bt ? <BacktestCard bt={bt} /> : null}
 
           {view === "price" ? (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -258,6 +265,46 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
             <LineSeriesChart lines={[{ name: "금리 차", points: spread(v["ecos.bond_3y"] ?? [], v["ecos.base_rate"] ?? []) }]} fmt="pct" bands={[0]} />
           </div>
         </Card>
+        {(v["ecos.housing_csi"]?.length ?? 0) + (v["reb.supply_demand"]?.length ?? 0) > 0 ? (
+          <Card>
+            <CardHeader title={<Term k="sentiment">수요 심리</Term>} sub="주택가격전망 CSI · 아파트 매매수급지수 · 100 = 중립" />
+            <div className="px-2 pb-3">
+              <LineSeriesChart
+                lines={[
+                  { name: "주택가격전망 CSI", points: v["ecos.housing_csi"] ?? [], slot: 1 },
+                  { name: "매매수급지수", points: v["reb.supply_demand"] ?? [], slot: 2 },
+                ]}
+                fmt="num"
+                bands={[100]}
+                endLabels
+              />
+            </div>
+          </Card>
+        ) : null}
+        {v["ecos.household_mortgage"]?.length ? (
+          <Card>
+            <CardHeader title={<Term k="credit">주택담보대출 증가율</Term>} sub="잔액 전년 동월 대비(%)" />
+            <div className="px-2 pb-3">
+              <LineSeriesChart lines={[{ name: "주담대 잔액 증가율", points: yoy(v["ecos.household_mortgage"]) }]} fmt="pct" bands={[0]} />
+            </div>
+          </Card>
+        ) : null}
+        {v["kosis.permits"]?.length ? (
+          <Card>
+            <CardHeader title={<Term k="pipeline">주택 인허가(12개월 합계)</Term>} sub="3~4년 뒤 입주 물량의 선행 지표 · 전국" />
+            <div className="px-2 pb-3">
+              <LineSeriesChart lines={[{ name: "인허가 12개월 합", points: rollingSum(v["kosis.permits"], 12) }]} fmt="num" />
+            </div>
+          </Card>
+        ) : null}
+        {v["kosis.unsold_done"]?.length ? (
+          <Card>
+            <CardHeader title={<Term k="unsold">준공 후 미분양</Term>} sub="다 짓고도 팔리지 않은 집 · 전국(호)" />
+            <div className="px-2 pb-3">
+              <LineSeriesChart lines={[{ name: "준공 후 미분양", points: v["kosis.unsold_done"] }]} fmt="num" kind="bar" />
+            </div>
+          </Card>
+        ) : null}
         <Card>
           <CardHeader title={<Term k="liq">물가 · 통화량 증가율</Term>} sub="전년 동월 대비(%)" />
           <div className="px-2 pb-3">

@@ -164,6 +164,8 @@ def collect_macro(conn, years: int = 12, today: date | None = None) -> dict:
                 })
                 by_region: dict[str, list] = {}
                 for rc, _name, d, v in parse_reb(r.json()):
+                    if s.get("region_filter") and rc != s["region_filter"]:
+                        continue
                     by_region.setdefault(rc, []).append((d, v))
                 for rc, vals in by_region.items():
                     upsert_series(conn, s["code"].format(region=rc), {**s, "source": "reb"}, vals, category="region")
@@ -176,3 +178,43 @@ def collect_macro(conn, years: int = 12, today: date | None = None) -> dict:
     else:
         stats["reb"] = "skipped: REB_KEY 미설정"
     return stats
+
+
+def _fetch_reb(s: dict, conn=None) -> list[tuple[str, str, date, float]]:
+    http.count_call(conn, "reb")
+    r = http.get("https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do", params={
+        "KEY": settings.reb_key, "Type": "json", "STATBL_ID": s["statbl"], "DTACYCLE_CD": s["cycle"], "pIndex": 1, "pSize": 100,
+    })
+    return parse_reb(r.json())
+
+
+def check_series(conn=None, today: date | None = None) -> list[dict]:
+    """카탈로그 전체(비활성 포함)를 최근 2년으로 한 번씩 호출해 코드가 맞는지 확인한다.
+    결과의 ok=True 인 항목은 series_catalog 의 enabled 를 켜거나 SERIES_OVERRIDES_JSON 으로 켠다."""
+    today = today or date.today()
+    start = today.replace(day=1) - relativedelta(years=2)
+    out = []
+    for src, s in series_catalog.all_entries():
+        row = {"source": src, "code": s["code"], "name": s["name"], "enabled": bool(s.get("enabled"))}
+        key = {"ecos": settings.ecos_key, "kosis": settings.kosis_key, "reb": settings.reb_key}[src]
+        missing = [k for k in {"ecos": ("stat", "item"), "kosis": ("tblId", "itmId", "objL1"), "reb": ("statbl",)}[src] if not s.get(k)]
+        if not key:
+            out.append({**row, "ok": None, "note": f"{src.upper()} 키 없음"})
+            continue
+        if missing:
+            out.append({**row, "ok": None, "note": f"코드 미입력: {', '.join(missing)}"})
+            continue
+        try:
+            if src == "ecos":
+                vals = fetch_ecos(s, start, today, conn)
+                n, last = len(vals), (vals[-1] if vals else None)
+            elif src == "kosis":
+                rows = fetch_kosis(s, start, today, conn)
+                n, last = len(rows), (rows[-1][2:] if rows else None)
+            else:
+                rows = _fetch_reb(s, conn)
+                n, last = len(rows), (rows[-1][2:] if rows else None)
+            out.append({**row, "ok": n > 0, "n": n, "last": [str(last[0]), last[1]] if last else None})
+        except Exception as e:  # noqa: BLE001 — 항목별로 원인을 보여 준다
+            out.append({**row, "ok": False, "note": str(e)[:200]})
+    return out

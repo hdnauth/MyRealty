@@ -213,7 +213,43 @@ export function marketInsights(s: SeriesMap): Insight[] {
     out.push({ key: "direct", tone: "neutral", title: "직거래 비중 높음", detail: `최근 3개월 매매의 ${(direct * 100).toFixed(0)}%가 직거래. 가족 간 거래 등 시세보다 낮은 거래가 섞여 중위가가 눌릴 수 있습니다.` });
   }
 
-  // 10) 입주 물량
+  // 10) 전국 수요 심리·신용·공급 파이프라인(수집되는 경우만)
+  const csi = s["ecos.housing_csi"];
+  const csiV = lastV(csi);
+  if (csiV !== null) {
+    const d3 = ago(csi, 3) !== null ? csiV - ago(csi, 3)! : null;
+    if (csiV >= 110) out.push({ key: "csi", tone: "up", title: "집값 상승 기대 우세", detail: `주택가격전망 CSI ${csiV.toFixed(0)}(100 초과 = 오를 것이라는 응답이 많음)${d3 !== null ? `, 3개월 ${d3 >= 0 ? "+" : ""}${d3.toFixed(0)}` : ""}. 기대가 매수 수요로 이어지기 쉽습니다.` });
+    else if (csiV <= 90) out.push({ key: "csi", tone: "down", title: "집값 하락 기대 우세", detail: `주택가격전망 CSI ${csiV.toFixed(0)}${d3 !== null ? `, 3개월 ${d3 >= 0 ? "+" : ""}${d3.toFixed(0)}` : ""}. 매수 관망이 길어질 수 있습니다.` });
+  }
+  const credit = pctChange(s["ecos.household_mortgage"], 12);
+  if (credit !== null) {
+    if (credit >= 0.06) out.push({ key: "credit", tone: "up", title: "주택담보대출이 빠르게 늘어남", detail: `주담대 잔액 1년 ${pct(credit)}. 대출로 들어오는 매수 자금이 많습니다(규제 강화 가능성도 함께 보세요).` });
+    else if (credit <= 0.02) out.push({ key: "credit", tone: "down", title: "주택담보대출 증가 둔화", detail: `주담대 잔액 1년 ${pct(credit)}. 대출 규제·금리 부담으로 매수 자금이 덜 들어옵니다.` });
+  }
+  const sd = lastV(s["reb.supply_demand"]);
+  if (sd !== null) {
+    if (sd >= 100) out.push({ key: "supply_demand", tone: "up", title: "사려는 사람이 더 많음", detail: `아파트 매매수급지수 ${sd.toFixed(1)}(100 초과 = 매수자 우위).` });
+    else if (sd <= 85) out.push({ key: "supply_demand", tone: "down", title: "팔려는 사람이 더 많음", detail: `아파트 매매수급지수 ${sd.toFixed(1)}(100 미만 = 매도자 우위).` });
+  }
+  const unsold = s["kosis.unsold_done"];
+  const u12 = pctChange(unsold, 12);
+  const uv = lastV(unsold);
+  if (u12 !== null && uv !== null) {
+    if (u12 >= 0.2) out.push({ key: "unsold", tone: "down", title: "준공 후 미분양 증가", detail: `다 짓고도 안 팔린 집 ${Math.round(uv).toLocaleString()}호(1년 ${pct(u12, 0)}). 건설사 할인 분양이 주변 시세를 누를 수 있습니다.` });
+    else if (u12 <= -0.2) out.push({ key: "unsold", tone: "up", title: "준공 후 미분양 감소", detail: `다 짓고도 안 팔린 집 ${Math.round(uv).toLocaleString()}호(1년 ${pct(u12, 0)}). 재고가 소진되고 있습니다.` });
+  }
+  const permits = s["kosis.permits"];
+  if (permits && permits.length >= 72) {
+    const sum12 = (end: number) => permits.slice(end - 12, end).reduce((a, [, v]) => a + v, 0);
+    const recent = sum12(permits.length);
+    const past = [24, 36, 48, 60].map((k) => sum12(permits.length - k));
+    const avg = past.reduce((a, b) => a + b, 0) / past.length;
+    const r = avg ? recent / avg : null;
+    if (r !== null && r <= 0.75) out.push({ key: "pipeline", tone: "up", title: "몇 년 뒤 공급 감소 예고", detail: `최근 1년 주택 인허가가 과거 평균의 ${(r * 100).toFixed(0)}%. 인허가는 보통 3~4년 뒤 입주로 이어져 그때 공급이 줄어듭니다.` });
+    else if (r !== null && r >= 1.25) out.push({ key: "pipeline", tone: "down", title: "몇 년 뒤 공급 증가 예고", detail: `최근 1년 주택 인허가가 과거 평균의 ${(r * 100).toFixed(0)}%. 3~4년 뒤 입주 물량이 늘어납니다.` });
+  }
+
+  // 11) 입주 물량
   const sup = lastV(s["ind.supply"]);
   if (sup !== null && sup > 0) {
     if (sup >= 8) out.push({ key: "supply", tone: "down", title: "입주 물량 많음", detail: `향후 24개월 입주 예정이 재고의 ${sup.toFixed(1)}%. 입주 시기 전후로 전세·매매 가격이 눌릴 수 있습니다.` });
@@ -229,4 +265,38 @@ export function insightBalance(xs: Insight[]) {
   const down = xs.filter((x) => x.tone === "down").length;
   const verdict = up - down >= 2 ? "상승 요인이 우세" : down - up >= 2 ? "하락 요인이 우세" : "요인이 엇갈림";
   return { up, down, verdict };
+}
+
+export type RuleRecord = { id: string; key: string; tone: "up" | "down"; title: string; n: number; avgForward: number; hitRate: number };
+
+/**
+ * 해석 규칙 백테스트: 각 달에 그때까지의 데이터만으로 규칙을 돌리고, target(기본 idx) 가 horizon 개월 뒤 얼마나 바뀌었는지 본다.
+ * hitRate = 상승 요인이면 뒤에 올랐던 비율, 하락 요인이면 내렸던 비율. 이웃한 달의 신호는 기간이 겹친다(참고용).
+ */
+export function backtestInsights(s: SeriesMap, opts: { target?: string; horizon?: number; warmup?: number } = {}) {
+  const target = s[opts.target ?? "idx"];
+  const horizon = opts.horizon ?? 6;
+  const warmup = opts.warmup ?? 24;
+  if (!target || target.length < warmup + horizon + 6) return null;
+  const acc = new Map<string, RuleRecord & { sum: number; hits: number }>();
+  let ups = 0;
+  let total = 0;
+  for (let i = warmup; i < target.length - horizon; i++) {
+    const d = target[i][0];
+    const fwd = target[i + horizon][1] / target[i][1] - 1;
+    total += 1;
+    ups += fwd > 0 ? 1 : 0;
+    const cut: SeriesMap = Object.fromEntries(Object.entries(s).map(([k, p]) => [k, p?.filter(([x]) => x <= d)]));
+    for (const x of marketInsights(cut)) {
+      if (x.tone === "neutral") continue;
+      const id = `${x.key}:${x.tone}`;
+      const r = acc.get(id) ?? { id, key: x.key, tone: x.tone, title: x.title, n: 0, avgForward: 0, hitRate: 0, sum: 0, hits: 0 };
+      r.n += 1;
+      r.sum += fwd;
+      r.hits += (x.tone === "up" ? fwd > 0 : fwd < 0) ? 1 : 0;
+      acc.set(id, r);
+    }
+  }
+  const rules: RuleRecord[] = [...acc.values()].map(({ sum, hits, ...r }) => ({ ...r, avgForward: sum / r.n, hitRate: hits / r.n }));
+  return { horizon, months: total, baseUp: total ? ups / total : 0, rules: rules.sort((a, b) => b.n - a.n) };
 }

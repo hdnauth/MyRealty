@@ -67,7 +67,11 @@ export function tempBand(v: number | null) {
   return { label: "과열", tone: "up" as const };
 }
 
-export const MACRO_CODES = ["ecos.base_rate", "ecos.mortgage_rate", "ecos.bond_3y", "ecos.cpi", "ecos.m2"];
+export const MACRO_CODES = [
+  "ecos.base_rate", "ecos.mortgage_rate", "ecos.bond_3y", "ecos.cpi", "ecos.m2",
+  // 수집되는 경우만 값이 있다(series-check 로 코드 확인 후 활성화)
+  "ecos.housing_csi", "ecos.household_mortgage", "reb.supply_demand", "kosis.unsold_done", "kosis.permits",
+];
 /** 시장 해석(lib/insights)이 쓰는 지역 지표 키(접미사 `.{시군구}` 없이) */
 export const INSIGHT_REGION_KEYS = ["idx", "vol", "jr", "nhr", "dr", "ind.burden", "ind.real", "ind.liq", "ind.supply", "jgap", "rrr", "corp", "unreg", "direct"];
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { insightBalance, marketInsights, paymentChange, percentile, type Point } from "../insights";
+import { backtestInsights, insightBalance, marketInsights, paymentChange, percentile, type Point } from "../insights";
 
 /** 2020-01부터 월별 시계열 */
 function monthly(values: number[]): Point[] {
@@ -63,7 +63,35 @@ describe("marketInsights", () => {
     expect(x.detail).toContain("실질");
   });
 
+  it("심리·신용·수급·미분양·인허가 파이프라인", () => {
+    const xs = marketInsights({
+      "ecos.housing_csi": monthly([100, 104, 108, 115]),
+      "ecos.household_mortgage": monthly([...Array(12).fill(100), 107]),
+      "reb.supply_demand": flat(3, 80),
+      "kosis.unsold_done": monthly([...Array(12).fill(10000), 13000]),
+      // 5년 평균보다 최근 1년 인허가가 절반
+      "kosis.permits": monthly([...Array(60).fill(4000), ...Array(12).fill(2000)]),
+    });
+    const t = Object.fromEntries(xs.map((x) => [x.key, x.tone]));
+    expect(t).toEqual({ csi: "up", credit: "up", supply_demand: "down", unsold: "down", pipeline: "up" });
+  });
+
   it("데이터가 없으면 빈 목록", () => {
     expect(marketInsights({})).toEqual([]);
+  });
+});
+
+describe("backtestInsights", () => {
+  it("과거 시점 데이터만으로 신호를 내고 6개월 뒤 결과로 채점", () => {
+    // 금리가 내려간 뒤 가격이 오르는 합성 시장: 36개월 보합 → 금리 하락 12개월 → 가격 상승
+    const n = 72;
+    const rate = monthly(Array.from({ length: n }, (_, i) => (i < 36 ? 5 : i < 48 ? 5 - (i - 35) * 0.1 : 3.8)));
+    const idx = monthly(Array.from({ length: n }, (_, i) => (i < 40 ? 100 : 100 + (i - 40) * 1.5)));
+    const r = backtestInsights({ "ecos.mortgage_rate": rate, idx })!;
+    const down = r.rules.find((x) => x.id === "rate:up")!;
+    expect(down.n).toBeGreaterThan(5);
+    expect(down.hitRate).toBeGreaterThan(0.8);
+    expect(r.months).toBe(n - 24 - 6);
+    expect(backtestInsights({ idx: idx.slice(0, 20) })).toBeNull();
   });
 });

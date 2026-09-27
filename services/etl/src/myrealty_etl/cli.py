@@ -86,6 +86,13 @@ _simple("news", "myrealty_etl.jobs.news_job:collect_news", "관심 부동산 뉴
 _simple("classify", "myrealty_etl.ai.news_classifier:classify_pending", "뉴스 AI 분류(배치/동기)",
         lambda p: p.add_argument("--mode", choices=["auto", "sync", "batch"]))
 _simple("macro", "myrealty_etl.collectors.macro:collect_macro", "ECOS·KOSIS·R-ONE 지표 수집")
+@command("series-check", "거시 통계 코드 점검(비활성 항목 포함, 실제 호출)")
+def _series_check(ns):
+    from .collectors.macro import check_series
+    with connect() as conn:
+        return check_series(conn)
+
+
 _simple("indicators", "myrealty_etl.analytics.indicators:compute_indicators", "지역 지표·온도계 계산")
 _simple("pois", "myrealty_etl.jobs.pois_job:collect_pois", "주변 편의시설 수집 + 입지 점수")
 _simple("locations", "myrealty_etl.analytics.location:compute_locations", "입지 점수만 재계산")

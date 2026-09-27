@@ -23,16 +23,33 @@ ECOS = [
      "stat": "101Y004", "item": "BBHA00", "cycle": "M", "enabled": True},
     {"code": "ecos.household_mortgage", "name": "예금취급기관 주택담보대출 잔액", "unit": "십억원", "freq": "M",
      "stat": "151Y005", "item": "11100A0", "cycle": "M", "enabled": False},
+    # 소비자동향조사 주택가격전망 CSI(100 초과 = 오를 것이라는 응답이 많음). 항목 코드는 series-check 로 확인 후 활성화
+    {"code": "ecos.housing_csi", "name": "주택가격전망 CSI", "unit": "지수(100=중립)", "freq": "M",
+     "stat": "511Y002", "item": "FMFB", "cycle": "M", "enabled": False},
 ]
 
 # KOSIS: https://kosis.kr/openapi → 통계자료 URL 생성에서 orgId·tblId·itmId·objL1 확인
 KOSIS = [
     {"code": "kosis.unsold.{region}", "name": "미분양주택(시도)", "unit": "호", "freq": "M",
      "orgId": "116", "tblId": "DT_MLTM_2082", "itmId": "13103792722T1", "objL1": "ALL", "enabled": False},
+    # 전국 한 계열만(objL1 = 전국 코드). 코드는 KOSIS '통계자료 URL 생성'에서 확인 후 SERIES_OVERRIDES_JSON 으로 덮어쓴다
+    {"code": "kosis.unsold_done", "name": "준공 후 미분양(전국)", "unit": "호", "freq": "M",
+     "orgId": "116", "tblId": "DT_MLTM_5328", "itmId": "", "objL1": "", "enabled": False},
+    {"code": "kosis.permits", "name": "주택건설 인허가 실적(전국)", "unit": "호", "freq": "M",
+     "orgId": "116", "tblId": "DT_MLTM_2100", "itmId": "", "objL1": "", "enabled": False},
+    {"code": "kosis.starts", "name": "주택 착공 실적(전국)", "unit": "호", "freq": "M",
+     "orgId": "116", "tblId": "DT_MLTM_5388", "itmId": "", "objL1": "", "enabled": False},
 ]
 
 # 한국부동산원 R-ONE: https://www.reb.or.kr/r-one → OpenAPI → 통계표 목록에서 STATBL_ID 확인
 REB = [
+    # 전국 한 계열(CLS_ID 필터는 region_filter). 100 초과 = 매수자 우위
+    {"code": "reb.supply_demand", "name": "아파트 매매수급지수(전국)", "unit": "지수(100=균형)", "freq": "W",
+     "statbl": "", "cycle": "WK", "region_filter": "", "enabled": False},
+    {"code": "reb.conv_rate", "name": "아파트 전월세전환율(전국)", "unit": "%", "freq": "M",
+     "statbl": "", "cycle": "MM", "region_filter": "", "enabled": False},
+    {"code": "reb.outside_buyer", "name": "아파트 매매 관할 시도 외 매입자 비중(전국)", "unit": "%", "freq": "M",
+     "statbl": "", "cycle": "MM", "region_filter": "", "enabled": False},
     {"code": "reb.apt_sale_idx.{region}", "name": "주간 아파트 매매가격지수", "unit": "지수", "freq": "W",
      "statbl": "", "cycle": "WK", "enabled": False},
     {"code": "reb.apt_jeonse_idx.{region}", "name": "주간 아파트 전세가격지수", "unit": "지수", "freq": "W",
@@ -50,6 +67,11 @@ def _apply_overrides(lst: list[dict], key: str) -> list[dict]:
         return lst
     over = json.loads(raw).get(key, {})
     return [{**x, **over.get(x["code"], {})} for x in lst]
+
+
+def all_entries() -> list[tuple[str, dict]]:
+    """(출처, 항목) 전체 — series-check 용(비활성 포함)."""
+    return [("ecos", x) for x in ecos()] + [("kosis", x) for x in kosis()] + [("reb", x) for x in reb()]
 
 
 def ecos() -> list[dict]:

@@ -2,13 +2,27 @@
 
 import clsx from "clsx";
 import "leaflet/dist/leaflet.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { MapPoint } from "@/app/api/map/points/route";
 import { type AreaUnit, formatDate, formatManwon, fromPerPyeong, unitPriceLabel } from "@/lib/format";
-import { DEAL_KIND_LABEL } from "@/lib/property";
+import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
 import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, tileSources, vworldWmsUrl } from "./engines";
 
-export type MapWatchItem = { id: string; label: string; lng: number; lat: number; radius_m: number; property_type: string };
+export type MapWatchItem = {
+  id: string;
+  label: string;
+  lng: number;
+  lat: number;
+  radius_m: number;
+  property_type: string;
+  group_tag: string;
+  complex_id: number | null;
+  area_m2: number | null;
+  estimate: number | null;
+  last_price: number | null;
+  last_date: string | null;
+};
 export type MapEvent = { id: number; title: string; kind: string; lng: number; lat: number; starts_on: string | null; households: number | null };
 export type MapProject = { type: "zone" | "infra"; id: number; name: string; kind: string; status: string | null; step: number | null; expected_open: string | null; lng: number; lat: number };
 type MapPoi = { id: number; category: string; subcategory: string | null; name: string; lng: number; lat: number };
@@ -47,6 +61,8 @@ const MONTHS = [3, 6, 12, 36];
 
 type Trade = { id: number; deal_kind: string; deal_date: string; price: number; monthly_rent: number | null; area_m2: number | null; floor: number | null; is_canceled: boolean };
 
+const txOf = (it: MapWatchItem | undefined) => (it && isPropertyType(it.property_type) ? PROPERTY_TYPES[it.property_type].tx : null);
+
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
@@ -59,8 +75,11 @@ export function RealtyMap({
   events,
   projects = [],
   initialCenter,
+  focusItemId = null,
   unit = "m2",
 }: {
+  /** 처음 선택할 관심 부동산(/map?item=) */
+  focusItemId?: string | null;
   unit?: AreaUnit;
   /** 네이버 클라우드 Maps Client ID. 없거나 인증에 실패하면 Leaflet 대체 지도로 그린다. */
   keyId: string | null;
@@ -80,7 +99,11 @@ export function RealtyMap({
   const [mapVersion, setMapVersion] = useState(0);
   const [engine, setEngine] = useState<"naver" | "leaflet">(keyId ? "naver" : "leaflet");
   const [notice, setNotice] = useState<string | null>(null);
-  const [type, setType] = useState("apt");
+  const [focusId, setFocusId] = useState<string | null>(focusItemId);
+  const focus = items.find((i) => i.id === focusId) ?? null;
+  const [panel, setPanel] = useState<"trades" | "items">(focusItemId || !items.length ? "trades" : "items");
+  // 관심 부동산을 골라 들어오면 그 유형의 거래를 보여 준다
+  const [type, setType] = useState<string>(() => txOf(items.find((i) => i.id === focusItemId)) ?? "apt");
   const [kind, setKind] = useState<"sale" | "jeonse">("sale");
   const [months, setMonths] = useState(6);
   const [points, setPoints] = useState<MapPoint[]>([]);
@@ -91,6 +114,29 @@ export function RealtyMap({
   const [pois, setPois] = useState<MapPoi[]>([]);
   const [lng0, lat0] = initialCenter;
 
+  const loadComplex = useCallback((id: number) => {
+    fetch(`/api/map/complex/${id}`)
+      .then((r) => r.json())
+      .then(setDetail)
+      .catch(() => {});
+  }, []);
+  // 관심 부동산 선택(목록·핀): 그 유형의 거래로 바꾸고 내 단지 거래를 연다
+  const focusOn = useCallback(
+    (id: string | null) => {
+      setFocusId(id);
+      setSelected(null);
+      setDetail(null);
+      const it = items.find((i) => i.id === id);
+      if (!it) return;
+      setPanel("trades");
+      const tx = txOf(it);
+      if (tx && TYPE_OPTIONS.some((o) => o.key === tx)) setType(tx);
+      if (it.complex_id) loadComplex(it.complex_id);
+    },
+    [items, loadComplex],
+  );
+  // 지도 생성 effect 안에서 만든 핀이 최신 focusOn 을 부르도록
+  const onPinClick = useEffectEvent((id: string) => focusOn(id));
   // 지도 생성: 네이버 우선, 스크립트 오류·인증 실패·시간 초과면 대체 지도로 바꾼다
   useEffect(() => {
     const node = el.current;
@@ -131,14 +177,16 @@ export function RealtyMap({
       const map = handle;
       mapRef.current = map;
 
-      // 관심 부동산 핀 + 탐색 반경
+      // 관심 부동산 핀(누르면 선택 → 옆 목록에 요약·주변 거래)
       for (const it of items) {
-        map.addCircle({ lng: it.lng, lat: it.lat, radius: it.radius_m, color: "#2563eb" });
+        const price = it.estimate ?? it.last_price;
         map.addHtmlMarker({
           lng: it.lng,
           lat: it.lat,
           zIndex: 1000,
-          html: `<a href="/items/${it.id}" style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;text-decoration:none">★ ${escapeHtml(it.label)}</a>`,
+          title: it.label,
+          onClick: () => onPinClick(it.id),
+          html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;cursor:pointer">★ ${escapeHtml(it.label.slice(0, 14))}${price ? `<span style="font-weight:500;opacity:.9">${formatManwon(price, { short: true })}</span>` : ""}</div>`,
         });
       }
       // 청약 접수(입주 예정은 레이어로 따로)
@@ -162,6 +210,21 @@ export function RealtyMap({
       layerMarkersRef.current = [];
     };
   }, [engine, keyId, vworldKey, lng0, lat0, items, events]);
+
+  // 고른 관심 부동산: 탐색 반경을 그리고 그 위치로 이동, 단지가 있으면 그 단지 거래를 연다
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !focus) return;
+    const c = map.addCircle({ lng: focus.lng, lat: focus.lat, radius: focus.radius_m, color: "#2563eb" });
+    map.panTo(focus.lng, focus.lat);
+    return () => c.remove();
+  }, [focus, mapVersion]);
+  // /map?item= 으로 들어오면 그 단지 거래를 연다
+  useEffect(() => {
+    const it = items.find((i) => i.id === focusItemId);
+    if (it?.complex_id) loadComplex(it.complex_id);
+  }, [focusItemId, items, loadComplex]);
+  const myComplexes = useMemo(() => new Set(items.map((i) => i.complex_id).filter((x): x is number => x !== null)), [items]);
 
   // 영역·필터 변경 시 집계 조회
   useEffect(() => {
@@ -199,15 +262,16 @@ export function RealtyMap({
     markersRef.current = points.map((p) => {
       const main = p.median_ppy && (type === "apt" || type === "officetel" || type === "rowhouse") ? `${formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}` : formatManwon(p.median_price, { short: true });
       const active = selected?.key === p.key;
+      const mine = p.complex_id !== null && myComplexes.has(p.complex_id);
       return map.addHtmlMarker({
         lng: p.lng,
         lat: p.lat,
         zIndex: active ? 900 : 100,
         onClick: () => select(p),
-        html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer">${main}<span style="font-weight:400;opacity:.7">${escapeHtml(p.name.slice(0, 8))} · ${p.n}건</span></div>`,
+        html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer">${mine ? "★ " : ""}${main}<span style="font-weight:400;opacity:.7">${escapeHtml(p.name.slice(0, 8))} · ${p.n}건</span></div>`,
       });
     });
-  }, [points, selected, type, select, mapVersion, unit]);
+  }, [points, selected, type, select, mapVersion, unit, myComplexes]);
 
   // POI 레이어 조회
   useEffect(() => {
@@ -350,6 +414,96 @@ export function RealtyMap({
 
       <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row lg:overflow-hidden lg:rounded-b-xl lg:border lg:border-t-0 lg:border-border">
         <div className="order-2 max-h-[42%] min-h-0 overflow-y-auto border-t border-border bg-surface lg:order-1 lg:max-h-none lg:w-80 lg:border-r lg:border-t-0">
+          <div className="sticky top-0 z-10 flex border-b border-border bg-surface text-sm">
+            {(
+              [
+                ["trades", `주변 거래 ${sorted.length}`],
+                ["items", `내 부동산 ${items.length}`],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setPanel(k)}
+                className={clsx("flex-1 py-2", panel === k ? "border-b-2 border-accent font-semibold text-accent" : "text-muted")}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {panel === "items" ? (
+            <ul className="divide-y divide-border">
+              {items.length === 0 ? (
+                <li className="p-4 text-sm text-muted">
+                  좌표가 있는 관심 부동산이 없습니다. <Link href="/items/new" className="text-accent">등록하기</Link>
+                </li>
+              ) : null}
+              {items.map((it) => (
+                <li key={it.id}>
+                  <button
+                    type="button"
+                    onClick={() => focusOn(it.id)}
+                    className={clsx("flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-surface-2", focusId === it.id && "bg-accent-soft/60")}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">★ {it.label}</span>
+                      <span className="text-xs text-muted">
+                        {isPropertyType(it.property_type) ? PROPERTY_TYPES[it.property_type].label : it.property_type}
+                        {it.group_tag in GROUP_TAGS ? ` · ${GROUP_TAGS[it.group_tag as keyof typeof GROUP_TAGS]}` : ""}
+                      </span>
+                    </span>
+                    <span className="tabular shrink-0 text-right text-sm font-semibold">
+                      {formatManwon(it.estimate ?? it.last_price, { short: true })}
+                      <span className="block text-[11px] font-normal text-muted">{it.estimate ? "추정 시세" : it.last_price ? "최근 매매" : "시세 없음"}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+          <>
+          {focus && !selected ? (
+            <div className="border-b border-border bg-accent-soft/40 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="truncate font-semibold">★ {focus.label}</h3>
+                  <p className="text-xs text-muted">
+                    {focus.estimate ? `추정 시세 ${formatManwon(focus.estimate, { short: true })}` : ""}
+                    {focus.estimate && focus.last_price ? " · " : ""}
+                    {focus.last_price ? `최근 매매 ${formatManwon(focus.last_price, { short: true })}${focus.last_date ? `(${formatDate(focus.last_date)})` : ""}` : ""}
+                    {!focus.estimate && !focus.last_price ? "아직 시세가 없습니다" : ""}
+                    {` · 반경 ${focus.radius_m.toLocaleString()}m`}
+                  </p>
+                </div>
+                <button type="button" className="shrink-0 text-xs text-muted" onClick={() => focusOn(null)} aria-label="선택 해제">
+                  ✕
+                </button>
+              </div>
+              <div className="mt-2 flex gap-3 text-sm">
+                <Link href={`/items/${focus.id}`} className="text-accent">상세</Link>
+                <Link href={`/items/${focus.id}?tab=nearby`} className="text-accent">비슷한 주변 거래</Link>
+                <Link href={`/items/${focus.id}?tab=location`} className="text-accent">입지</Link>
+              </div>
+              {focus.complex_id && detail ? (
+                <ul className="mt-2 divide-y divide-border text-[13px]">
+                  {detail.trades
+                    .filter((t) => !focus.area_m2 || !t.area_m2 || Math.abs(Number(t.area_m2) - focus.area_m2) <= 3)
+                    .slice(0, 6)
+                    .map((t) => (
+                      <li key={t.id} className={clsx("flex justify-between py-1 tabular", t.is_canceled && "text-muted line-through")}>
+                        <span className="text-muted">
+                          {formatDate(t.deal_date)} · {DEAL_KIND_LABEL[t.deal_kind]} {t.floor ? `· ${t.floor}층` : ""}
+                        </span>
+                        <span className="font-medium">
+                          {formatManwon(t.price, { short: true })}
+                          {t.monthly_rent ? `/${t.monthly_rent}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
           {selected ? (
             <div className="p-4">
               <button type="button" className="mb-2 text-xs text-accent" onClick={() => setSelected(null)}>
@@ -399,6 +553,8 @@ export function RealtyMap({
                 </li>
               ))}
             </ul>
+          )}
+          </>
           )}
         </div>
 

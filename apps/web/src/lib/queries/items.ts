@@ -138,11 +138,22 @@ export async function itemTransactions(item: WatchItem, years = 10): Promise<TxP
 
 export type NearbyTx = TxPoint & { dist_m: number; complex_id: number | null; lng: number; lat: number };
 
-export async function nearbyTransactions(item: WatchItem, opts: { radius?: number; months?: number; limit?: number } = {}) {
+/** 주변 거래에서 '비슷한' 조건: 면적 ±20%(토지 ±40%), 준공 ±10년. 기준 값이 없으면 그 조건은 뺀다 */
+export function similarCriteria(item: WatchItem) {
+  const isLand = item.property_type === "land" || item.property_type === "forest";
+  const area = isLand ? (item.land_area_m2 ?? item.area_m2) : item.area_m2;
+  const tol = isLand ? 0.4 : 0.2;
+  const areaRange: [number, number] | null = area ? [Math.floor(Number(area) * (1 - tol)), Math.ceil(Number(area) * (1 + tol))] : null;
+  const yearRange: [number, number] | null = item.complex_build_year ? [item.complex_build_year - 10, item.complex_build_year + 10] : null;
+  return { areaRange, yearRange };
+}
+
+export async function nearbyTransactions(item: WatchItem, opts: { radius?: number; months?: number; limit?: number; similar?: boolean } = {}) {
   if (item.lng === null || item.lat === null) return [];
   const radius = opts.radius ?? item.radius_m ?? 1000;
   const months = opts.months ?? 6;
   const txType = PROPERTY_TYPES[item.property_type].tx;
+  const { areaRange, yearRange } = opts.similar ? similarCriteria(item) : { areaRange: null, yearRange: null };
   return sql<NearbyTx[]>`
     select ${TX_COLUMNS}, t.complex_id, ST_X(t.geom) as lng, ST_Y(t.geom) as lat,
       ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(${item.lng}, ${item.lat}), 4326)::geography)::int as dist_m
@@ -152,6 +163,12 @@ export async function nearbyTransactions(item: WatchItem, opts: { radius?: numbe
       and t.geom is not null
       and ST_DWithin(t.geom::geography, ST_SetSRID(ST_MakePoint(${item.lng}, ${item.lat}), 4326)::geography, ${radius})
       and (t.complex_id is distinct from ${item.complex_id})
+      and (${item.property_type !== "forest"} or t.jimok = '임야')
+      ${areaRange ? sql`and coalesce(t.area_m2, t.land_area_m2) between ${areaRange[0]} and ${areaRange[1]}` : sql``}
+      ${yearRange ? sql`and (t.build_year is null or t.build_year between ${yearRange[0]} and ${yearRange[1]})` : sql``}
+      ${opts.similar && item.property_type === "land" && item.pnu
+        ? sql`and (t.jimok is not distinct from coalesce((select jimok from parcels where pnu = ${item.pnu}), t.jimok))`
+        : sql``}
     order by t.deal_date desc
     limit ${opts.limit ?? 100}`;
 }
@@ -243,21 +260,33 @@ export async function itemAttrs(item: WatchItem): Promise<ItemAttrs> {
   return { building: b ?? null, parcel: p ?? null, prices };
 }
 
-export type ItemDataStatus = { trades: number; building: boolean; officialPrice: boolean; parcel: boolean; location: boolean; valuation: boolean; news: number };
+export type ItemDataStatus = {
+  trades: number;
+  /** 단지가 없는 유형: 같은 읍면동(없으면 시군구)·유형의 최근 1년 매매 */
+  areaTrades: number;
+  building: boolean;
+  officialPrice: boolean;
+  parcel: boolean;
+  location: boolean;
+  valuation: boolean;
+  news: number;
+};
 
-/** 등록 직후 안내: 지금 볼 수 있는 데이터와 다음 수집 때 채워질 데이터 */
+/** 등록 직후 안내: 지금 볼 수 있는 데이터와 아직 비어 있는 데이터 */
 export async function itemDataStatus(item: WatchItem): Promise<ItemDataStatus> {
-  const [[r]] = await Promise.all([
-    sql<ItemDataStatus[]>`
+  const txType = PROPERTY_TYPES[item.property_type].tx;
+  const area = item.lawd_cd ? sql`t.lawd_cd = ${item.lawd_cd}` : sql`t.sgg_cd = ${item.sgg_cd}`;
+  const [r] = await sql<ItemDataStatus[]>`
       select
         (select count(*)::int from transactions t where t.complex_id = ${item.complex_id} and ${item.complex_id}::bigint is not null) as trades,
+        (select count(*)::int from transactions t where ${item.complex_id}::bigint is null and t.property_type = ${txType}
+           and t.deal_kind = 'sale' and not t.is_canceled and t.deal_date >= current_date - 365 and ${area}) as "areaTrades",
         exists (select 1 from building_registers b where b.pnu = ${item.pnu}) as building,
         exists (select 1 from official_prices o where o.target_key = ${item.pnu} or o.target_key like ${(item.pnu ?? "-") + "|%"}) as "officialPrice",
         exists (select 1 from parcels p where p.pnu = ${item.pnu}) as parcel,
         exists (select 1 from location_scores l where l.target_type = 'item' and l.target_id = ${item.id}) as location,
         exists (select 1 from valuations v where v.watch_item_id = ${item.id}) as valuation,
-        (select count(*)::int from article_links a where a.watch_item_id = ${item.id}) as news`,
-  ]);
+        (select count(*)::int from article_links a where a.watch_item_id = ${item.id}) as news`;
   return r;
 }
 

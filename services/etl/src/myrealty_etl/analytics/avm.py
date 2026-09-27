@@ -200,13 +200,15 @@ def value_item(conn, item: dict, today: date | None = None) -> dict | None:
     return value_hedonic(conn, item, today)
 
 
-def compute_valuations(conn, today: date | None = None) -> dict:
+def compute_valuations(conn, today: date | None = None, item_id: str | None = None) -> dict:
     today = today or date.today()
     items = conn.execute(
         """select w.id, w.property_type, w.complex_id, w.sgg_cd, w.lawd_cd, w.area_m2, w.land_area_m2, w.floor,
              ST_X(w.geom) as lng, ST_Y(w.geom) as lat, c.build_year,
              (select total from location_scores s where s.target_type = 'item' and s.target_id = w.id::text) as loc
-           from watch_items w left join complexes c on c.id = w.complex_id"""
+           from watch_items w left join complexes c on c.id = w.complex_id
+           where %(id)s::uuid is null or w.id = %(id)s::uuid""",
+        {"id": item_id},
     ).fetchall()
     stats = {"valued": 0, "skipped": 0}
     for it in items:

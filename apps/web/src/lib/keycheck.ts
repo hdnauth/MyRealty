@@ -30,7 +30,7 @@ export function dbFingerprint(url: string | undefined | null) {
 
 const SECRET_NAMES = [
   "DATA_GO_KR_KEY", "VWORLD_KEY", "JUSO_KEY", "NCP_MAPS_KEY_ID", "NCP_MAPS_KEY", "ANTHROPIC_API_KEY", "SMTP_PASSWORD",
-  "VAPID_PRIVATE_KEY", "CRON_SECRET", "AUTH_SECRET", "DATABASE_URL",
+  "VAPID_PRIVATE_KEY", "CRON_SECRET", "AUTH_SECRET", "DATABASE_URL", "GITHUB_DISPATCH_TOKEN",
 ];
 function sanitize(msg: string) {
   let s = msg;
@@ -205,6 +205,26 @@ const checks: Checker[] = [
     if (built !== undefined && built !== pub)
       return { key: "VAPID_PRIVATE_KEY", label, status: "warn", detail: "빌드에 들어간 공개키와 현재 값이 다릅니다.", fix: "환경 변수를 바꾼 뒤 재배포하세요.", fp: fingerprint(pub) };
     return { key: "VAPID_PRIVATE_KEY", label, status: "ok", detail: "공개키·비밀키 한 쌍 확인", fp: fingerprint(pub) };
+  },
+  // 관심 부동산 개별 수집(등록 직후 바로 채우기): GitHub Actions etl-item.yml 을 부를 수 있는지
+  async (live: boolean): Promise<KeyCheck> => {
+    const key = "GITHUB_DISPATCH_TOKEN";
+    const label = "개별 수집(등록 직후 바로 채우기)";
+    if (!env.githubDispatchToken || !env.githubDispatchRepo) {
+      return env.itemCollectLocal
+        ? { key, label, status: "ok", detail: "로컬 ETL 로 실행(ITEM_COLLECT_LOCAL=1)" }
+        : { key, label, status: "optional", detail: "새 부동산 데이터가 다음 날 아침 수집 때 채워집니다.", fix: "GITHUB_DISPATCH_TOKEN(이 리포 Actions: Read and write 권한 fine-grained 토큰)과 GITHUB_DISPATCH_REPO(owner/repo)를 넣으세요." };
+    }
+    const fp = fingerprint(env.githubDispatchToken);
+    if (!live) return { key, label, status: "unchecked", detail: `${env.githubDispatchRepo} · etl-item.yml`, fp };
+    const res = await fetch(`https://api.github.com/repos/${env.githubDispatchRepo}/actions/workflows/etl-item.yml`, {
+      headers: { Authorization: `Bearer ${env.githubDispatchToken}`, Accept: "application/vnd.github+json", "User-Agent": "MyRealty" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (res.ok) return { key, label, status: "ok", detail: `${env.githubDispatchRepo} · etl-item.yml 확인(실행 권한은 첫 등록 때 확인됩니다)`, fp };
+    const why = res.status === 401 ? "토큰이 틀렸거나 만료됐습니다." : res.status === 404 ? "리포지토리나 워크플로(etl-item.yml)를 찾을 수 없습니다(토큰의 리포 접근 권한·main 에 워크플로가 있는지 확인)." : `GitHub HTTP ${res.status}`;
+    return { key, label, status: "error", detail: why, fix: "fine-grained 토큰에 이 리포 · Actions: Read and write 권한을 주세요.", fp };
   },
   async () =>
     process.env.CRON_SECRET

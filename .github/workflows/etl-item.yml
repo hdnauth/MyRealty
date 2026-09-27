@@ -1,0 +1,68 @@
+name: ETL item
+
+# 관심 부동산 하나만 바로 수집한다(등록 직후·빈 데이터가 있을 때 웹이 호출).
+# 웹(Vercel)에 GITHUB_DISPATCH_TOKEN(이 리포 Actions: Read and write 권한의 fine-grained 토큰)과
+# GITHUB_DISPATCH_REPO(owner/repo)를 넣으면 켜진다. 진행 상황은 item_collect_runs 에 기록돼 화면에 보인다.
+on:
+  workflow_dispatch:
+    inputs:
+      item_id:
+        description: "관심 부동산 id(uuid)"
+        required: true
+      run_id:
+        description: "item_collect_runs.id(웹이 만든 실행 기록, 비우면 새로 만든다)"
+        required: false
+        default: ""
+
+# 부동산마다 따로(같은 부동산은 순서대로). 매일 ETL 과는 병렬로 돌아도 upsert 라 안전하다
+concurrency:
+  group: etl-item-${{ inputs.item_id }}
+  cancel-in-progress: false
+
+jobs:
+  item:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: services/etl
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+      VWORLD_KEY: ${{ secrets.VWORLD_KEY }}
+      VWORLD_DOMAIN: ${{ secrets.VWORLD_DOMAIN }}
+      ECOS_KEY: ${{ secrets.ECOS_KEY }}
+      KOSIS_KEY: ${{ secrets.KOSIS_KEY }}
+      REB_KEY: ${{ secrets.REB_KEY }}
+      NCP_MAPS_KEY_ID: ${{ secrets.NCP_MAPS_KEY_ID }}
+      NCP_MAPS_KEY: ${{ secrets.NCP_MAPS_KEY }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+      ANTHROPIC_BULK_MODEL: ${{ vars.ANTHROPIC_BULK_MODEL }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      APP_URL: ${{ vars.APP_URL }}
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
+      VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+      VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: services/etl/uv.lock
+      - run: uv sync --no-dev
+      - run: uv run myrealty migrate
+      # 입력값은 셸에 직접 넣지 않고 환경 변수로 넘긴다
+      - env:
+          ITEM_ID: ${{ inputs.item_id }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          [[ "$ITEM_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || { echo "::error::item_id 형식 오류"; exit 1; }
+          if [[ "$RUN_ID" =~ ^[0-9]+$ ]]; then uv run myrealty item --item "$ITEM_ID" --run "$RUN_ID"
+          else uv run myrealty item --item "$ITEM_ID"; fi

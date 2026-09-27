@@ -86,6 +86,29 @@ _simple("news", "myrealty_etl.jobs.news_job:collect_news", "관심 부동산 뉴
 _simple("classify", "myrealty_etl.ai.news_classifier:classify_pending", "뉴스 AI 분류(배치/동기)",
         lambda p: p.add_argument("--mode", choices=["auto", "sync", "batch"]))
 _simple("macro", "myrealty_etl.collectors.macro:collect_macro", "ECOS·KOSIS·R-ONE 지표 수집")
+def _item_args(p):
+    p.add_argument("--item", required=True, help="관심 부동산 id(uuid)")
+    p.add_argument("--run", type=int, help="웹이 만든 item_collect_runs.id(없으면 새로 만든다)")
+
+
+@command("item", "관심 부동산 하나만 바로 수집(등록 직후 개별 수집)", _item_args)
+def _item(ns):
+    from .jobs.item_job import collect_item
+
+    try:
+        return _with_job("item", lambda c: collect_item(c, ns.item, ns.run))
+    except Exception as e:
+        # 연결 끊김 등으로 단계 기록 전에 죽어도 화면이 '수집 중'에 멈추지 않게
+        if ns.run is not None:
+            with connect() as conn:
+                conn.execute(
+                    "update item_collect_runs set status = 'error', error = %s, finished_at = now() where id = %s and status <> 'done'",
+                    (repr(e)[:500], ns.run),
+                )
+                conn.commit()
+        raise
+
+
 @command("series-check", "거시 통계 코드 점검(비활성 항목 포함, 실제 호출)")
 def _series_check(ns):
     from .collectors.macro import check_series

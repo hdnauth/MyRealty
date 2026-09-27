@@ -93,8 +93,9 @@ select l.id as link_id, a.title, a.description, a.source, a.published_at::text a
        w.property_type, w.label, w.building_name, w.road_address, w.jibun_address, w.keywords
 from article_links l join articles a on a.id = l.article_id join watch_items w on w.id = l.watch_item_id
 where l.status = 'pending' and a.published_at > now() - interval '30 days'
+  and (%(item)s::uuid is null or l.watch_item_id = %(item)s::uuid)
 order by a.published_at desc
-limit %s
+limit %(limit)s
 """
 
 
@@ -125,7 +126,7 @@ def poll_batches(conn, cl) -> dict:
     return stats
 
 
-def classify_pending(conn, *, mode: str = "auto", limit: int = 500, sync_threshold: int = 15) -> dict:
+def classify_pending(conn, *, mode: str = "auto", limit: int = 500, sync_threshold: int = 15, item_id: str | None = None) -> dict:
     cl = ai.get_client()
     if cl is None:
         return {"skipped": "ANTHROPIC_API_KEY 미설정"}
@@ -133,7 +134,7 @@ def classify_pending(conn, *, mode: str = "auto", limit: int = 500, sync_thresho
     if ai.budget_left(conn) <= 0:
         stats["skipped"] = "월 AI 예산 초과"
         return stats
-    rows = conn.execute(PENDING_SQL, (limit,)).fetchall()
+    rows = conn.execute(PENDING_SQL, {"limit": limit, "item": item_id}).fetchall()
     stats["pending"] = len(rows)
     if not rows:
         return stats

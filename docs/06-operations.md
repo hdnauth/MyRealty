@@ -57,7 +57,8 @@ uv run myrealty import-geo rail.geojson --kind infra
 1. 새 프로젝트 → 이 저장소, **Root Directory = `apps/web`**, Framework = Next.js
 2. Environment Variables: `DATABASE_URL`(Session pooler 권장), `DATABASE_PREPARE`(보통 비워 둠 — 6543 트랜잭션 풀러 주소면 자동으로 끔), `AUTH_SECRET`, `ADMIN_EMAILS`, `APP_URL`,
    `JUSO_KEY`, `NCP_MAPS_KEY_ID`, `NCP_MAPS_KEY`, `DATA_GO_KR_KEY`, `VWORLD_KEY`(+`VWORLD_DOMAIN`), `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AI_MONTHLY_BUDGET_USD`,
-   `SMTP_*`, `MAIL_FROM`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `CRON_SECRET`
+   `SMTP_*`, `MAIL_FROM`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `CRON_SECRET`,
+   (선택) `GITHUB_DISPATCH_TOKEN`·`GITHUB_DISPATCH_REPO` — 등록 직후 개별 수집(아래 4. 스케줄의 `etl-item.yml`)
 3. 함수 지역은 `apps/web/vercel.json` 의 `regions`(기본 `icn1` 서울)로 정해진다. **DB 와 같은 지역**이어야 빠르다(8. 속도).
 4. 네이버 클라우드 Maps 애플리케이션에서 **Dynamic Map**(지도)·**Geocoding** 을 선택하고, **Web 서비스 URL** 에 배포 도메인(과 `http://localhost:3000`) 등록.
    인증에 실패하면 지도 화면 위에 원인과 등록할 주소가 표시되고 대체 지도로 보인다.
@@ -75,6 +76,7 @@ uv run myrealty import-geo rail.geojson --kind infra
 | `reports.yml` | 월 07:40 / 매월 1일 07:50 | `GET /api/cron/reports?kind=weekly|monthly` |
 | `ci.yml` | push·PR | 웹 lint·typecheck·test·build, ETL ruff·pytest(PostGIS) |
 | `migrate.yml` | main 에 `db/migrations/**` 변경이 들어올 때 · 수동 | `myrealty migrate` — 운영 DB 스키마를 배포와 함께 맞춘다(매일 ETL 도 시작 전에 한 번 더 확인) |
+| `etl-item.yml` | 웹이 호출(부동산 등록 직후 · 빈 데이터가 있는 부동산을 열 때) · 수동 | `myrealty item --item <id>` — 그 부동산 하나만 바로 수집(보통 2~5분) |
 
 GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 **Secrets** 로, `APP_URL`·`ANTHROPIC_MODEL`·`ANTHROPIC_BULK_MODEL` 은 **Variables** 로 넣는다. 수동 실행: Actions → ETL daily → Run workflow (`only` 에 `rtms news` 처럼 단계 지정 가능). 마이그레이션만 따로: Actions → DB migrate → Run workflow.
 
@@ -95,6 +97,29 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 | `alerts` / `push` / `digest` | 알림 규칙 → 웹푸시(중요) / 이메일 다이제스트 | VAPID / SMTP |
 
 각 단계는 키가 없으면 `skipped` 로 넘어가고, 실패해도 다음 단계를 계속한다. 실행 기록은 `job_runs` 테이블과 설정 화면 "데이터 수집(ETL) 최근 실행"에서 본다.
+
+### 개별 수집 (등록 직후 바로 채우기)
+
+매일 수집만 있으면 새로 등록한 부동산은 다음 날 아침까지 대부분 비어 있다. 웹에 아래 두 값을 넣으면 등록 직후(그리고 핵심 데이터가 빈 부동산을 열 때, 12시간에 한 번)
+GitHub Actions **ETL item** 워크플로로 그 부동산만 수집하고, 상세 화면이 단계별 진행을 보여 주며 끝난 항목부터 채운다.
+
+1. GitHub → Settings → Developer settings → Fine-grained tokens → 새 토큰: Repository access = 이 리포만, Permissions → **Actions: Read and write**
+2. Vercel 환경 변수: `GITHUB_DISPATCH_TOKEN`(토큰), `GITHUB_DISPATCH_REPO`(`owner/repo`), (선택) `GITHUB_DISPATCH_REF`(기본 `main`)
+3. 관리 → 시스템 → 키 점검의 "개별 수집" 행이 정상인지 확인
+
+| 단계(`item_collect_runs.steps`) | 하는 일 |
+|---|---|
+| `trades` | 이 부동산 유형의 실거래(매매·전월세) 최근 12개월 → 단지 매칭 → 좌표(내 동네 먼저) → 관심 부동산 ↔ 단지 연결 |
+| `attrs` | 이 필지 건축물대장·토지특성·이용계획·공시가격 |
+| `location` | 주변 편의시설 수집 → 입지 점수(같은 시군구 단지 백분위 포함) |
+| `valuation` | 추정 시세 |
+| `news` | 키워드 뉴스 수집 + 소량 동기 분류 |
+| `history` | 13~36개월 전 실거래 → 자체 지수·추정 시세 재계산 |
+
+- 한 단계가 실패해도 다음 단계를 계속한다. 대기 10분·실행 40분이 넘으면 화면에서 '멈춤'으로 닫고 다시 요청할 수 있다.
+- 공공데이터 호출량은 매일 수집과 같은 `api_quota` 한도를 나눠 쓴다(아파트 1건 등록 ≈ 매매·전월세 72회).
+- 로컬 개발: 루트 `.env` 에 `ITEM_COLLECT_LOCAL=1` 이면 `services/etl` 에서 `uv run myrealty item` 을 직접 띄운다.
+- 실거래 저장은 여러 행을 한 문장으로 보내(`jsonb_to_recordset`) GitHub(미국) ↔ DB(서울) 왕복을 줄였다 — 매일 수집도 함께 빨라진다.
 
 ## 5. 운영 팁
 

@@ -4,16 +4,23 @@ import { sql } from "@/lib/db";
 import { floorBandOf, floorPremiums, jeonseCheck, rateSensitivity } from "@/lib/item-analytics";
 import { formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceLabel, unitPriceName } from "@/lib/format";
 import { itemAttrs, itemTransactions, summarize, type WatchItem } from "@/lib/queries/items";
+import Link from "next/link";
+import { MiniMap } from "@/components/map/mini-map";
+import { env } from "@/lib/env";
+import { PROPERTY_TYPES } from "@/lib/property";
+import { redevelopmentInfo } from "@/lib/queries/special";
 import { AttrsCard } from "./attrs-card";
+import { RedevelopmentCard } from "./redevelopment-card";
 
 export async function OverviewTab({ item }: { item: WatchItem }) {
-  const [points, attrs, unit, [val], [rate]] = await Promise.all([
+  const [points, attrs, unit, [val], [rate], redev] = await Promise.all([
     itemTransactions(item, 5),
     itemAttrs(item),
     getAreaUnit(),
     sql<{ estimate: number; low: number | null; high: number | null; confidence: string | null; as_of: string }[]>`
       select estimate, low, high, confidence, as_of::text from valuations where watch_item_id = ${item.id} order by as_of desc limit 1`,
     sql<{ value: number }[]>`select value from series_values where code = 'ecos.mortgage_rate' order by period desc limit 1`,
+    redevelopmentInfo(item),
   ]);
   const s = summarize(points);
   const isComplex = Boolean(item.complex_id);
@@ -200,7 +207,30 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
         </Card>
       ) : null}
 
+      {redev ? <RedevelopmentCard info={redev} price={current} unit={unit} itemId={item.id} /> : null}
+
       <AttrsCard item={item} attrs={attrs} marketPrice={current} />
+
+      {item.lng !== null && item.lat !== null ? (
+        <Card className="lg:col-span-2">
+          <CardHeader
+            title="주변 한눈에"
+            sub="탐색 반경 · 주변 최근 1년 매매 · 지하철·학교"
+            action={<Link href={`/map?item=${item.id}`} className="text-accent">큰 지도</Link>}
+          />
+          <div className="px-4 pb-4">
+            <MiniMap
+              keys={{ keyId: env.ncpKeyId ?? null, vworldKey: env.vworldKey ?? null }}
+              center={[item.lng, item.lat]}
+              radius={item.radius_m}
+              label={item.label}
+              txType={PROPERTY_TYPES[item.property_type].tx}
+              selfComplexId={item.complex_id}
+              unit={unit}
+            />
+          </div>
+        </Card>
+      ) : null}
 
       {item.complex_name ? (
         <Card className="p-4 lg:col-span-3">

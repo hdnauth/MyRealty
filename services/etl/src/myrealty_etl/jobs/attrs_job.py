@@ -59,7 +59,8 @@ def save_prices(conn, target_type: str, key: str, prices: list[dict]) -> int:
     return len(prices)
 
 
-def refresh_attrs(conn, max_age_days: int = 30) -> dict:
+def refresh_attrs(conn, max_age_days: int = 30, item_id: str | None = None) -> dict:
+    """item_id 를 주면 그 부동산만(등록 직후 개별 수집)."""
     stats = {"buildings": 0, "parcels": 0, "prices": 0, "errors": 0, "skipped": []}
     if not settings.data_go_kr_key:
         stats["skipped"].append("건축물대장(DATA_GO_KR_KEY)")
@@ -69,7 +70,8 @@ def refresh_attrs(conn, max_age_days: int = 30) -> dict:
         """select w.pnu, w.property_type, w.dong_ho, w.complex_id,
              (select fetched_at from building_registers b where b.pnu = w.pnu) as b_at,
              (select updated_at from parcels p where p.pnu = w.pnu) as p_at
-           from watch_items w where w.pnu is not null"""
+           from watch_items w where w.pnu is not null and (%(id)s::uuid is null or w.id = %(id)s::uuid)""",
+        {"id": item_id},
     ).fetchall()
     stale = f"{max_age_days} days"
     done_b, done_p = set(), set()

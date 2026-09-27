@@ -1,11 +1,33 @@
 import { PriceHistoryChart } from "@/components/charts/price-history";
+import { LineSeriesChart } from "@/components/charts/series-chart";
 import { TxTable } from "@/components/items/tx-table";
 import { Card, CardHeader } from "@/components/ui";
-import { itemTransactions, type WatchItem } from "@/lib/queries/items";
+import { getAreaUnit } from "@/lib/area-unit";
+import { formatArea } from "@/lib/format";
+import { monthlyRollingMedian } from "@/lib/item-analytics";
+import { complexSales, itemTransactions, type WatchItem } from "@/lib/queries/items";
+import { clusterAreas } from "@/lib/units";
 
 export async function PriceTab({ item, all = false }: { item: WatchItem; all?: boolean }) {
-  const points = await itemTransactions(item, 10);
+  const [points, sales, unit] = await Promise.all([
+    itemTransactions(item, 10),
+    item.complex_id ? complexSales(item.complex_id, 5) : Promise.resolve([]),
+    getAreaUnit(),
+  ]);
   const scope = item.complex_id ? `${item.complex_name} · 면적 ±3㎡` : `${item.umd_nm ?? "같은 지역"} · 유사 면적`;
+
+  // 평형별 추이: 거래가 많은 평형 최대 5개, 면적 오름차순으로 색을 고정(평형이 곧 색)
+  const types = clusterAreas(
+    [...sales.reduce((m, s) => m.set(s.area_m2, (m.get(s.area_m2) ?? 0) + 1), new Map<number, number>())].map(([area, count]) => ({ area, count, trades: count })),
+  )
+    .sort((a, b) => b.trades - a.trades)
+    .slice(0, 5)
+    .sort((a, b) => a.area - b.area);
+  const lines = types.map((t) => ({
+    name: `${formatArea(t.area, unit).split(" ")[0]}${item.area_m2 && Math.abs(item.area_m2 - t.area) <= 3 ? " ★" : ""}`,
+    points: monthlyRollingMedian(sales.filter((s) => Math.abs(s.area_m2 - t.area) <= 0.5).map((s) => ({ date: s.deal_date, value: s.price })), { minN: 1 }),
+  }));
+
   return (
     <div className="space-y-4">
       <Card>
@@ -14,6 +36,14 @@ export async function PriceTab({ item, all = false }: { item: WatchItem; all?: b
           <PriceHistoryChart points={points} />
         </div>
       </Card>
+      {lines.length >= 2 ? (
+        <Card>
+          <CardHeader title="평형별 가격 추이" sub="같은 단지 매매 · 3개월 이동 중위 · ★ 내 평형" />
+          <div className="px-2 pb-3">
+            <LineSeriesChart lines={lines} fmt="manwon" height={260} endLabels />
+          </div>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader title="거래 내역" sub={`${points.length}건 · 해제(취소) 거래 포함 표시`} />
         <TxTable

@@ -251,3 +251,12 @@ export async function itemDataStatus(item: WatchItem): Promise<ItemDataStatus> {
   ]);
   return r;
 }
+
+/** 단지 전체(모든 평형) 매매 — 평형별 추이 겹쳐 보기 */
+export async function complexSales(complexId: number, years = 5) {
+  return sql<{ deal_date: string; price: number; area_m2: number }[]>`
+    select deal_date::text, price, area_m2::float8 as area_m2 from transactions
+    where complex_id = ${complexId} and deal_kind = 'sale' and not is_canceled and area_m2 > 0
+      and deal_date >= current_date - ${`${years} years`}::interval
+    order by deal_date`;
+}

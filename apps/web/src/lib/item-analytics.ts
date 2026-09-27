@@ -94,3 +94,67 @@ export function jeonseCheck(p: { deposit: number | null; role: "landlord" | "ten
   }
   return { current, twoYearsAgo, trend, gap, level, samples: within(0, 6).length };
 }
+
+// ───────── 가격 추이 겹쳐 보기 · 상대 가격 위치 ─────────
+
+export type MonthPoint = [string, number];
+
+/**
+ * 거래(날짜·값) → 월별 이동 중위(기본 3개월). 창 안 거래가 minN 미만인 달은 비운다.
+ * 결과 날짜는 그 달 1일(YYYY-MM-01).
+ */
+export function monthlyRollingMedian(deals: { date: string; value: number }[], opts: { window?: number; minN?: number } = {}): MonthPoint[] {
+  const window = opts.window ?? 3;
+  const minN = opts.minN ?? 2;
+  if (!deals.length) return [];
+  const byMonth = new Map<string, number[]>();
+  for (const d of deals) {
+    const k = `${d.date.slice(0, 7)}-01`;
+    byMonth.set(k, [...(byMonth.get(k) ?? []), d.value]);
+  }
+  const months = [...byMonth.keys()].sort();
+  const start = new Date(`${months[0]}T00:00:00Z`);
+  const end = new Date(`${months.at(-1)}T00:00:00Z`);
+  const all: string[] = [];
+  for (const m = new Date(start); m <= end; m.setUTCMonth(m.getUTCMonth() + 1)) all.push(m.toISOString().slice(0, 10));
+  const out: MonthPoint[] = [];
+  all.forEach((m, i) => {
+    const vals = all.slice(Math.max(0, i - window + 1), i + 1).flatMap((k) => byMonth.get(k) ?? []);
+    if (vals.length >= minN) out.push([m, median(vals)!]);
+  });
+  return out;
+}
+
+/** 첫 공통 달을 100으로 맞춘 지수(상대 성과 비교용) */
+export function rebase(series: MonthPoint[][]): MonthPoint[][] {
+  const firsts = series.map((s) => s[0]?.[0]).filter(Boolean) as string[];
+  if (!firsts.length) return series.map(() => []);
+  const from = firsts.sort().at(-1)!;
+  return series.map((s) => {
+    const base = s.find(([d]) => d >= from)?.[1];
+    return base ? s.filter(([d]) => d >= from).map(([d, v]) => [d, (v / base) * 100] as MonthPoint) : [];
+  });
+}
+
+/**
+ * 상대 가격 위치: 내 단지 ÷ 유사 단지군 단위면적 가격 비율의 로그 격차를 월별로 보고,
+ * 최근 값이 과거(최근 36개월) 평균에서 몇 표준편차 떨어졌는지(z).
+ * z ≤ −1: 평소보다 싸게 거래(상대 저평가 후보), z ≥ 1: 평소보다 비싸게.
+ */
+export function relativeValue(self: MonthPoint[], comps: MonthPoint[]) {
+  const c = new Map(comps);
+  const spread = self.filter(([d]) => c.has(d)).map(([d, v]) => [d, Math.log(v / c.get(d)!)] as MonthPoint);
+  if (spread.length < 12) return null;
+  const xs = spread.map(([, v]) => v);
+  const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (xs.length - 1));
+  const now = xs.at(-1)!;
+  const z = sd > 1e-9 ? (now - mean) / sd : 0;
+  return {
+    spread: spread.map(([d, v]) => [d, Math.exp(v) - 1] as MonthPoint), // 유사 단지 대비 ±비율
+    current: Math.exp(now) - 1,
+    average: Math.exp(mean) - 1,
+    z,
+    verdict: z <= -1 ? ("평소보다 싸게 거래" as const) : z >= 1 ? ("평소보다 비싸게 거래" as const) : ("평소 수준" as const),
+  };
+}

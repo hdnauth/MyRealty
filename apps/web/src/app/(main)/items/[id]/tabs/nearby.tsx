@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { RelativeBars } from "@/components/items/relative-bars";
 import { TxTable } from "@/components/items/tx-table";
-import { Card, CardHeader, EmptyState } from "@/components/ui";
+import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
 import { getAreaUnit } from "@/lib/area-unit";
 import { type AreaUnit, formatManwon, formatPct, fromPerPyeong, unitPriceName } from "@/lib/format";
 import { PROPERTY_TYPES } from "@/lib/property";
-import { groupChange, regionChange, similarComplexes } from "@/lib/queries/comps";
+import { groupChange, regionChange, relativePosition, similarComplexes } from "@/lib/queries/comps";
+import { LineSeriesChart } from "@/components/charts/series-chart";
 import { nearbyTransactions, type WatchItem } from "@/lib/queries/items";
 
 export async function NearbyTab({ item }: { item: WatchItem }) {
@@ -23,6 +24,8 @@ export async function NearbyTab({ item }: { item: WatchItem }) {
     getAreaUnit(),
   ]);
   const compChange = groupChange(sim.comps);
+  const pos = await relativePosition(item, sim.comps);
+  const toUnit = (pts: [string, number][]) => pts.map(([d, v]) => [d, fromPerPyeong(v, unit)!] as [string, number]);
 
   return (
     <div className="space-y-4">
@@ -45,6 +48,35 @@ export async function NearbyTab({ item }: { item: WatchItem }) {
               </p>
             ) : null}
           </div>
+        </Card>
+      ) : null}
+
+      {pos?.rel ? (
+        <Card>
+          <CardHeader
+            title="유사 단지 대비 가격 위치"
+            sub={`${unitPriceName(unit)} · 3개월 이동 중위 · 유사 단지 ${sim.comps.length}곳 평균과 비교`}
+            action={<Badge tone={pos.rel.z <= -1 ? "down" : pos.rel.z >= 1 ? "up" : "neutral"}>{pos.rel.verdict}</Badge>}
+          />
+          <div className="px-2">
+            <LineSeriesChart
+              lines={[
+                { name: "내 단지", points: toUnit(pos.self.slice(-36)) },
+                { name: "유사 단지", points: toUnit(pos.group.slice(-36)), dashed: true },
+              ]}
+              fmt="manwon"
+              endLabels
+            />
+          </div>
+          <p className="px-4 pb-4 text-[13px] leading-relaxed text-muted">
+            지금 유사 단지보다 <b className="text-text">{formatPct(pos.rel.current)}</b> — 최근 3년 평균 격차는 {formatPct(pos.rel.average)}입니다
+            (평소 대비 {pos.rel.z >= 0 ? "+" : ""}{pos.rel.z.toFixed(1)} 표준편차).
+            {pos.rel.z <= -1
+              ? " 평소보다 격차가 벌어져 상대적으로 싸게 거래되고 있습니다. 단지 고유의 악재(재건축 지연, 하자 등)가 없는지 함께 확인하세요."
+              : pos.rel.z >= 1
+                ? " 평소보다 비싸게 거래되고 있습니다. 호재가 먼저 반영됐는지 확인하세요."
+                : ""}
+          </p>
         </Card>
       ) : null}
 

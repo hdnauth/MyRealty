@@ -1,5 +1,6 @@
 import "server-only";
 import { sql } from "../db";
+import { type MonthPoint, monthlyRollingMedian, relativeValue } from "../item-analytics";
 import type { WatchItem } from "./items";
 
 export type ComplexStats = {
@@ -84,4 +85,23 @@ export async function regionChange(sggCd: string, txType: string, area: number |
     where sgg_cd = ${sggCd} and property_type = ${txType} and deal_kind = 'sale' and not is_canceled
       and area_m2 between ${a * 0.85} and ${a * 1.15} and deal_date >= current_date - 548`;
   return r?.recent && r.prior ? r.recent / r.prior - 1 : null;
+}
+
+/**
+ * 내 단지 vs 유사 단지군의 평당가(3개월 이동 중위) 월별 추이와 상대 가격 위치(z).
+ * 같은 면적대(±15%) 매매, 최근 42개월(36개월 + 창).
+ */
+export async function relativePosition(item: WatchItem, comps: Comp[]) {
+  if (!item.complex_id || !comps.length) return null;
+  const area = item.area_m2 ?? 84;
+  const ids = [item.complex_id, ...comps.map((c) => c.id)];
+  const rows = await sql<{ complex_id: number; deal_date: string; ppy: number }[]>`
+    select complex_id, deal_date::text, (price / (area_m2 / 3.305785))::float8 as ppy from transactions
+    where complex_id = any(${ids}) and deal_kind = 'sale' and not is_canceled and area_m2 between ${area * 0.85} and ${area * 1.15}
+      and deal_date >= current_date - interval '42 months'`;
+  const mine = rows.filter((r) => r.complex_id === item.complex_id).map((r) => ({ date: r.deal_date, value: r.ppy }));
+  const others = rows.filter((r) => r.complex_id !== item.complex_id).map((r) => ({ date: r.deal_date, value: r.ppy }));
+  const self: MonthPoint[] = monthlyRollingMedian(mine, { minN: 1 });
+  const group: MonthPoint[] = monthlyRollingMedian(others, { minN: 3 });
+  return { self, group, rel: relativeValue(self.slice(-36), group) };
 }

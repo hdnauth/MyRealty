@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { floorBandOf, floorPremiums, jeonseCheck, rateSensitivity } from "../item-analytics";
+import { floorBandOf, floorPremiums, jeonseCheck, monthlyRollingMedian, rateSensitivity, rebase, relativeValue } from "../item-analytics";
 
 const NOW = new Date("2026-09-01");
 const day = (daysAgo: number) => new Date(NOW.getTime() - daysAgo * 86_400_000).toISOString().slice(0, 10);
@@ -60,5 +60,39 @@ describe("jeonseCheck", () => {
   });
   it("보증금이 없으면 판단불가", () => {
     expect(jeonseCheck({ deposit: null, role: null, points: pts, now: NOW }).level).toBe("판단불가");
+  });
+});
+
+
+describe("월별 추이", () => {
+  it("3개월 이동 중위, 거래 없는 달도 창으로 채움", () => {
+    const s = monthlyRollingMedian([
+      { date: "2026-01-10", value: 100 },
+      { date: "2026-01-20", value: 110 },
+      { date: "2026-03-05", value: 130 },
+    ]);
+    expect(s).toEqual([
+      ["2026-01-01", 105],
+      ["2026-02-01", 105],
+      ["2026-03-01", 110],
+    ]);
+  });
+  it("공통 시작월 100 기준", () => {
+    const [a, b] = rebase([
+      [["2026-01-01", 50], ["2026-02-01", 60]],
+      [["2026-02-01", 200], ["2026-03-01", 220]],
+    ]);
+    expect(a).toEqual([["2026-02-01", 100]]);
+    expect(b).toEqual([["2026-02-01", 100], ["2026-03-01", 110.00000000000001]]);
+  });
+  it("유사 단지 대비 격차가 평소보다 크게 벌어지면 z ≤ −1", () => {
+    const months = Array.from({ length: 24 }, (_, i) => `20${24 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}-01`);
+    const comps = months.map((d) => [d, 100] as [string, number]);
+    const self = months.map((d, i) => [d, i < 23 ? 95 + (i % 2) : 88] as [string, number]);
+    const r = relativeValue(self, comps)!;
+    expect(r.current).toBeCloseTo(-0.12, 2);
+    expect(r.z).toBeLessThan(-1);
+    expect(r.verdict).toBe("평소보다 싸게 거래");
+    expect(relativeValue(self.slice(0, 5), comps)).toBeNull();
   });
 });

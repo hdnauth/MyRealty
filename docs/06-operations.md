@@ -100,6 +100,18 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 - **호출 한도**: 공공데이터포털 개발계정은 서비스별 일일 한도가 있다. `QUOTA_DATA_GO_KR`(기본 900)에 걸리면 남은 작업은 다음 날로 이월된다. 관심 지역이 많아지면 활용 사례를 등록해 운영계정으로 전환한다. 사용량은 `api_quota` 테이블.
 - **처음 등록한 지역**: 부동산을 등록하면 해당 시군구가 `collect_targets` 에 추가되고, 다음 daily 실행부터 최근 3개월 → 과거 순으로 채워진다. 빨리 채우려면 Actions 에서 `only: rtms backfill geocode link indicators avm` 로 수동 실행.
 - **통계 코드**: ECOS·KOSIS·R-ONE 통계표·항목 코드는 `services/etl/src/myrealty_etl/series_catalog.py` 에 있다. 수집 오류가 나면 각 포털 코드 검색으로 확인 후 수정하거나 `SERIES_OVERRIDES_JSON` 으로 덮어쓴다(`enabled: False` 항목은 코드 확인 후 켠다).
+- **통계 코드 점검**: `uv run myrealty series-check` 는 카탈로그의 모든 항목(비활성 포함)을 최근 2년으로 한 번씩 호출해 `ok`(값 있음) / 오류 / 코드 미입력을 보여 준다.
+  `ok: true` 인 비활성 항목은 코드를 고치지 않고 켤 수 있다:
+  ```bash
+  # GitHub Actions 시크릿 또는 .env
+  SERIES_OVERRIDES_JSON='{"ecos": {"ecos.housing_csi": {"enabled": true}, "ecos.household_mortgage": {"enabled": true}},
+                          "kosis": {"kosis.permits": {"itmId": "...", "objL1": "...", "enabled": true}},
+                          "reb": {"reb.supply_demand": {"statbl": "...", "region_filter": "...", "enabled": true}}}'
+  ```
+  켜진 항목은 지표 › 금리·물가 탭(수요 심리·주담대 증가율·인허가·준공 후 미분양)과 시장 해석 규칙에 자동으로 쓰인다.
+- **실거래 상세 필드**: 마이그레이션 0005 가 매수자·매도자 구분, 등기일자, 전월세 신규/갱신·종전 보증금을 저장한다(기존 행은 원천 `raw` 에서 채움). 등기일은 신고 몇 달 뒤 붙으므로 최근 3개월 재수집 때 갱신된다.
+- **분양가 비교**: 청약 공고 중 관심 시도 공고만 주택형별 분양가를 한 번 더 조회한다(공고당 1회, 공공데이터포털 청약홈 API 한도 사용).
+- **지도 레이어**: 용도지역은 브이월드 WMS 가 필요하다(`VWORLD_KEY`, 서비스 URL 에 배포 도메인·localhost 등록, 필요하면 `VWORLD_DOMAIN`). 지적도는 네이버 지도에서는 네이버 지적편집도를, 대체 지도에서는 브이월드 WMS 를 쓴다.
 - **AI 비용**: 모델은 `ANTHROPIC_MODEL`(대화·분석·리포트), `ANTHROPIC_BULK_MODEL`(뉴스 분류)로 바꾼다. 월 예산 `AI_MONTHLY_BUDGET_USD` 를 넘으면 새 요청을 막는다. 사용량은 `ai_usage` 테이블·설정 화면. Opus 5 계열은 안전 분류기 거절 시 권장 모델로 자동 재시도하는 server-side fallbacks 를 사용한다.
 - **데모 데이터**: `uv run myrealty seed-demo --email ...` 은 이름에 `[데모]` 가 붙은 합성 데이터를 만든다. 실데이터 운영 전 `uv run myrealty seed-demo --reset` 으로 지운다(합성 거시 시계열도 삭제되므로 이후 `macro` 가 실제 값으로 채운다).
 - **백업**: Supabase 는 일일 백업 제공(무료는 7일). 자체 DB 는 `pg_dump` 를 주기 실행.

@@ -137,6 +137,9 @@ create table transactions (
   monthly_rent int,
   contract_term text, renewal_used boolean,
   is_direct    boolean,                     -- 직거래
+  buyer_type text, seller_type text,         -- 매수자·매도자 구분(개인/법인/…), 0005
+  registered_at date,                        -- 소유권 이전 등기일(신고 후 채워짐), 0005
+  contract_type text, prev_deposit bigint, prev_rent int,  -- 전월세 신규/갱신·종전 계약, 0005
   is_canceled  boolean default false, canceled_at date,
   geom         geometry(Point, 4326),
   raw          jsonb,

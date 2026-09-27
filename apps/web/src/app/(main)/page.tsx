@@ -7,6 +7,7 @@ import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { formatDate, formatManwon } from "@/lib/format";
 import { calendarEntries, listNotifications } from "@/lib/queries/feed";
 import { listItems } from "@/lib/queries/items";
+import { getAreaUnit } from "@/lib/area-unit";
 
 function isoDay(offset = 0) {
   const d = new Date();
@@ -16,11 +17,12 @@ function isoDay(offset = 0) {
 
 export default async function HomePage() {
   const uid = await sessionUserId();
-  const [, items, notes, upcoming] = await Promise.all([
+  const [, items, notes, upcoming, unit] = await Promise.all([
     requireUser(),
     listItems(uid),
     listNotifications(uid, { limit: 8 }),
     calendarEntries(uid, isoDay(0), isoDay(45)),
+    getAreaUnit(),
   ]);
 
   const owned = items.filter((i) => i.group_tag === "owned");
@@ -96,7 +98,7 @@ export default async function HomePage() {
             <CardHeader title="관심 부동산" action={<Link href="/items/new" className="flex items-center text-accent"><Plus size={16} />등록</Link>} />
             <div className="space-y-2 px-3 pb-3">
               {items.slice(0, 6).map((i) => (
-                <ItemCard key={i.id} item={i} />
+                <ItemCard key={i.id} item={i} unit={unit} />
               ))}
             </div>
           </Card>

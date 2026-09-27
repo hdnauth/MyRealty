@@ -5,7 +5,8 @@ import { aiEnabled } from "@/lib/ai/client";
 import { latestCompare } from "@/lib/ai/compare";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
-import { formatArea, formatManwon, formatPct } from "@/lib/format";
+import { getAreaUnit } from "@/lib/area-unit";
+import { formatArea, formatManwon, formatPct, perUnitArea, unitPriceName } from "@/lib/format";
 import { PROPERTY_TYPES } from "@/lib/property";
 import { itemTransactions, listItems, summarize } from "@/lib/queries/items";
 import { getItem } from "@/lib/queries/items";
@@ -15,7 +16,7 @@ export const metadata: Metadata = { title: "비교" };
 
 export default async function ComparePage(props: PageProps<"/compare">) {
   const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
-  const [, all] = await Promise.all([requireUser(), listItems(uid)]);
+  const [, all, unit] = await Promise.all([requireUser(), listItems(uid), getAreaUnit()]);
   const ids = (typeof sp.ids === "string" ? sp.ids.split(",") : all.slice(0, 3).map((i) => i.id)).filter((id) => all.some((i) => i.id === id)).slice(0, 5);
   const toggle = (id: string) => {
     const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id].slice(0, 5);
@@ -53,7 +54,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
         temp: region.find((r) => r.code.startsWith("ind.temp"))?.value ?? null,
         burden: region.find((r) => r.code.startsWith("ind.burden"))?.value ?? null,
         news,
-        ppy: v && area ? v.estimate / (area / 3.305785) : null,
+        ppy: v && area ? perUnitArea(v.estimate, area, unit) : null,
       };
     }),
   );
@@ -62,10 +63,10 @@ export default async function ComparePage(props: PageProps<"/compare">) {
 
   const metrics: { label: string; get: (r: (typeof rows)[number]) => string }[] = [
     { label: "유형", get: (r) => PROPERTY_TYPES[r.it.property_type].label },
-    { label: "면적", get: (r) => formatArea(r.it.area_m2 ?? r.it.land_area_m2) },
+    { label: "면적", get: (r) => formatArea(r.it.area_m2 ?? r.it.land_area_m2, unit) },
     { label: "추정 시세", get: (r) => (r.v ? `${formatManwon(r.v.estimate, { short: true })}` : "-") },
     { label: "추정 범위", get: (r) => (r.v ? `${formatManwon(r.v.low, { short: true })}~${formatManwon(r.v.high, { short: true })}` : "-") },
-    { label: "평당가(추정)", get: (r) => formatManwon(r.ppy, { short: true }) },
+    { label: `${unitPriceName(unit)}(추정)`, get: (r) => formatManwon(r.ppy, { short: true }) },
     { label: "1년 변화", get: (r) => formatPct(r.s.change1y) },
     { label: "전세가율", get: (r) => formatPct(r.s.jeonseRatio, 0, false) },
     { label: "최근 3개월 거래", get: (r) => `${r.s.count3m}건` },

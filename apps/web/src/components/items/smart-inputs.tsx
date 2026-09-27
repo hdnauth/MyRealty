@@ -10,7 +10,8 @@ import { dongHo, parseDongHo } from "@/lib/units";
  * 서버에는 원문이 가고 parseManwon 으로 읽는다.
  */
 export function MoneyField({ label, name, defaultValue, placeholder = "예) 15억 3000" }: { label: string; name: string; defaultValue?: number | null; placeholder?: string }) {
-  const [v, setV] = useState(defaultValue != null ? String(defaultValue) : "");
+  // 저장된 금액은 "15억 3,000만" 처럼 읽기 쉬운 형태로 채운다(parseManwon 이 그대로 읽는다)
+  const [v, setV] = useState(defaultValue != null ? formatManwon(defaultValue) : "");
   const parsed = parseManwon(v);
   return (
     <Field
@@ -85,3 +86,49 @@ export function DongHoField({ defaultValue, defaultFloor }: { defaultValue?: str
     </div>
   );
 }
+
+/** 몇 개 중 하나 고르기(셀렉트 대신 칩). 값은 hidden input 으로 보낸다 */
+export function ChoiceChips({
+  name,
+  label,
+  options,
+  defaultValue,
+  hint,
+}: {
+  name: string;
+  label: string;
+  options: readonly { value: string; label: string }[];
+  defaultValue: string;
+  hint?: string;
+}) {
+  const [v, setV] = useState(defaultValue);
+  const opts = options.some((o) => o.value === defaultValue) ? options : [...options, { value: defaultValue, label: defaultValue }];
+  return (
+    <div>
+      <span className="mb-1 block text-[13px] font-medium text-muted">{label}</span>
+      <input type="hidden" name={name} value={v} />
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={label}>
+        {opts.map((o) => (
+          <button
+            type="button"
+            key={o.value}
+            role="radio"
+            aria-checked={v === o.value}
+            onClick={() => setV(o.value)}
+            className={`rounded-full border px-3 py-1.5 text-[13px] ${v === o.value ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text"}`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {hint ? <span className="mt-1 block text-xs text-muted">{hint}</span> : null}
+    </div>
+  );
+}
+
+export const RADIUS_OPTIONS = [
+  { value: "500", label: "500m" },
+  { value: "1000", label: "1km" },
+  { value: "2000", label: "2km" },
+  { value: "3000", label: "3km" },
+] as const;

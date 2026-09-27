@@ -4,7 +4,7 @@ import clsx from "clsx";
 import "leaflet/dist/leaflet.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MapPoint } from "@/app/api/map/points/route";
-import { formatDate, formatManwon } from "@/lib/format";
+import { type AreaUnit, formatDate, formatManwon, fromPerPyeong, unitPriceLabel } from "@/lib/format";
 import { DEAL_KIND_LABEL } from "@/lib/property";
 import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, tileSources } from "./engines";
 
@@ -52,7 +52,9 @@ export function RealtyMap({
   events,
   projects = [],
   initialCenter,
+  unit = "m2",
 }: {
+  unit?: AreaUnit;
   /** 네이버 클라우드 Maps Client ID. 없거나 인증에 실패하면 Leaflet 대체 지도로 그린다. */
   keyId: string | null;
   /** 대체 지도 배경(브이월드 WMTS). 없으면 OpenStreetMap */
@@ -187,7 +189,7 @@ export function RealtyMap({
     if (!map) return;
     for (const m of markersRef.current) m.remove();
     markersRef.current = points.map((p) => {
-      const main = p.median_ppy && (type === "apt" || type === "officetel" || type === "rowhouse") ? `${formatManwon(p.median_ppy, { short: true })}/평` : formatManwon(p.median_price, { short: true });
+      const main = p.median_ppy && (type === "apt" || type === "officetel" || type === "rowhouse") ? `${formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}` : formatManwon(p.median_price, { short: true });
       const active = selected?.key === p.key;
       return map.addHtmlMarker({
         lng: p.lng,
@@ -197,7 +199,7 @@ export function RealtyMap({
         html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer">${main}<span style="font-weight:400;opacity:.7">${escapeHtml(p.name.slice(0, 8))} · ${p.n}건</span></div>`,
       });
     });
-  }, [points, selected, type, select, mapVersion]);
+  }, [points, selected, type, select, mapVersion, unit]);
 
   // POI 레이어 조회
   useEffect(() => {
@@ -332,7 +334,7 @@ export function RealtyMap({
                     </span>
                     <span className="tabular shrink-0 text-right text-sm font-semibold">
                       {formatManwon(p.median_price, { short: true })}
-                      {p.median_ppy ? <span className="block text-[11px] font-normal text-muted">평당 {formatManwon(p.median_ppy, { short: true })}</span> : null}
+                      {p.median_ppy ? <span className="block text-[11px] font-normal text-muted">{unitPriceLabel(unit)} {formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}</span> : null}
                     </span>
                   </button>
                 </li>

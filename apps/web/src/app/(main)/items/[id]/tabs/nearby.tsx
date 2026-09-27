@@ -2,7 +2,8 @@ import Link from "next/link";
 import { RelativeBars } from "@/components/items/relative-bars";
 import { TxTable } from "@/components/items/tx-table";
 import { Card, CardHeader, EmptyState } from "@/components/ui";
-import { formatManwon, formatPct } from "@/lib/format";
+import { getAreaUnit } from "@/lib/area-unit";
+import { type AreaUnit, formatManwon, formatPct, fromPerPyeong, unitPriceName } from "@/lib/format";
 import { PROPERTY_TYPES } from "@/lib/property";
 import { groupChange, regionChange, similarComplexes } from "@/lib/queries/comps";
 import { nearbyTransactions, type WatchItem } from "@/lib/queries/items";
@@ -15,10 +16,11 @@ export async function NearbyTab({ item }: { item: WatchItem }) {
       </Card>
     );
   }
-  const [rows, sim, sgg] = await Promise.all([
+  const [rows, sim, sgg, unit] = await Promise.all([
     nearbyTransactions(item, { months: 6 }),
     similarComplexes(item),
     item.sgg_cd ? regionChange(item.sgg_cd, PROPERTY_TYPES[item.property_type].tx, item.area_m2) : Promise.resolve(null),
+    getAreaUnit(),
   ]);
   const compChange = groupChange(sim.comps);
 
@@ -26,7 +28,7 @@ export async function NearbyTab({ item }: { item: WatchItem }) {
     <div className="space-y-4">
       {sim.self ? (
         <Card>
-          <CardHeader title="상대 성과" sub="평당가 중위 변화 · 최근 6개월 vs 1년 전(12~18개월) · 같은 면적대" />
+          <CardHeader title="상대 성과" sub="단위면적당 가격 중위 변화 · 최근 6개월 vs 1년 전(12~18개월) · 같은 면적대" />
           <div className="px-4 pb-4">
             <RelativeBars
               rows={[
@@ -48,7 +50,7 @@ export async function NearbyTab({ item }: { item: WatchItem }) {
 
       {sim.comps.length ? (
         <Card>
-          <CardHeader title="유사 단지" sub="거리·연식·세대수·평당가가 비슷한 순 (유사도 0~100)" />
+          <CardHeader title="유사 단지" sub="거리·연식·세대수·단위면적당 가격이 비슷한 순 (유사도 0~100)" />
           <div className="overflow-x-auto pb-2">
             <table className="w-full min-w-[560px] whitespace-nowrap text-sm">
               <thead>
@@ -57,15 +59,15 @@ export async function NearbyTab({ item }: { item: WatchItem }) {
                   <th className="px-2 py-2 text-right font-medium">유사도</th>
                   <th className="px-2 py-2 text-right font-medium">거리</th>
                   <th className="px-2 py-2 text-right font-medium">준공</th>
-                  <th className="px-2 py-2 text-right font-medium">평당가(6M)</th>
+                  <th className="px-2 py-2 text-right font-medium">{unitPriceName(unit)}(6M)</th>
                   <th className="px-2 py-2 text-right font-medium">1년 변화</th>
                   <th className="px-4 py-2 text-right font-medium">최근 거래</th>
                 </tr>
               </thead>
               <tbody className="tabular">
-                {sim.self ? <CompRow c={sim.self} self /> : null}
+                {sim.self ? <CompRow c={sim.self} unit={unit} self /> : null}
                 {sim.comps.map((c) => (
-                  <CompRow key={c.id} c={c} />
+                  <CompRow key={c.id} c={c} unit={unit} />
                 ))}
               </tbody>
             </table>
@@ -85,14 +87,14 @@ export async function NearbyTab({ item }: { item: WatchItem }) {
   );
 }
 
-function CompRow({ c, self = false }: { c: { id: number; name: string; score: number; dist_m: number; build_year: number | null; ppy_recent: number | null; change: number | null; last_price: number | null }; self?: boolean }) {
+function CompRow({ c, unit, self = false }: { unit: AreaUnit; c: { id: number; name: string; score: number; dist_m: number; build_year: number | null; ppy_recent: number | null; change: number | null; last_price: number | null }; self?: boolean }) {
   return (
     <tr className={`border-b border-border/60 last:border-0 ${self ? "bg-accent-soft/50 font-medium" : ""}`}>
       <td className="max-w-[180px] truncate px-4 py-2">{self ? `★ ${c.name}` : c.name}</td>
       <td className="px-2 py-2 text-right">{self ? "-" : Math.round(c.score * 100)}</td>
       <td className="px-2 py-2 text-right">{self ? "-" : `${(c.dist_m / 1000).toFixed(1)}km`}</td>
       <td className="px-2 py-2 text-right">{c.build_year ?? "-"}</td>
-      <td className="px-2 py-2 text-right">{formatManwon(c.ppy_recent, { short: true })}</td>
+      <td className="px-2 py-2 text-right">{formatManwon(fromPerPyeong(c.ppy_recent, unit), { short: true })}</td>
       <td className={`px-2 py-2 text-right ${c.change === null ? "text-muted" : c.change >= 0 ? "text-up" : "text-down"}`}>
         {c.change === null ? "-" : `${c.change >= 0 ? "▲" : "▼"}${formatPct(Math.abs(c.change), 1, false)}`}
       </td>

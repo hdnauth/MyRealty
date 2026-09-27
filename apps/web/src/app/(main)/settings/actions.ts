@@ -6,6 +6,7 @@ import { normalizeEmail } from "@/lib/auth/otp";
 import { cookies } from "next/headers";
 import { destroySession, requireUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
+import { AREA_UNIT_COOKIE, isAreaUnit } from "@/lib/format";
 
 export async function logoutAction() {
   await destroySession();
@@ -33,6 +34,14 @@ export async function updateNotificationSettingsAction(form: FormData) {
     pushEnabled: form.get("pushEnabled") === "on",
   };
   await sql`update users set settings = ${sql.json(settings)} where id = ${user.id}`;
+  refresh();
+}
+
+export async function setAreaUnitAction(form: FormData) {
+  await requireUser();
+  const unit = form.get("unit");
+  if (!isAreaUnit(unit)) return;
+  (await cookies()).set(AREA_UNIT_COOKIE, unit, { path: "/", maxAge: 60 * 60 * 24 * 365 * 2, sameSite: "lax" });
   refresh();
 }
 

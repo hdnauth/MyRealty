@@ -4,7 +4,7 @@ import { type ReactNode, useState } from "react";
 import { Field, Input, Select } from "@/components/ui";
 import { GROUP_TAGS } from "@/lib/property";
 import type { Lease, Loan } from "@/lib/queries/items";
-import { DongHoField, MoneyField } from "./smart-inputs";
+import { ChoiceChips, DongHoField, MoneyField, RADIUS_OPTIONS } from "./smart-inputs";
 
 export type DetailDefaults = {
   label?: string | null;
@@ -29,7 +29,10 @@ export function DetailFields({
   showKeywords = false,
   unitSlot,
   labelPlaceholder = "예) 우리집, 매수후보 A",
+  defaultRadius = 1000,
 }: {
+  /** 새로 등록할 때 유형별 기본 반경(아파트 1km, 토지 2km) */
+  defaultRadius?: number;
   d?: DetailDefaults;
   isLand?: boolean;
   areaOptions?: { area: number; n: number }[];
@@ -43,20 +46,16 @@ export function DetailFields({
   const [finance, setFinance] = useState(Boolean(d.purchase_price || loan || d.lease));
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="이름(표시용)">
-          <Input name="label" defaultValue={d.label ?? ""} placeholder={labelPlaceholder} />
-        </Field>
-        <Field label="그룹">
-          <Select name="group_tag" defaultValue={d.group_tag ?? "watch"}>
-            {Object.entries(GROUP_TAGS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      </div>
+      <ChoiceChips
+        name="group_tag"
+        label="이 부동산은"
+        options={Object.entries(GROUP_TAGS).map(([value, label]) => ({ value, label }))}
+        defaultValue={d.group_tag ?? "watch"}
+        hint="보유는 포트폴리오·손익에, 전월세 거주는 보증금 안전 점검에 쓰입니다."
+      />
+      <Field label="이름(표시용)">
+        <Input name="label" defaultValue={d.label ?? ""} placeholder={labelPlaceholder} />
+      </Field>
 
       {unitSlot ?? (
         <>
@@ -122,20 +121,27 @@ export function DetailFields({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="주변 탐색 반경(m)">
-          <Input name="radius_m" inputMode="numeric" defaultValue={d.radius_m ?? ""} placeholder="아파트 1000 / 토지 2000" />
-        </Field>
+      <ChoiceChips
+        key={d.radius_m ?? defaultRadius}
+        name="radius_m"
+        label="주변 거래·입지를 볼 범위"
+        options={RADIUS_OPTIONS}
+        defaultValue={String(d.radius_m ?? defaultRadius)}
+        hint="아파트는 1km, 토지·단독은 2km 가 보통입니다."
+      />
+
+      <details className="group rounded-xl border border-border px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium text-muted group-open:mb-3">고급 설정 · 뉴스 키워드</summary>
         {showKeywords ? (
-          <Field label="뉴스 키워드(쉼표 구분)">
+          <Field label="뉴스 키워드(쉼표 구분)" hint="단지명·동네·시군구 키워드는 자동으로 만들어집니다.">
             <Input name="keywords" defaultValue={(d.keywords ?? []).join(", ")} />
           </Field>
         ) : (
-          <Field label="추가 뉴스 키워드(선택, 쉼표 구분)">
+          <Field label="추가 뉴스 키워드(선택, 쉼표 구분)" hint="단지명·동네·시군구 키워드는 자동으로 만들어집니다.">
             <Input name="keywords" placeholder="예) GTX-A, 잠실 재건축" />
           </Field>
         )}
-      </div>
+      </details>
     </div>
   );
 }

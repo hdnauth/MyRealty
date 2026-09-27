@@ -7,7 +7,8 @@ import { env } from "@/lib/env";
 import { formatDate, timeAgo } from "@/lib/format";
 import { getSiteSettings } from "@/lib/site-settings";
 import { cookies } from "next/headers";
-import { logoutAction, revokeSessionAction, updateNotificationSettingsAction } from "./actions";
+import { getAreaUnit } from "@/lib/area-unit";
+import { logoutAction, revokeSessionAction, setAreaUnitAction, updateNotificationSettingsAction } from "./actions";
 import { DeleteAccount } from "./delete-account";
 import { PushManager } from "./push-manager";
 
@@ -15,7 +16,7 @@ export const metadata: Metadata = { title: "설정" };
 
 export default async function SettingsPage() {
   const uid = await sessionUserId();
-  const [user, sessions, current, [ai], site] = await Promise.all([
+  const [user, sessions, current, [ai], site, unit] = await Promise.all([
     requireUser(),
     sql<{ id: string; user_agent: string | null; created_at: string; last_seen_at: string | null; remember: boolean }[]>`
       select id, user_agent, created_at::text, last_seen_at::text, remember from sessions
@@ -25,6 +26,7 @@ export default async function SettingsPage() {
       select coalesce(sum(cost_usd), 0)::float8 as cost, count(*)::int as calls from ai_usage
       where user_id = ${uid} and created_at >= date_trunc('month', now())`,
     getSiteSettings(),
+    getAreaUnit(),
   ]);
 
   return (
@@ -60,6 +62,28 @@ export default async function SettingsPage() {
         ) : (
           <div className="h-2" />
         )}
+      </Card>
+
+      <Card>
+        <CardHeader title="표시 단위" sub="면적과 단위면적당 가격(평당가·㎡당가)을 어느 단위로 먼저 보여 줄지 정합니다. 이 기기에 저장됩니다." />
+        <div className="flex gap-2 px-4 pb-4">
+          {([
+            ["m2", "㎡ 우선", "84.9㎡ (25.7평) · ㎡당가"],
+            ["pyeong", "평 우선", "25.7평 (84.9㎡) · 평당가"],
+          ] as const).map(([k, label, ex]) => (
+            <form key={k} action={setAreaUnitAction} className="flex-1">
+              <input type="hidden" name="unit" value={k} />
+              <button
+                type="submit"
+                aria-pressed={unit === k}
+                className={`w-full rounded-lg border px-3 py-2 text-left ${unit === k ? "border-accent bg-accent-soft" : "border-border hover:bg-surface-2"}`}
+              >
+                <span className={`block text-sm font-semibold ${unit === k ? "text-accent" : ""}`}>{label}</span>
+                <span className="block text-xs text-muted">{ex}</span>
+              </button>
+            </form>
+          ))}
+        </div>
       </Card>
 
       <Card>

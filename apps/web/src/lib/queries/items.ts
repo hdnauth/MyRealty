@@ -233,3 +233,21 @@ export async function itemAttrs(item: WatchItem): Promise<ItemAttrs> {
   ]);
   return { building: b ?? null, parcel: p ?? null, prices };
 }
+
+export type ItemDataStatus = { trades: number; building: boolean; officialPrice: boolean; parcel: boolean; location: boolean; valuation: boolean; news: number };
+
+/** 등록 직후 안내: 지금 볼 수 있는 데이터와 다음 수집 때 채워질 데이터 */
+export async function itemDataStatus(item: WatchItem): Promise<ItemDataStatus> {
+  const [[r]] = await Promise.all([
+    sql<ItemDataStatus[]>`
+      select
+        (select count(*)::int from transactions t where t.complex_id = ${item.complex_id} and ${item.complex_id}::bigint is not null) as trades,
+        exists (select 1 from building_registers b where b.pnu = ${item.pnu}) as building,
+        exists (select 1 from official_prices o where o.target_key = ${item.pnu} or o.target_key like ${(item.pnu ?? "-") + "|%"}) as "officialPrice",
+        exists (select 1 from parcels p where p.pnu = ${item.pnu}) as parcel,
+        exists (select 1 from location_scores l where l.target_type = 'item' and l.target_id = ${item.id}) as location,
+        exists (select 1 from valuations v where v.watch_item_id = ${item.id}) as valuation,
+        (select count(*)::int from article_links a where a.watch_item_id = ${item.id}) as news`,
+  ]);
+  return r;
+}

@@ -135,7 +135,7 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
         ${num(form.get("radius_m")) ?? (PROPERTY_TYPES[type].hasComplex ? 1000 : 2000)})
       returning id`;
   });
-  redirect(`/items/${row.id}`);
+  redirect(`/items/${row.id}?welcome=1`);
 }
 
 export async function updateItemAction(id: string, _: ItemFormState, form: FormData): Promise<ItemFormState> {

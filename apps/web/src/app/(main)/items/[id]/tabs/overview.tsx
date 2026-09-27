@@ -1,10 +1,11 @@
 import { Card, CardHeader, Change, Stat } from "@/components/ui";
-import { formatDate, formatManwon, formatNumber, formatPct, perPyeong } from "@/lib/format";
+import { getAreaUnit } from "@/lib/area-unit";
+import { formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceLabel, unitPriceName } from "@/lib/format";
 import { itemAttrs, itemTransactions, summarize, type WatchItem } from "@/lib/queries/items";
 import { AttrsCard } from "./attrs-card";
 
 export async function OverviewTab({ item }: { item: WatchItem }) {
-  const [points, attrs] = await Promise.all([itemTransactions(item, 5), itemAttrs(item)]);
+  const [points, attrs, unit] = await Promise.all([itemTransactions(item, 5), itemAttrs(item), getAreaUnit()]);
   const s = summarize(points);
   const isComplex = Boolean(item.complex_id);
   const area = item.area_m2 ?? item.land_area_m2;
@@ -30,7 +31,7 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
               sub={s.lastSale ? <span className="text-muted">{formatDate(s.lastSale.deal_date)}{s.lastSale.floor ? ` · ${s.lastSale.floor}층` : ""}</span> : null}
             />
             <Stat label="6개월 중위" value={formatManwon(s.saleMedian6m)} sub={<span className="text-muted">1년 <Change value={s.change1y} /></span>} />
-            <Stat label="평당가(6개월)" value={s.saleMedian6m && area ? formatManwon(perPyeong(s.saleMedian6m, area)) : "-"} sub={<span className="text-muted">전용 평당</span>} />
+            <Stat label={`${unitPriceName(unit)}(6개월)`} value={s.saleMedian6m && area ? formatManwon(perUnitArea(s.saleMedian6m, area, unit)) : "-"} sub={<span className="text-muted">전용 {unitPriceLabel(unit)}</span>} />
             <Stat label="1년 최고/최저" value={s.high1y ? `${formatManwon(s.high1y, { short: true })} / ${formatManwon(s.low1y, { short: true })}` : "-"} />
             <Stat
               label="역대 최고가"

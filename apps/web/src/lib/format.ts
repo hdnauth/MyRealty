@@ -39,9 +39,41 @@ export function toPyeong(m2: number | null | undefined): number | null {
   return m2 / M2_PER_PYEONG;
 }
 
-export function formatArea(m2: number | null | undefined): string {
+/** 면적 표시 단위(설정 › 표시 단위). ㎡ 는 법정 단위, 평은 익숙한 단위 — 앞에 오는 쪽이 기본 */
+export type AreaUnit = "m2" | "pyeong";
+export const AREA_UNIT_COOKIE = "area_unit";
+
+export function isAreaUnit(v: unknown): v is AreaUnit {
+  return v === "m2" || v === "pyeong";
+}
+
+export function formatArea(m2: number | null | undefined, unit: AreaUnit = "m2"): string {
   if (!m2) return "-";
-  return `${Number(m2).toFixed(1)}㎡ (${toPyeong(m2)!.toFixed(1)}평)`;
+  const a = `${Number(m2).toFixed(1)}㎡`;
+  const p = `${toPyeong(m2)!.toFixed(1)}평`;
+  return unit === "pyeong" ? `${p} (${a})` : `${a} (${p})`;
+}
+
+/** 단위면적당 가격 라벨: "평당" | "㎡당" */
+export function unitPriceLabel(unit: AreaUnit) {
+  return unit === "pyeong" ? "평당" : "㎡당";
+}
+
+/** 단위면적당 가격 이름: "평당가" | "㎡당 가격" */
+export function unitPriceName(unit: AreaUnit) {
+  return unit === "pyeong" ? "평당가" : "㎡당 가격";
+}
+
+/** 평당가(만원) → 설정 단위의 단위면적당 가격(만원) */
+export function fromPerPyeong(ppy: number | null | undefined, unit: AreaUnit): number | null {
+  if (ppy === null || ppy === undefined) return null;
+  return unit === "pyeong" ? ppy : ppy / M2_PER_PYEONG;
+}
+
+/** 가격(만원) ÷ 면적 → 설정 단위의 단위면적당 가격(만원) */
+export function perUnitArea(price: number | null | undefined, m2: number | null | undefined, unit: AreaUnit): number | null {
+  if (!price || !m2) return null;
+  return unit === "pyeong" ? price / toPyeong(m2)! : price / m2;
 }
 
 /** 평당가(만원) */

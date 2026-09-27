@@ -2,11 +2,13 @@ import { Pencil } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { TypeIcon } from "@/components/items/item-card";
-import { Badge, Card, LinkButton, Tabs } from "@/components/ui";
+import { Badge, LinkButton, Tabs } from "@/components/ui";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { getAreaUnit } from "@/lib/area-unit";
 import { formatArea } from "@/lib/format";
 import { GROUP_TAGS, PROPERTY_TYPES } from "@/lib/property";
-import { getItem } from "@/lib/queries/items";
+import { getItem, itemDataStatus } from "@/lib/queries/items";
+import { DataStatusCard } from "@/components/items/data-status";
 import { NearbyTab } from "./tabs/nearby";
 import { AnalysisTab } from "./tabs/analysis";
 import { LocationTab } from "./tabs/location";
@@ -33,9 +35,11 @@ const TABS = [
 
 export default async function ItemPage(props: PageProps<"/items/[id]">) {
   const [uid, { id }, sp] = await Promise.all([sessionUserId(), props.params, props.searchParams]);
-  const [, item] = await Promise.all([requireUser(), getItem(uid, id)]);
+  const [, item, unit] = await Promise.all([requireUser(), getItem(uid, id), getAreaUnit()]);
   if (!item) notFound();
   const tab = TABS.find((t) => t.key === sp.tab)?.key ?? "overview";
+  const welcome = sp.welcome === "1";
+  const status = tab === "overview" ? await itemDataStatus(item) : null;
 
   return (
     <div>
@@ -50,7 +54,7 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
             <Badge>{GROUP_TAGS[item.group_tag as keyof typeof GROUP_TAGS]}</Badge>
           </div>
           <p className="mt-0.5 truncate text-sm text-muted">
-            {item.road_address ?? item.jibun_address} · {formatArea(item.area_m2 ?? item.land_area_m2)}
+            {item.road_address ?? item.jibun_address} · {formatArea(item.area_m2 ?? item.land_area_m2, unit)}
             {item.floor ? ` · ${item.floor}층` : ""}
           </p>
         </div>
@@ -59,6 +63,8 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
           <span className="hidden sm:inline">수정</span>
         </LinkButton>
       </div>
+
+      {status ? <DataStatusCard item={item} st={status} welcome={welcome} /> : null}
 
       <Tabs active={tab} items={TABS.map((t) => ({ ...t, href: `/items/${item.id}?tab=${t.key}` }))} />
 
@@ -69,11 +75,6 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
       {tab === "news" ? <NewsTab item={item} /> : null}
       {tab === "analysis" ? <AnalysisTab item={item} /> : null}
       {tab === "notes" ? <NotesTab item={item} /> : null}
-      {!item.complex_id && PROPERTY_TYPES[item.property_type].hasComplex ? (
-        <Card className="mt-4 p-4 text-sm text-muted">
-          단지가 아직 연결되지 않았습니다. 실거래 수집(ETL) 후 자동으로 연결됩니다.
-        </Card>
-      ) : null}
     </div>
   );
 }

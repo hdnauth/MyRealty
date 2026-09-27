@@ -5,12 +5,13 @@ import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { GROUP_TAGS } from "@/lib/property";
 import { listItems } from "@/lib/queries/items";
+import { getAreaUnit } from "@/lib/area-unit";
 
 export const metadata: Metadata = { title: "관심 부동산" };
 
 export default async function ItemsPage() {
   const uid = await sessionUserId();
-  const [, items] = await Promise.all([requireUser(), listItems(uid)]);
+  const [, items, unit] = await Promise.all([requireUser(), listItems(uid), getAreaUnit()]);
   const groups = Object.entries(GROUP_TAGS)
     .map(([k, label]) => ({ k, label, items: items.filter((i) => i.group_tag === k) }))
     .filter((g) => g.items.length);
@@ -42,7 +43,7 @@ export default async function ItemsPage() {
               </h2>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 {g.items.map((i) => (
-                  <ItemCard key={i.id} item={i} />
+                  <ItemCard key={i.id} item={i} unit={unit} />
                 ))}
               </div>
             </section>

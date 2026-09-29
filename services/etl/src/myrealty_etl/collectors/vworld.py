@@ -75,26 +75,59 @@ def parse_prices(rows: list[dict], price_key: str) -> list[dict]:
     return sorted(out.values(), key=lambda x: x["year"])
 
 
+_legacy_cache: dict[str, str | None] = {}
+
+
+def _legacy(pnu: str, conn) -> str | None:
+    """개편 지역(전남광주통합특별시 등) 새 코드 PNU 의 옛 코드 PNU. 시군구 이름은 regions 에서 찾는다."""
+    from ..codes import LEGACY_SGG_BY_NAME, legacy_pnu
+
+    sgg = pnu[:5]
+    if sgg not in _legacy_cache:
+        _legacy_cache[sgg] = None
+        if conn is not None:
+            row = conn.execute(
+                "select sido, sigungu from regions where lawd_cd = %s or (substr(lawd_cd, 1, 5) = %s and sido = any(%s)) "
+                "order by level limit 1",
+                (f"{sgg}00000", sgg, list(LEGACY_SGG_BY_NAME)),
+            ).fetchone()
+            if row:
+                old = legacy_pnu(f"{sgg}{'0' * 14}", row["sido"], row["sigungu"])
+                _legacy_cache[sgg] = old[:5] if old else None
+    old_sgg = _legacy_cache[sgg]
+    return f"{old_sgg}{pnu[5:]}" if old_sgg else None
+
+
+def _rows(op: str, key: str, conn, pnu: str, **params) -> list[dict]:
+    """PNU 로 조회하고, 비어 있으면 옛 코드 PNU 로 한 번 더(행정구역 개편 지역)."""
+    rows = _get(op, key, conn, pnu=pnu, **params)
+    if not rows:
+        old = _legacy(pnu, conn)
+        if old:
+            rows = _get(op, key, conn, pnu=old, **params)
+    return rows
+
+
 def land_characteristics(pnu: str, conn=None) -> dict | None:
-    return parse_land_characteristics(_get("getLandCharacteristics", "landCharacteristicss", conn, pnu=pnu))
+    return parse_land_characteristics(_rows("getLandCharacteristics", "landCharacteristicss", conn, pnu))
 
 
 def land_uses(pnu: str, conn=None) -> list[dict]:
-    return parse_land_uses(_get("getLandUseAttr", "landUses", conn, pnu=pnu))
+    return parse_land_uses(_rows("getLandUseAttr", "landUses", conn, pnu))
 
 
 def land_prices(pnu: str, conn=None) -> list[dict]:
-    return parse_prices(_get("getIndvdLandPriceAttr", "indvdLandPrices", conn, pnu=pnu), "pblntfPclnd")
+    return parse_prices(_rows("getIndvdLandPriceAttr", "indvdLandPrices", conn, pnu), "pblntfPclnd")
 
 
 def apt_prices(pnu: str, dong: str | None = None, ho: str | None = None, conn=None) -> list[dict]:
-    params = {"pnu": pnu}
+    params = {}
     if dong:
         params["dongNm"] = dong
     if ho:
         params["hoNm"] = ho
-    return parse_prices(_get("getApartHousingPriceAttr", "apartHousingPrices", conn, **params), "pblntfPc")
+    return parse_prices(_rows("getApartHousingPriceAttr", "apartHousingPrices", conn, pnu, **params), "pblntfPc")
 
 
 def house_prices(pnu: str, conn=None) -> list[dict]:
-    return parse_prices(_get("getIndvdHousingPriceAttr", "indvdHousingPrices", conn, pnu=pnu), "housePc")
+    return parse_prices(_rows("getIndvdHousingPriceAttr", "indvdHousingPrices", conn, pnu), "housePc")

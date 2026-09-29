@@ -62,7 +62,7 @@ export function buildTools(userId: string) {
           itemAttrs(it),
           sql`select as_of::text, estimate, low, high, method, confidence from valuations where watch_item_id = ${it.id} order by as_of desc limit 6`,
         ]);
-        const s = summarize(points);
+        const s = summarize(points, new Date(), { perArea: !it.complex_id });
         return json({
           unit: "금액 만원(공시가격은 원)",
           item: { ...it, loans: it.loans, lease: it.lease },

@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "../db";
 import { env } from "../env";
+import { legacyPnu } from "../legacy-codes";
 
 /** 브이월드 공통 파라미터(서비스 URL 을 등록한 키는 domain 을 함께 보내야 한다) */
 function withKey(params: Record<string, string>) {
@@ -9,11 +10,32 @@ function withKey(params: Record<string, string>) {
   return q;
 }
 
-/** 토지특성(지목·면적). ETL 이 모은 parcels 가 있으면 그 값을 쓴다 */
-export async function landCharacteristics(pnu: string): Promise<{ jimok: string | null; area: number | null } | null> {
+/** 토지특성(지목·면적). ETL 이 모은 parcels 가 있으면 그 값을 쓴다(지목이 빈 행은 예전 실패 결과라 다시 받는다) */
+export async function landCharacteristics(
+  pnu: string,
+  region?: { sido?: string | null; sigungu?: string | null },
+): Promise<{ jimok: string | null; area: number | null } | null> {
   const [hit] = await sql<{ jimok: string | null; area_m2: number | null }[]>`select jimok, area_m2 from parcels where pnu = ${pnu}`;
-  if (hit) return { jimok: hit.jimok, area: hit.area_m2 };
+  if (hit?.jimok) return { jimok: hit.jimok, area: hit.area_m2 };
   if (!env.vworldKey) return null;
+  // 행정구역 개편 지역은 브이월드가 옛 코드로만 답한다
+  const r = (await fetchLandCharacteristics(pnu)) ?? (await legacyLookup(pnu, region));
+  return r;
+}
+
+async function legacyLookup(pnu: string, region?: { sido?: string | null; sigungu?: string | null }) {
+  let { sido, sigungu } = region ?? {};
+  if (!sido || !sigungu) {
+    const [row] = await sql<{ sido: string | null; sigungu: string | null }[]>`
+      select sido, sigungu from regions where lawd_cd = ${`${pnu.slice(0, 5)}00000`}`;
+    sido ||= row?.sido;
+    sigungu ||= row?.sigungu;
+  }
+  const old = legacyPnu(pnu, sido, sigungu);
+  return old ? fetchLandCharacteristics(old) : null;
+}
+
+async function fetchLandCharacteristics(pnu: string): Promise<{ jimok: string | null; area: number | null } | null> {
   const res = await fetch(
     `https://api.vworld.kr/ned/data/getLandCharacteristics?${withKey({ pnu, format: "json", numOfRows: "10", pageNo: "1" })}`,
     { cache: "no-store", signal: AbortSignal.timeout(8_000) },

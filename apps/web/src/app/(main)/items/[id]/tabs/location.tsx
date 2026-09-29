@@ -87,8 +87,8 @@ export async function LocationTab({ item }: { item: WatchItem }) {
             />
             <Stat
               label="용적률 여유"
-              value={dev.far ? `${dev.far.headroom > 0 ? "+" : ""}${dev.far.headroom}%p` : "-"}
-              sub={dev.far ? <span className="text-muted">현재 {dev.far.current}% / 상한 {dev.far.cap}%</span> : <span className="text-muted">건축물대장·용도지역 필요</span>}
+              value={dev.far ? `${dev.far.headroom > 0 ? "+" : ""}${Math.round(dev.far.headroom)}%p` : "-"}
+              sub={dev.far ? <span className="text-muted">현재 {Math.round(dev.far.current)}% / 상한 {dev.far.cap}%(서울 조례 기준 참고)</span> : <span className="text-muted">건축물대장·용도지역 필요</span>}
             />
           </div>
           {dev.zones.length ? (

@@ -176,7 +176,7 @@ def news_step(conn, item: dict, today: date) -> dict:
         s["classify"] = classify_pending(conn, mode="sync", limit=15, item_id=item["id"])
     except Exception as e:  # 분류는 다음 매일 수집 때 다시 시도
         log.warning("뉴스 분류 실패: %s", e)
-        s["classify"] = {"error": repr(e)}
+        s["classify"] = {"error": explain_error(e)}
     return s
 
 

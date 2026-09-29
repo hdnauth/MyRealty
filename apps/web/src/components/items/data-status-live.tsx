@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Card, CardHeader } from "@/components/ui";
-import { COLLECT_STEPS, type CollectRun, type CollectStepKey, finishedSteps, isActive, stepNote } from "@/lib/collect-steps";
+import { COLLECT_STEPS, type CollectRun, type CollectStepKey, errorNote, finishedSteps, isActive, stepNote } from "@/lib/collect-steps";
 
 export type StatusRow = {
   ok: boolean;
@@ -107,7 +107,7 @@ export function DataStatusLive({
     : !pending.length
       ? "필요한 정보가 모두 준비됐습니다."
       : run?.status === "error" && !done
-        ? `바로 불러오기에 실패했습니다${run.error ? `: ${run.error}` : ""}. 매일 아침(06시 전후) 수집 때 다시 채워집니다.`
+        ? `바로 불러오기에 실패했습니다${run.error ? `: ${errorNote(run.error)}` : ""}. 매일 아침(06시 전후) 수집 때 다시 채워집니다.`
         : ended && Object.values(run.steps).some((x) => x?.status === "error")
           ? "불러오기를 마쳤지만 일부 항목은 호출이 실패했습니다(아래 사유). 키를 고친 뒤 다시 불러오거나, 매일 수집 때 다시 시도합니다."
           : ended

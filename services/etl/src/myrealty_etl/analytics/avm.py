@@ -60,7 +60,17 @@ def floor_bucket(f: int | None) -> str:
 
 
 def value_complex(conn, item: dict, today: date) -> dict | None:
-    area = float(item["area_m2"] or 84)
+    area = float(item["area_m2"] or 0)
+    guessed = not area
+    if guessed:
+        # 평형을 고르지 않았으면 84㎡ 대신 이 단지에서 가장 많이 거래된 평형(신뢰도는 한 단계 낮춘다)
+        row = conn.execute(
+            """select round(area_m2) as a from transactions
+               where complex_id = %s and deal_kind = 'sale' and not is_canceled and deal_date >= %s
+               group by 1 order by count(*) desc limit 1""",
+            (item["complex_id"], today - relativedelta(months=24)),
+        ).fetchone()
+        area = float(row["a"]) if row else 84.0
     idx = index_map(conn, item["sgg_cd"])
     rows = conn.execute(
         """select id, deal_date, price, floor, area_m2 from transactions
@@ -85,8 +95,11 @@ def value_complex(conn, item: dict, today: date) -> dict | None:
         est = weighted_quantile(adj, weights, 0.5)
         lo, hi = weighted_quantile(adj, weights, 0.1), weighted_quantile(adj, weights, 0.9)
         lo, hi = min(lo, est * 0.97), max(hi, est * 1.03)
-        return {"estimate": est, "low": lo, "high": hi, "method": "same_complex",
-                "confidence": "high" if len(adj) >= 8 else "medium", "comps": comps[-12:]}
+        conf = "high" if len(adj) >= 8 else "medium"
+        if guessed:
+            conf = "medium" if conf == "high" else "low"
+        return {"estimate": est, "low": lo, "high": hi, "method": "same_complex:guessed_area" if guessed else "same_complex",
+                "confidence": conf, "comps": comps[-12:]}
     return value_neighbors(conn, item, today, idx, area)
 
 
@@ -163,23 +176,40 @@ def value_hedonic(conn, item: dict, today: date) -> dict | None:
 
 
 def value_land(conn, item: dict, today: date) -> dict | None:
+    """토지·임야: 비슷한 크기(1/5~5배)·같은 지목(임야) 거래의 ㎡당 중위 × 내 면적.
+
+    필지가 클수록 ㎡당 가격이 낮아(규모 할인) 크기를 무시하면 큰 임야가 몇 배로 부풀려진다. 같은 리 → 같은 읍면 →
+    시군구 순으로 넓혀 3건 이상을 찾고, 끝내 없으면 추정하지 않는다(숫자를 지어내지 않도록).
+    """
     area = float(item.get("land_area_m2") or item.get("area_m2") or 0)
     if not area:
         return None
-    rows = conn.execute(
-        """select id, deal_date, price, area_m2, jimok from transactions
-           where property_type = 'land' and deal_kind = 'sale' and not is_canceled and area_m2 > 0
-             and deal_date >= %s and deal_date <= %s and (lawd_cd = %s or (%s::text is null and sgg_cd = %s))
-             and (%s = false or jimok = '임야')""",
-        (today - relativedelta(years=3), today, item.get("lawd_cd"), item.get("lawd_cd"), item["sgg_cd"],
-         item["property_type"] == "forest"),
-    ).fetchall()
+    lawd = item.get("lawd_cd") or ""
+    scopes = [("리·동", "lawd_cd = %(lawd)s", lawd), ("읍면동", "substr(lawd_cd, 1, 8) = %(lawd)s", lawd[:8]),
+              ("시군구", "sgg_cd = %(lawd)s", item["sgg_cd"])]
+    rows: list = []
+    basis = ""
+    for label, cond, val in scopes:
+        if not val:
+            continue
+        rows = conn.execute(
+            f"""select id, deal_date, price, area_m2, jimok from transactions
+               where property_type = 'land' and deal_kind = 'sale' and not is_canceled and area_m2 > 0
+                 and deal_date >= %(since)s and deal_date <= %(today)s and {cond}
+                 and area_m2 between %(a0)s and %(a1)s
+                 and (%(forest)s = false or jimok = '임야')""",
+            {"since": today - relativedelta(years=3), "today": today, "lawd": val, "a0": area / 5, "a1": area * 5,
+             "forest": item["property_type"] == "forest"},
+        ).fetchall()
+        if len(rows) >= 3:
+            basis = label
+            break
     if len(rows) < 3:
         return None
     unit = [r["price"] / float(r["area_m2"]) for r in rows]
     est = float(np.median(unit)) * area
     return {"estimate": est, "low": float(np.percentile(unit, 25)) * area, "high": float(np.percentile(unit, 75)) * area,
-            "method": "land_unit_median", "confidence": "low",
+            "method": f"land_unit_median:{basis}", "confidence": "low",
             "comps": [{"id": r["id"], "date": str(r["deal_date"]), "price": r["price"], "area_m2": float(r["area_m2"])} for r in rows[-10:]]}
 
 

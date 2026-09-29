@@ -34,9 +34,13 @@ export type InspectResult = {
 
 const HOUSING = /공동주택|아파트|연립|다세대|오피스텔/;
 
-/** 주 건물(연면적이 가장 큰 표제부) */
+/**
+ * 주 건물: 세대가 있는 표제부 중 연면적이 가장 큰 것(없으면 전체에서). 아파트 단지는 지하주차장이
+ * 용도 '공동주택'에 연면적도 가장 커서 연면적만 보면 "지하주차장"이 대표 용도로 나온다.
+ */
 function mainTitle(titles: TitleRow[]) {
-  return titles.reduce<TitleRow | null>((a, b) => (!a || (b.total_area ?? 0) > (a.total_area ?? 0) ? b : a), null);
+  const homes = titles.filter((t) => (t.households ?? 0) > 0);
+  return (homes.length ? homes : titles).reduce<TitleRow | null>((a, b) => (!a || (b.total_area ?? 0) > (a.total_area ?? 0) ? b : a), null);
 }
 
 /**
@@ -119,7 +123,7 @@ export async function GET(req: NextRequest) {
   let land: InspectResult["land"] = null;
   if (pnu && (!suggestedType || suggestedType === "house") && !(titles.length === 0 && jusoApt)) {
     try {
-      land = await landCharacteristics(pnu);
+      land = await landCharacteristics(pnu, { sido: sp.get("sido"), sigungu: sp.get("sggName") });
     } catch (e) {
       notes.push(`토지특성 조회 실패: ${e instanceof Error ? e.message : String(e)}`);
     }

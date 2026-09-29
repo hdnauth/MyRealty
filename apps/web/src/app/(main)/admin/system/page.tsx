@@ -1,3 +1,4 @@
+import { redactSecrets } from "@/lib/redact";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
@@ -145,7 +146,7 @@ export default async function AdminSystem(props: PageProps<"/admin/system">) {
             <li key={j.job} className="flex items-center justify-between gap-2 py-2">
               <span className="min-w-0">
                 <span className="font-mono text-xs">{j.job}</span>
-                <span className="block truncate text-xs text-muted">{j.detail ? JSON.stringify(j.detail).slice(0, 120) : ""}</span>
+                <span className="block truncate text-xs text-muted">{j.detail ? redactSecrets(JSON.stringify(j.detail)).slice(0, 120) : ""}</span>
               </span>
               <span className={`shrink-0 text-xs ${j.status === "ok" ? "text-ok" : j.status === "error" ? "text-up" : "text-muted"}`}>
                 {j.status} · {formatDate(j.started_at)}

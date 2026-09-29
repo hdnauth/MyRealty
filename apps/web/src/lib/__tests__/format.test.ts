@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatManwon, formatPct, parseManwon, perPyeong } from "../format";
+import { formatArea, formatManwon, formatPct, parseManwon, perPyeong } from "../format";
 import { makePnu } from "../property";
 import { buildKeywords } from "../keywords";
 
@@ -112,5 +112,12 @@ describe("safeHref", () => {
     expect(safeHref("/items/1")).toBe("/items/1");
     expect(safeHref("javascript:alert(1)")).toBeNull();
     expect(safeHref("//evil.com")).toBeNull();
+  });
+});
+
+describe("formatArea 큰 토지", () => {
+  it("1,000㎡ 이상은 소수점 없이 천 단위 구분", () => {
+    expect(formatArea(123106)).toBe("123,106㎡ (37,240평)");
+    expect(formatArea(84.93)).toBe("84.9㎡ (25.7평)");
   });
 });

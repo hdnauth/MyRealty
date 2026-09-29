@@ -22,6 +22,8 @@ export type AddressCandidate = {
   buildingName: string | null;
   isApartment: boolean;
   complexId: number | null;
+  /** 연결된 수집 단지 이름(실거래 표기, 예: 자연앤자이3단지) — 같은 이름 단지가 여럿일 때 구분용 */
+  complexName?: string | null;
   complexType: string | null;
   /** 도로명주소의 상세건물명(주거동만) */
   dongs: string[];
@@ -129,6 +131,7 @@ export async function GET(req: NextRequest) {
       const c = hits.find((h) => h.sgg_cd === r.sggCd && h.jibun === r.jibun && (!h.umd_nm || h.umd_nm === lastToken(r.emdName)));
       if (!c) continue;
       r.complexId = c.id;
+      r.complexName = c.name;
       r.complexType = c.property_type;
       r.buildingName = r.buildingName || c.name;
       usedLocal.add(c.id);
@@ -162,6 +165,7 @@ export async function GET(req: NextRequest) {
       buildingName: c.name,
       isApartment: c.property_type === "apt",
       complexId: c.id,
+      complexName: c.name,
       complexType: c.property_type,
       dongs: [],
     });

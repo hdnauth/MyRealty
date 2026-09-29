@@ -244,3 +244,16 @@ export async function toggleChecklistAction(itemId: string, label: string, done:
   else await sql`insert into notes (user_id, watch_item_id, body, checklist) values (${user.id}, ${itemId}, '', ${sql.json(next)})`;
   refresh();
 }
+
+/** 개요의 '평형 고르기': 단지형 부동산의 전용면적만 바꾼다. 예전 평형 기준 추정 시세는 지우고 다음 계산을 기다린다 */
+export async function setItemAreaAction(itemId: string, area: number) {
+  const user = await requireUser();
+  if (!(area > 5 && area < 1000)) return;
+  const [row] = await sql<{ id: string }[]>`
+    update watch_items set area_m2 = ${area}, updated_at = now()
+    where id = ${itemId} and user_id = ${user.id} and complex_id is not null
+    returning id`;
+  if (!row) return;
+  await sql`delete from valuations where watch_item_id = ${itemId}`;
+  refresh();
+}

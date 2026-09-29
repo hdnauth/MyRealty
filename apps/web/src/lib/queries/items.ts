@@ -126,13 +126,13 @@ export async function itemTransactions(item: WatchItem, years = 10): Promise<TxP
   }
   const txType = PROPERTY_TYPES[item.property_type].tx;
   if (!item.lawd_cd && !item.sgg_cd) return [];
-  const area = item.property_type === "land" || item.property_type === "forest" ? item.land_area_m2 ?? item.area_m2 : item.area_m2;
+  const { areaRange } = similarCriteria(item);
   return sql<TxPoint[]>`
     select ${TX_COLUMNS} from transactions t
     where t.property_type = ${txType} and t.deal_date >= ${since}
       and ${item.lawd_cd ? sql`t.lawd_cd = ${item.lawd_cd}` : sql`t.sgg_cd = ${item.sgg_cd}`}
       and (${item.property_type !== "forest"} or t.jimok = '임야')
-      and (${area}::numeric is null or t.area_m2 between ${area}::numeric * 0.6 and ${area}::numeric * 1.4)
+      ${areaRange ? sql`and coalesce(t.area_m2, t.land_area_m2) between ${areaRange[0]} and ${areaRange[1]}` : sql``}
     order by t.deal_date`;
 }
 
@@ -142,8 +142,12 @@ export type NearbyTx = TxPoint & { dist_m: number; complex_id: number | null; ln
 export function similarCriteria(item: WatchItem) {
   const isLand = item.property_type === "land" || item.property_type === "forest";
   const area = isLand ? (item.land_area_m2 ?? item.area_m2) : item.area_m2;
-  const tol = isLand ? 0.4 : 0.2;
-  const areaRange: [number, number] | null = area ? [Math.floor(Number(area) * (1 - tol)), Math.ceil(Number(area) * (1 + tol))] : null;
+  // 토지는 ㎡당 가격으로 비교하고 필지 크기 편차가 커서(수백㎡~수만㎡) 1/5~5배로 넓게, 건물은 ±20%
+  const areaRange: [number, number] | null = !area
+    ? null
+    : isLand
+      ? [Math.floor(Number(area) / 5), Math.ceil(Number(area) * 5)]
+      : [Math.floor(Number(area) * 0.8), Math.ceil(Number(area) * 1.2)];
   const yearRange: [number, number] | null = item.complex_build_year ? [item.complex_build_year - 10, item.complex_build_year + 10] : null;
   return { areaRange, yearRange };
 }
@@ -162,7 +166,9 @@ export async function nearbyTransactions(item: WatchItem, opts: { radius?: numbe
       and t.deal_date >= current_date - ${`${months} months`}::interval
       and t.geom is not null
       and ST_DWithin(t.geom::geography, ST_SetSRID(ST_MakePoint(${item.lng}, ${item.lat}), 4326)::geography, ${radius})
-      and (t.complex_id is distinct from ${item.complex_id})
+      -- 내 단지 거래만 뺀다. 단지가 없는 부동산(토지·단독 등)에 'complex_id is distinct from null' 을 쓰면
+      -- 단지 없는 거래(NULL)가 전부 빠져 주변 거래가 항상 0건이 된다
+      and (${item.complex_id}::bigint is null or t.complex_id is distinct from ${item.complex_id}::bigint)
       and (${item.property_type !== "forest"} or t.jimok = '임야')
       ${areaRange ? sql`and coalesce(t.area_m2, t.land_area_m2) between ${areaRange[0]} and ${areaRange[1]}` : sql``}
       ${yearRange ? sql`and (t.build_year is null or t.build_year between ${yearRange[0]} and ${yearRange[1]})` : sql``}
@@ -200,8 +206,11 @@ function monthsAgo(n: number, from = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
-/** 거래 목록에서 요약 통계(최근가, 신고가, 1년 범위, 전세가율, 1년 변화율) */
-export function summarize(points: TxPoint[], now = new Date()): ItemSummary {
+/**
+ * 거래 목록에서 요약 통계(최근가, 신고가, 1년 범위, 전세가율, 1년 변화율).
+ * perArea: 단지가 없는 유형(토지·단독·상가 등) — 거래마다 면적이 달라 1년 변화는 ㎡당 가격으로, 창마다 3건 이상일 때만
+ */
+export function summarize(points: TxPoint[], now = new Date(), opts: { perArea?: boolean } = {}): ItemSummary {
   const valid = points.filter((p) => !p.is_canceled && p.price);
   const sales = valid.filter((p) => p.deal_kind === "sale");
   const jeonse = valid.filter((p) => p.deal_kind === "jeonse");
@@ -213,9 +222,23 @@ export function summarize(points: TxPoint[], now = new Date()): ItemSummary {
   const sales1y = sales.filter((p) => p.deal_date >= y1).map((p) => p.price);
   const saleMedian6m = median(sales.filter((p) => p.deal_date >= m6).map((p) => p.price));
   const jeonseMedian6m = median(jeonse.filter((p) => p.deal_date >= m6).map((p) => p.price));
-  // 1년 변화율: 최근 3개월 중위 vs 12~15개월 전 중위
-  const recent = median(sales.filter((p) => p.deal_date >= m3).map((p) => p.price));
-  const prior = median(sales.filter((p) => p.deal_date >= monthsAgo(15, now) && p.deal_date < y1).map((p) => p.price));
+  // 1년 변화율: 최근 3개월 중위 vs 12~15개월 전 중위. 거래가 드문 단지는 3개월 창이 비기 쉬워
+  // 둘 중 하나라도 비면 6개월 창(최근 6개월 vs 12~18개월 전, 주변 탭 '상대 성과'와 같은 기준)으로 넓힌다
+  const minN = opts.perArea ? 3 : 1;
+  const value = (p: TxPoint) => (opts.perArea ? (p.area_m2 ? p.price / Number(p.area_m2) : null) : p.price);
+  const windowMedian = (fromM: number, toM = 0) => {
+    const vs = sales
+      .filter((p) => p.deal_date >= monthsAgo(fromM, now) && (toM === 0 || p.deal_date < monthsAgo(toM, now)))
+      .map(value)
+      .filter((v): v is number => v !== null);
+    return vs.length >= minN ? median(vs) : null;
+  };
+  let recent = windowMedian(3);
+  let prior = windowMedian(15, 12);
+  if (!recent || !prior) {
+    recent = windowMedian(6);
+    prior = windowMedian(18, 12);
+  }
   return {
     lastSale,
     high,

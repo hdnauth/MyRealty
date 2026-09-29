@@ -98,3 +98,33 @@ def test_rejects_non_http_links():
     it = naver_news.parse_item({"title": "t", "originallink": "javascript:alert(1)", "link": "https://n.news.naver.com/a"})
     assert it["url"] == "https://n.news.naver.com/a"
     assert naver_news.parse_item({"title": "t", "originallink": "javascript:x"})["url"] is None
+
+
+def test_naver_endpoint_order_by_key_format():
+    from myrealty_etl.collectors import naver_news
+
+    # 네이버 클라우드 API HUB 형식(ID 10자·Secret 40자) → API HUB 먼저
+    assert naver_news.endpoints("a" * 10, "b" * 40)[0][0] == "apihub"
+    # 개발자센터 형식(ID 20자·Secret 10자) → 개발자센터 먼저
+    assert naver_news.endpoints("a" * 20, "b" * 10)[0][0] == "developers"
+
+
+def test_naver_request_falls_back_on_auth_error():
+    import httpx
+
+    from myrealty_etl.collectors import naver_news
+
+    calls = []
+
+    def fake_get(url, params=None, headers=None):
+        calls.append(url)
+        req = httpx.Request("GET", url)
+        if url == naver_news.APIHUB_URL:
+            return httpx.Response(401, request=req, json={"error": "auth"})
+        return httpx.Response(200, request=req, json={"items": [{"title": "t", "link": "https://n.news/1"}]})
+
+    naver_news._working = None
+    data = naver_news.request("부동산", 1, "a" * 10, "b" * 40, get=fake_get)
+    assert calls == [naver_news.APIHUB_URL, naver_news.URL]
+    assert data["items"][0]["title"] == "t"
+    naver_news._working = None

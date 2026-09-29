@@ -35,7 +35,22 @@ function migrationFiles(root: string) {
   }
 }
 
+/**
+ * 개발 서버(`pnpm dev`)를 같은 네트워크의 휴대폰·다른 PC에서 http://192.168.x.x:3000 으로 열 때 필요하다.
+ * Next 16 은 localhost 가 아닌 주소에서 오는 개발용 JS·HMR 요청을 막아, 화면은 뜨지만 버튼(로그인 코드 받기 등)이
+ * 동작하지 않는다. 사설망 대역과 *.local 을 허용하고, 그 밖의 주소는 DEV_ORIGINS(쉼표 구분 호스트명)로 더한다.
+ * 개발 서버에만 적용된다(배포 빌드와 무관).
+ */
+const devOrigins = [
+  "192.168.*.*",
+  "10.*.*.*",
+  ...Array.from({ length: 16 }, (_, i) => `172.${16 + i}.*.*`),
+  "*.local",
+  ...(process.env.DEV_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+];
+
 const nextConfig: NextConfig = {
+  allowedDevOrigins: devOrigins,
   serverExternalPackages: ["postgres", "nodemailer", "web-push"],
   poweredByHeader: false,
   devIndicators: false,

@@ -82,10 +82,12 @@ export async function GET(req: NextRequest) {
   let note: string | null = null;
   let basis = hasComplex ? "같은 단지" : `같은 동네(${umd || "읍면동"})`;
 
-  // 비슷한 거래(단지가 없는 유형): 같은 읍면동, 면적 ±40%, 임야는 지목 임야, 토지는 같은 지목 우선
-  const similarArea = (a: number | null) => !area || (a !== null && a >= area * 0.6 && a <= area * 1.4);
+  // 비슷한 거래(단지가 없는 유형): 같은 읍면동, 면적 건물 ±40%·토지 1/5~5배(상세 화면 similarCriteria 와 같은 기준 —
+  // 토지는 ㎡당 가격으로 비교하고 필지 크기 편차가 커서 넓게), 임야는 지목 임야, 토지는 같은 지목 우선
+  const [lo, hi] = area ? (isLand ? [area / 5, area * 5] : [area * 0.6, area * 1.4]) : [0, Infinity];
+  const similarArea = (a: number | null) => !area || (a !== null && a >= lo && a <= hi);
   if (!hasComplex) {
-    basis += `${area ? ` · 면적 ${Math.round(area * 0.6)}~${Math.round(area * 1.4)}㎡` : ""}${type === "forest" ? " · 임야" : jimok && isLand ? ` · ${jimok}` : ""}`;
+    basis += `${area ? ` · 면적 ${Math.round(lo).toLocaleString()}~${Math.round(hi).toLocaleString()}㎡` : ""}${type === "forest" ? " · 임야" : jimok && isLand ? ` · ${jimok}` : ""}`;
   }
 
   if (complexId) {

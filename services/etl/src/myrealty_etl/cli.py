@@ -93,6 +93,7 @@ def _item_args(p):
 
 @command("item", "관심 부동산 하나만 바로 수집(등록 직후 개별 수집)", _item_args)
 def _item(ns):
+    from .http import explain_error
     from .jobs.item_job import collect_item
 
     try:
@@ -103,7 +104,7 @@ def _item(ns):
             with connect() as conn:
                 conn.execute(
                     "update item_collect_runs set status = 'error', error = %s, finished_at = now() where id = %s and status <> 'done'",
-                    (repr(e)[:500], ns.run),
+                    (explain_error(e)[:500], ns.run),
                 )
                 conn.commit()
         raise
@@ -192,7 +193,9 @@ def _daily(ns):
             results[name] = _with_job(name, func)
         except Exception as e:  # 한 단계 실패가 전체를 막지 않도록
             logging.getLogger("daily").exception("%s 실패", name)
-            results[name] = {"error": repr(e)}
+            from .http import explain_error
+
+            results[name] = {"error": explain_error(e)}
     return results
 
 
@@ -223,8 +226,25 @@ def _allow(ns):
     return {"allowed": ns.email.lower()}
 
 
+class _RedactFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        from .http import redact
+
+        msg = record.getMessage()
+        clean = redact(msg)
+        if record.exc_info and record.exc_info[1] is not None:
+            record.exc_text = redact(logging.Formatter().formatException(record.exc_info))
+        if clean != msg:
+            record.msg, record.args = clean, None
+        return True
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # httpx 는 INFO 로 요청 URL 전체(서비스키 포함)를 찍는다. 오류 메시지에도 URL 이 들어가므로 모든 로그에서 키를 가린다
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    for h in logging.getLogger().handlers:
+        h.addFilter(_RedactFilter())
     parser = argparse.ArgumentParser(prog="myrealty")
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name, (help_, _, add_args) in COMMANDS.items():

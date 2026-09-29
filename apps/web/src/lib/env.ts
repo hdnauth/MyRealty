@@ -5,6 +5,21 @@ function opt(name: string): string | undefined {
   return v && v.length > 0 ? v : undefined;
 }
 
+/**
+ * 공공데이터포털 키: Encoding 키(%2B·%2F·%3D 포함)를 넣었으면 Decoding 키로 바꾼다.
+ * URLSearchParams 가 % 를 다시 인코딩(%252F)해 '등록되지 않은 서비스키'가 되기 때문(ETL config._service_key 와 같은 처리).
+ */
+function serviceKey(name: string): string | undefined {
+  const v = opt(name)?.trim().replace(/^["']|["']$/g, "");
+  if (!v) return undefined;
+  if (!v.includes("%")) return v;
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}
+
 function emailList(name: string): string[] {
   return (opt(name) ?? "")
     .split(/[,;\s]+/)
@@ -28,7 +43,7 @@ export const env = {
   },
   jusoKey: opt("JUSO_KEY"),
   /** 공공데이터포털 일반 인증키(Decoding) — 부동산 등록 시 건축물대장(용도·동·호·면적) 조회 */
-  dataGoKrKey: opt("DATA_GO_KR_KEY"),
+  dataGoKrKey: serviceKey("DATA_GO_KR_KEY"),
   quotaDataGoKr: Number(opt("QUOTA_DATA_GO_KR") ?? 900),
   /** 브이월드 — 부동산 등록 시 토지특성(지목·면적), 지오코딩 보조, 대체 지도 배경 */
   vworldKey: opt("VWORLD_KEY"),

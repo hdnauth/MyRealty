@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "../db";
 import { lastDoctorRun } from "../keycheck";
+import { redactSecrets } from "../redact";
 
 /**
  * 화면이 비어 있을 때 '왜 비었는지'를 한두 줄로: GitHub Actions 키 점검(doctor) 결과와 마지막 수집 기록에서 찾는다.
@@ -22,7 +23,7 @@ export async function pipelineHints(kind: "trades" | "macro"): Promise<string[]>
   if (!last) {
     out.push("아직 수집이 한 번도 돌지 않았습니다. 매일 05:50 수집을 기다리거나 GitHub › Actions › ETL daily 를 직접 실행하세요.");
   } else if (kind === "trades" && last.detail && typeof last.detail.error === "string") {
-    out.push(`마지막 실거래 수집(${last.started_at.slice(0, 16)}) 실패: ${last.detail.error.slice(0, 200)}`);
+    out.push(`마지막 실거래 수집(${last.started_at.slice(0, 16)}) 실패: ${redactSecrets(last.detail.error).slice(0, 200)}`);
   } else if (kind === "macro" && last.detail) {
     const skipped = Object.values(last.detail).filter((v): v is string => typeof v === "string" && v.startsWith("skipped"));
     if (skipped.length && !out.length) {

@@ -40,17 +40,49 @@ export type ItemArticle = {
   ai_summary: string | null;
   description: string | null;
   status: string;
+  /** 이 기사를 찾은 검색 키워드 */
+  query: string | null;
+  /** 제목·요약에 키워드의 핵심어(첫 단어)가 실제로 나오는지 — 네이버 검색은 느슨하게 맞춰 무관한 기사가 섞인다 */
+  mentioned: boolean;
+  /** 내 지역 이름이 함께 나오는지 */
+  local: boolean;
 };
 
-export async function itemArticles(itemId: string, minRelevance = 0.5, limit = 50) {
+/**
+ * 부동산 관련 뉴스. AI 분류가 끝난 것은 관련도 기준으로 거르고, 분류 전(또는 AI 키가 없을 때)은
+ * 구체적인 키워드(단지명 → 동 → 시군구 순, keywords 배열 순서)로 찾았고 제목·요약에 실제로 언급된 기사를 앞에 둔다.
+ */
+/** 주소에서 지역 이름 조각(시·구·읍면동, 끝 글자 뺀 형태도): "경기도 수원시 영통구 이의동 1353" → [수원, 영통, 이의동, 이의] */
+export function regionWordsOf(address: string | null): string[] {
+  if (!address) return [];
+  const out = new Set<string>();
+  for (const t of address.replace(/\(.*?\)/g, " ").split(/\s+/).slice(1)) {
+    if (!/^[가-힣]{2,}(시|군|구|읍|면|동|리)$/.test(t)) continue;
+    out.add(t);
+    const stem = t.slice(0, -1);
+    if (stem.length >= 2) out.add(stem);
+  }
+  return [...out];
+}
+
+export async function itemArticles(itemId: string, minRelevance = 0.5, limit = 50, regionWords: string[] = []) {
+  // 내 지역 이름(수원·영통·이의동 등)이 함께 나오는 기사 — 같은 이름의 다른 지역 단지 기사를 뒤로 보낸다
+  const local = regionWords.length
+    ? sql`(a.title || ' ' || coalesce(a.description, '')) ilike any(${regionWords.map((w) => `%${w}%`)})`
+    : sql`false`;
   return sql<ItemArticle[]>`
     select l.id as link_id, a.title, a.url, a.source, a.published_at::text, l.relevance, l.category, l.impact,
-      l.ai_summary, a.description, l.status
-    from article_links l join articles a on a.id = l.article_id
+      l.ai_summary, a.description, l.status, l.query, ${local} as local,
+      coalesce(a.title || ' ' || coalesce(a.description, ''), '') ilike '%' || split_part(coalesce(l.query, ''), ' ', 1) || '%' as mentioned
+    from article_links l join articles a on a.id = l.article_id join watch_items w on w.id = l.watch_item_id
     where l.watch_item_id = ${itemId}
       and (l.status <> 'classified' or l.relevance >= ${minRelevance})
       and a.published_at > now() - interval '90 days'
-    order by (l.status = 'classified') desc, a.published_at desc
+    order by (l.status = 'classified') desc,
+      ${local} desc,
+      (coalesce(a.title || ' ' || coalesce(a.description, ''), '') ilike '%' || split_part(coalesce(l.query, ''), ' ', 1) || '%') desc,
+      coalesce(array_position(w.keywords, l.query), 99),
+      a.published_at desc
     limit ${limit}`;
 }
 

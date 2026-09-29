@@ -85,8 +85,22 @@ export type TitleRow = {
   total_area: number | null;
   plat_area: number | null;
   vl_rat: number | null;
+  floors_below?: number | null;
+  structure?: string | null;
+  bc_rat?: number | null;
+  elevators?: number | null;
+  parking?: number | null;
 };
-export type RecapRow = { bld_nm: string | null; households: number | null; main_buildings: number | null; total_area: number | null; plat_area: number | null };
+export type RecapRow = {
+  bld_nm: string | null;
+  households: number | null;
+  main_buildings: number | null;
+  total_area: number | null;
+  plat_area: number | null;
+  bc_rat?: number | null;
+  vl_rat?: number | null;
+  parking?: number | null;
+};
 
 function parseTitle(it: Raw): TitleRow {
   const apr = s(it.useAprDay);
@@ -102,19 +116,35 @@ function parseTitle(it: Raw): TitleRow {
     total_area: n(it.totArea),
     plat_area: n(it.platArea),
     vl_rat: n(it.vlRat),
+    // ETL(collectors/building.py parse_title)과 같은 필드 — 같은 테이블을 둘이 쓰므로 한쪽이 먼저 저장해도 화면이 비지 않게
+    floors_below: n(it.ugrndFlrCnt),
+    structure: s(it.strctCdNm) || null,
+    bc_rat: n(it.bcRat),
+    elevators: n(it.rideUseElvtCnt),
+    parking: (n(it.indrAutoUtcnt) ?? 0) + (n(it.oudrAutoUtcnt) ?? 0) || null,
   };
 }
 
 /** 표제부·총괄표제부. 30일 안에 받은 게 있으면 DB 값을 쓴다 */
 export async function getTitles(pnu: string): Promise<{ titles: TitleRow[]; recap: RecapRow | null }> {
   const [hit] = await sql<{ titles: TitleRow[]; recap: RecapRow | null }[]>`
-    select titles, recap from building_registers where pnu = ${pnu} and fetched_at > now() - interval '30 days'`;
+    select titles, recap from building_registers where pnu = ${pnu}
+      and fetched_at > now() - case when jsonb_array_length(titles) > 0 then interval '30 days' else interval '1 day' end`;
   if (hit) return hit;
   const [t, r] = await Promise.all([call("getBrTitleInfo", pnu, 1, 100), call("getBrRecapTitleInfo", pnu, 1, 10)]);
   const titles = t.items.map(parseTitle);
   const ri = r.items[0];
   const recap: RecapRow | null = ri
-    ? { bld_nm: s(ri.bldNm) || null, households: n(ri.hhldCnt), main_buildings: n(ri.mainBldCnt), total_area: n(ri.totArea), plat_area: n(ri.platArea) }
+    ? {
+        bld_nm: s(ri.bldNm) || null,
+        households: n(ri.hhldCnt),
+        main_buildings: n(ri.mainBldCnt),
+        total_area: n(ri.totArea),
+        plat_area: n(ri.platArea),
+        bc_rat: n(ri.bcRat),
+        vl_rat: n(ri.vlRat),
+        parking: n(ri.totPkngCnt),
+      }
     : null;
   await sql`insert into building_registers (pnu, titles, recap, fetched_at) values (${pnu}, ${sql.json(titles)}, ${recap ? sql.json(recap) : null}, now())
             on conflict (pnu) do update set titles = excluded.titles, recap = excluded.recap, fetched_at = now()`;

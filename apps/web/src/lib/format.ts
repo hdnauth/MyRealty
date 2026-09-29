@@ -56,8 +56,11 @@ export function isAreaUnit(v: unknown): v is AreaUnit {
 
 export function formatArea(m2: number | null | undefined, unit: AreaUnit = "m2"): string {
   if (!m2) return "-";
-  const a = `${Number(m2).toFixed(1)}㎡`;
-  const p = `${toPyeong(m2)!.toFixed(1)}평`;
+  // 큰 토지(1,000㎡ 이상)는 소수점 없이 천 단위 구분: 123,106㎡ (37,240평)
+  const big = Number(m2) >= 1000;
+  const fmt = (v: number) => (big ? Math.round(v).toLocaleString("ko-KR") : v.toFixed(1));
+  const a = `${fmt(Number(m2))}㎡`;
+  const p = `${fmt(toPyeong(m2)!)}평`;
   return unit === "pyeong" ? `${p} (${a})` : `${a} (${p})`;
 }
 
@@ -131,4 +134,14 @@ export function safeHref(url: string | null | undefined): string | null {
   if (!url) return null;
   if (url.startsWith("/") && !url.startsWith("//")) return url;
   return /^https?:\/\//i.test(url) ? url : null;
+}
+
+/**
+ * 주소에서 앞의 시도·시군구를 뺀 짧은 주소(지번이 남을 때만). 토지·임야처럼 이름이 곧 주소인 부동산의 이름·핀 라벨용.
+ * "전남광주통합특별시 광양시 봉강면 조령리 산 164-13" → "봉강면 조령리 산 164-13"
+ */
+export function shortAddress(addr: string): string {
+  const t = addr.trim().split(/\s+/);
+  while (t.length > 2 && /(특별시|광역시|특별자치시|특별자치도|도|[가-힣]+시|[가-힣]+군|[가-힣]+구)$/.test(t[0]) && /\d/.test(t.slice(1).join(""))) t.shift();
+  return t.join(" ");
 }

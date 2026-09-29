@@ -9,7 +9,7 @@ import type { TradePreview } from "@/app/api/address/trades/route";
 import { MiniMap, type MapKeys } from "@/components/map/mini-map";
 import { DetailFields } from "@/components/items/detail-fields";
 import { Badge, Button, Card, Field, Input, Notice } from "@/components/ui";
-import type { AreaUnit } from "@/lib/format";
+import { type AreaUnit, shortAddress } from "@/lib/format";
 import { defaultRadius, PROPERTY_TYPES, type PropertyType } from "@/lib/property";
 import type { AreaType } from "@/lib/units";
 import { createItemAction, type ItemFormState } from "../actions";
@@ -36,6 +36,8 @@ function candidateBadge(c: AddressCandidate): string {
 function inspectQuery(c: AddressCandidate) {
   return new URLSearchParams({
     sgg: c.sggCd,
+    sido: c.sidoName ?? "",
+    sggName: c.sggName ?? "",
     lawd: c.lawdCd ?? "",
     umd: c.emdName ?? "",
     jibun: c.jibun ?? "",
@@ -115,7 +117,12 @@ export function NewItemForm({ mapKeys, unit }: { mapKeys: MapKeys; unit: AreaUni
   const matched = info?.complex ?? null;
   const name = matched?.name ?? picked?.buildingName ?? info?.building?.name ?? "";
   const pickedArea = area ?? (info?.areaTypes.length === 1 ? info.areaTypes[0].area : null);
-  const defaultLabel = name ? `${name}${pickedArea && !isLand ? ` ${Math.floor(pickedArea)}㎡` : ""}` : "";
+  // 건물명이 없는 필지(토지·임야 등)는 시도·시군구를 뺀 지번 주소 — 전체 주소를 이름으로 쓰면 제목과 주소가 겹친다
+  const defaultLabel = name
+    ? `${name}${pickedArea && !isLand ? ` ${Math.floor(pickedArea)}㎡` : ""}`
+    : picked?.jibunAddr
+      ? shortAddress(picked.jibunAddr)
+      : "";
   const usePicker = !isLand && (PROPERTY_TYPES[type].hasComplex || Boolean(info?.units?.length));
   const hasComplex = PROPERTY_TYPES[type].hasComplex;
 
@@ -205,6 +212,9 @@ export function NewItemForm({ mapKeys, unit }: { mapKeys: MapKeys; unit: AreaUni
                       {r.buildingName ? `${r.buildingName} · ` : ""}
                       {r.roadAddr ?? r.jibunAddr}
                     </span>
+                    {r.complexName && r.complexName !== r.buildingName ? (
+                      <span className="shrink-0 text-xs font-normal text-accent">{r.complexName}</span>
+                    ) : null}
                   </div>
                   <div className="mt-0.5 text-xs text-muted">
                     {r.complexId ? "실거래 수집됨 · " : ""}
@@ -283,6 +293,7 @@ export function NewItemForm({ mapKeys, unit }: { mapKeys: MapKeys; unit: AreaUni
               label={name || "선택한 위치"}
               txType={PROPERTY_TYPES[type].tx}
               selfComplexId={matched?.id ?? picked.complexId ?? null}
+              pnu={info?.pnu ?? null}
               unit={unit}
               height={220}
             />

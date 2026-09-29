@@ -3,16 +3,20 @@ import { NotificationRow } from "@/components/feed/notification-row";
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
 import { formatDate, formatManwon, formatPct, safeHref } from "@/lib/format";
 import { type PresaleModel, presaleVsMarket } from "@/lib/queries/presale";
-import { eventsNear, itemArticles, listNotifications } from "@/lib/queries/feed";
+import { eventsNear, itemArticles, listNotifications, regionWordsOf } from "@/lib/queries/feed";
 import type { WatchItem } from "@/lib/queries/items";
+import { sql } from "@/lib/db";
+import { errorNote } from "@/lib/collect-steps";
+import { aiEnabled } from "@/lib/ai/client";
 
 const EVENT_LABEL: Record<string, string> = { subscription: "청약", move_in: "입주", development: "개발", regulation: "규제" };
 
 export async function NewsTab({ item }: { item: WatchItem }) {
-  const [articles, events, notes] = await Promise.all([
-    itemArticles(item.id),
+  const [articles, events, notes, emptyWhy] = await Promise.all([
+    itemArticles(item.id, 0.5, 50, regionWordsOf(item.jibun_address ?? item.road_address)),
     item.lng !== null && item.lat !== null ? eventsNear(item.lng, item.lat, 5000) : Promise.resolve([]),
     listNotifications(item.user_id, { itemId: item.id, limit: 20 }),
+    newsEmptyReason(item.id),
   ]);
   // 청약 공고 중 주택형별 분양가가 있는 것: 주변 시세와 비교
   const presale = new Map(
@@ -25,14 +29,26 @@ export async function NewsTab({ item }: { item: WatchItem }) {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-2">
-        <CardHeader title="관련 뉴스" sub={`키워드: ${item.keywords.join(", ") || "없음"} · AI 관련도 0.5 이상`} />
+        <CardHeader
+          title="관련 뉴스"
+          sub={`키워드: ${item.keywords.join(", ") || "없음"} · ${aiEnabled() ? "AI 관련도 0.5 이상" : "AI 분류 꺼짐 — 구체적인 키워드·본문 언급 순"}`}
+        />
         {articles.length ? (
           <ul className="divide-y divide-border">
             {articles.map((a) => (
               <li key={a.link_id}>
                 <a href={safeHref(a.url) ?? undefined} target="_blank" rel="noreferrer" className="block px-4 py-3 hover:bg-surface-2">
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
-                    {a.category ? <Badge tone="accent">{a.category}</Badge> : <Badge>분류 대기</Badge>}
+                    {a.category ? (
+                      <Badge tone="accent">{a.category}</Badge>
+                    ) : a.query ? (
+                      <Badge tone={a.mentioned && a.local ? "accent" : "neutral"}>
+                        {a.query}
+                        {a.local ? "" : " · 다른 지역일 수 있음"}
+                      </Badge>
+                    ) : (
+                      <Badge>분류 대기</Badge>
+                    )}
                     {a.impact ? (
                       <Badge tone={a.impact > 0 ? "up" : "down"}>
                         {a.impact > 0 ? "▲ 호재" : "▼ 악재"}
@@ -51,7 +67,7 @@ export async function NewsTab({ item }: { item: WatchItem }) {
             ))}
           </ul>
         ) : (
-          <EmptyState title="관련 뉴스가 없습니다" desc="네이버 검색 API 키를 설정하면 매일 키워드별 뉴스를 모으고 AI가 관련도를 판단합니다." />
+          <EmptyState title="관련 뉴스가 없습니다" desc={emptyWhy} />
         )}
       </Card>
       <div className="space-y-4">
@@ -115,4 +131,18 @@ export async function NewsTab({ item }: { item: WatchItem }) {
       </div>
     </div>
   );
+}
+
+/** 뉴스가 비어 있는 이유: 이 부동산 개별 수집·매일 수집의 마지막 뉴스 단계 결과 */
+async function newsEmptyReason(itemId: string): Promise<string> {
+  const [r] = await sql<{ step: { status?: string; detail?: Record<string, unknown> } | null; job: { status: string; detail: Record<string, unknown> | null } | null }[]>`
+    select
+      (select steps->'news' from item_collect_runs where watch_item_id = ${itemId} and steps ? 'news' order by requested_at desc limit 1) as step,
+      (select jsonb_build_object('status', status, 'detail', detail) from job_runs where job = 'news' order by started_at desc limit 1) as job`;
+  const d = r?.step?.detail ?? r?.job?.detail ?? null;
+  const err = r?.step?.status === "error" || r?.job?.status === "error" ? (d?.error as string | undefined) : undefined;
+  if (err) return `뉴스를 모으지 못했습니다: ${errorNote(err)}`;
+  if (typeof d?.skipped === "string") return `뉴스 수집을 건너뛰었습니다(${d.skipped}). 네이버 개발자센터 검색 API 키를 넣으면 매일 키워드별 뉴스를 모읍니다.`;
+  if (d) return "최근 90일 동안 키워드에 맞는 기사가 없습니다. 키워드는 수정 화면에서 바꿀 수 있습니다.";
+  return "매일 아침 수집 때 키워드별 뉴스를 모으고 AI 가 관련도를 판단합니다.";
 }

@@ -4,7 +4,7 @@ import { NotificationRow } from "@/components/feed/notification-row";
 import { ItemCard } from "@/components/items/item-card";
 import { Card, CardHeader, Change, EmptyState, LinkButton, Stat } from "@/components/ui";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
-import { formatDate, formatManwon } from "@/lib/format";
+import { formatDate, formatManwon, formatNumber } from "@/lib/format";
 import { calendarEntries, listNotifications } from "@/lib/queries/feed";
 import { listItems } from "@/lib/queries/items";
 import { getAreaUnit } from "@/lib/area-unit";
@@ -39,10 +39,12 @@ export default async function HomePage() {
       join lateral (select estimate from valuations where watch_item_id = w.id and as_of <= current_date - 30 order by as_of desc limit 1) v on true
       where w.user_id = ${uid} and w.group_tag = 'owned'`,
     // 지난 7일 새로 신고된 내 단지 거래
-    sql<{ item_id: string; label: string; deal_kind: string; price: number; deal_date: string; floor: number | null; area_m2: number | null }[]>`
-      select w.id as item_id, w.label, t.deal_kind, t.price, t.deal_date::text, t.floor, t.area_m2::float8 as area_m2
+    // 계약일도 최근 60일(신고 기한 30일 + 여유) — 처음 등록해 몇 년치를 한꺼번에 받았을 때 옛 거래가 '새 거래'로 보이지 않게
+    sql<{ item_id: string; label: string; deal_kind: string; price: number; monthly_rent: number | null; deal_date: string; floor: number | null; area_m2: number | null }[]>`
+      select w.id as item_id, w.label, t.deal_kind, t.price, t.monthly_rent, t.deal_date::text, t.floor, t.area_m2::float8 as area_m2
       from watch_items w join transactions t on t.complex_id = w.complex_id and not t.is_canceled
       where w.user_id = ${uid} and w.complex_id is not null and t.collected_at >= now() - interval '7 days'
+        and t.deal_date >= current_date - 60
         and (w.area_m2 is null or abs(t.area_m2 - w.area_m2) <= 3)
       order by t.deal_date desc limit 5`,
   ]);
@@ -118,7 +120,10 @@ export default async function HomePage() {
                 <Link href={`/items/${t.item_id}?tab=price`} className="min-w-0 truncate hover:text-accent">
                   {t.label} <span className="text-muted">· {formatDate(t.deal_date)} · {t.floor ? `${t.floor}층` : ""} {t.deal_kind === "sale" ? "매매" : t.deal_kind === "jeonse" ? "전세" : "월세"}</span>
                 </Link>
-                <b className="tabular shrink-0">{formatManwon(t.price, { short: true })}</b>
+                <b className="tabular shrink-0">
+                  {formatManwon(t.price, { short: true })}
+                  {t.deal_kind === "wolse" && t.monthly_rent ? <span className="font-normal text-muted"> / {formatNumber(t.monthly_rent)}</span> : null}
+                </b>
               </li>
             ))}
           </ul>

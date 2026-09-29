@@ -111,3 +111,36 @@ def to_float(v: str | float | None) -> float | None:
         return float(s)
     except ValueError:
         return None
+
+
+# ───── 행정구역 개편(2026 전남광주통합특별시) 신·구 코드 ─────
+# 공공데이터포털(실거래·건축물대장)은 새 시군구 코드(12xxx)로만, 브이월드(토지특성·공시지가·공동주택가격)는
+# 아직 옛 코드(전라남도 46xxx·광주광역시 29xxx)로만 답한다. 읍면동·리 이하 5자리는 그대로라 앞 5자리만 바꾸면 된다.
+# 새 코드는 시군구 이름으로 옛 코드에 대응시킨다(새 코드 체계를 몰라도 regions 의 이름으로 찾는다).
+LEGACY_SGG_BY_NAME: dict[str, dict[str, str]] = {
+    "전남광주통합특별시": {
+        "목포시": "46110", "여수시": "46130", "순천시": "46150", "나주시": "46170", "광양시": "46230",
+        "담양군": "46710", "곡성군": "46720", "구례군": "46730", "고흥군": "46770", "보성군": "46780",
+        "화순군": "46790", "장흥군": "46800", "강진군": "46810", "해남군": "46820", "영암군": "46830",
+        "무안군": "46840", "함평군": "46860", "영광군": "46870", "장성군": "46880", "완도군": "46890",
+        "진도군": "46900", "신안군": "46910",
+        "동구": "29110", "서구": "29140", "남구": "29155", "북구": "29170", "광산구": "29200",
+    },
+}
+
+
+def legacy_sgg(sido: str | None, sigungu: str | None) -> str | None:
+    """개편된 시도의 시군구 이름 → 옛 시군구 코드(없으면 None)."""
+    table = LEGACY_SGG_BY_NAME.get((sido or "").strip())
+    if not table or not sigungu:
+        return None
+    name = sigungu.strip().split()[-1]
+    return table.get(name)
+
+
+def legacy_pnu(pnu: str | None, sido: str | None, sigungu: str | None) -> str | None:
+    """새 코드 PNU → 옛 코드 PNU(브이월드 조회용). 해당 없으면 None."""
+    if not pnu or len(pnu) != 19:
+        return None
+    old = legacy_sgg(sido, sigungu)
+    return f"{old}{pnu[5:]}" if old and old != pnu[:5] else None

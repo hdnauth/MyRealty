@@ -49,7 +49,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
         it.complex_id ? similarComplexes(it).then((sim) => relativePosition(it, sim.comps)) : Promise.resolve(null),
         itemAttrs(it),
       ]);
-      const s = summarize(txs);
+      const s = summarize(txs, new Date(), { perArea: !it.complex_id });
       // 단위면적당 가격 추이(3개월 이동 중위) — 크기가 다른 부동산도 같은 축에서 비교
       const trend = monthlyRollingMedian(
         txs

@@ -14,6 +14,14 @@ const METHOD: Record<string, string> = {
   hedonic: "지역 헤도닉 회귀",
   land_unit_median: "같은 읍면동 ㎡당 중위",
 };
+
+/** land_unit_median:리·동 처럼 범위가 붙은 방법 이름 */
+function methodLabel(m: string) {
+  const [base, scope] = m.split(":");
+  if (base === "same_complex" && scope === "guessed_area") return "같은 단지 거래 — 평형 미선택이라 가장 많이 거래된 평형 기준";
+  if (base === "land_unit_median") return `비슷한 크기 토지(1/5~5배) ㎡당 중위${scope ? ` · 같은 ${scope}` : ""}`;
+  return METHOD[base] ?? m;
+}
 const CONF: Record<string, string> = { high: "높음", medium: "보통", low: "낮음" };
 
 export async function AnalysisTab({ item }: { item: WatchItem }) {
@@ -44,7 +52,7 @@ export async function AnalysisTab({ item }: { item: WatchItem }) {
               <Stat label="3개월 전 대비" value={prev ? formatPct(v.estimate / prev.estimate - 1) : "-"} />
             </div>
             <p className="mt-3 text-xs text-muted">
-              방법: {METHOD[v.method] ?? v.method} · 기준 {formatDate(v.as_of)}. 참고용 추정치이며 감정평가가 아닙니다.
+              방법: {methodLabel(v.method)} · 기준 {formatDate(v.as_of)}. 참고용 추정치이며 감정평가가 아닙니다.
             </p>
           </>
         ) : (

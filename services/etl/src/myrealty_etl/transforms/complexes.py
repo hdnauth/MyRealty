@@ -89,5 +89,12 @@ def link_watch_items(conn) -> dict:
         """update complexes c set geom = w.geom from watch_items w
            where w.complex_id = c.id and c.geom is null and w.geom is not null"""
     ).rowcount
+    # 건축물대장을 단지 연결 전에 받았으면(개별 수집 순서) 세대수·준공 연도가 비어 있다 — 같은 필지 대장에서 채운다
+    conn.execute(
+        """update complexes c set households = coalesce(c.households, nullif(b.recap->>'households', '')::float8::int),
+             updated_at = now()
+           from building_registers b
+           where b.pnu = c.pnu and c.households is null and b.recap is not null"""
+    )
     conn.commit()
     return {"linked": linked, "item_geom": geom, "complex_geom": back}

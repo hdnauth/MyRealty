@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState } from "react";
 import type { MapPoint } from "@/app/api/map/points/route";
 import { type AreaUnit, formatManwon, fromPerPyeong } from "@/lib/format";
-import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, tileSources } from "./engines";
+import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, declutter, pinLabel, polygonBBox, type Removable, shortName, tileSources } from "./engines";
 
 export type MapKeys = { keyId: string | null; vworldKey: string | null };
 type Poi = { id: number; category: string; name: string; lng: number; lat: number };
@@ -30,6 +30,7 @@ export function MiniMap({
   label,
   txType,
   selfComplexId = null,
+  pnu = null,
   unit = "m2",
   height = 240,
 }: {
@@ -40,6 +41,8 @@ export function MiniMap({
   /** 주변 가격 라벨 유형(apt·officetel·rowhouse·house·land·commercial) */
   txType: string;
   selfComplexId?: number | null;
+  /** 필지 경계를 그릴 PNU(토지·임야는 필지 영역이 곧 부동산) */
+  pnu?: string | null;
   unit?: AreaUnit;
   height?: number;
 }) {
@@ -91,11 +94,40 @@ export function MiniMap({
         lng,
         lat,
         zIndex: 1000,
-        html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap">★ ${esc(label.slice(0, 16))}</div>`,
+        html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap">★ ${esc(pinLabel(label))}</div>`,
       }),
     ];
     return () => ms.forEach((m) => m.remove());
   }, [lng, lat, radius, label, version]);
+
+  // 필지 경계: 받아서 테두리로 그리고, 한 화면에 안 들어오면(큰 임야 등) 경계에 맞춘다
+  const [loaded, setLoaded] = useState<{ pnu: string; coords: number[][][][] | null } | null>(null);
+  const boundary = pnu && loaded?.pnu === pnu ? loaded.coords : null;
+  const fitted = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pnu) return;
+    const ctl = new AbortController();
+    fetch(`/api/parcel/boundary?pnu=${pnu}`, { signal: ctl.signal })
+      .then((r) => r.json())
+      .then((d) => setLoaded({ pnu, coords: d.boundaries?.[pnu] ?? null }))
+      .catch(() => {});
+    return () => ctl.abort();
+  }, [pnu]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !boundary) return;
+    const shape = map.addPolygon({ coordinates: boundary, color: "#e8590c" });
+    const pb = polygonBBox(boundary);
+    const view = bbox;
+    if (pb && view && fitted.current !== `${pnu}:${version}`) {
+      fitted.current = `${pnu}:${version}`;
+      const inside = pb[0] >= view[0] && pb[1] >= view[1] && pb[2] <= view[2] && pb[3] <= view[3];
+      if (!inside) map.fitBounds(pb);
+    }
+    return () => shape.remove();
+    // bbox 는 처음 맞출 때만 필요(움직일 때마다 다시 그리지 않도록 뺀다)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boundary, version, pnu]);
 
   // 주변 거래·시설
   const [points, setPoints] = useState<MapPoint[]>([]);
@@ -125,7 +157,8 @@ export function MiniMap({
     if (!map) return;
     const perArea = COMPLEX_TYPES.has(txType);
     const ms: Removable[] = [];
-    for (const p of points.slice(0, 60)) {
+    const shown = declutter([...points].sort((a, b) => b.n - a.n).slice(0, 60), bbox, map.size(), { w: 84, h: 30 });
+    for (const p of shown) {
       // 내 단지는 핀이 이미 가리키므로 라벨을 겹쳐 그리지 않는다
       if (selfComplexId !== null && p.complex_id === selfComplexId) continue;
       const self = false;
@@ -136,7 +169,7 @@ export function MiniMap({
           lat: p.lat,
           zIndex: self ? 900 : 100,
           title: `${p.name} · 최근 1년 ${p.n}건`,
-          html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:2px 6px;border-radius:7px;background:${self ? "#2563eb" : "#fff"};color:${self ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.15);font-size:10.5px;line-height:1.2;white-space:nowrap;font-weight:600">${main}<span style="font-weight:400;opacity:.75">${esc(p.name.slice(0, 7))} · ${p.n}건</span></div>`,
+          html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:2px 6px;border-radius:7px;background:${self ? "#2563eb" : "#fff"};color:${self ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.15);font-size:10.5px;line-height:1.2;white-space:nowrap;font-weight:600">${main}<span style="font-weight:400;opacity:.75">${esc(shortName(p.name))} · ${p.n}건</span></div>`,
         }),
       );
     }
@@ -154,7 +187,7 @@ export function MiniMap({
       );
     }
     return () => ms.forEach((m) => m.remove());
-  }, [points, pois, txType, selfComplexId, unit, version]);
+  }, [points, pois, txType, selfComplexId, unit, version, bbox]);
 
   return (
     <div className="overflow-hidden rounded-lg border border-border">
@@ -168,6 +201,7 @@ export function MiniMap({
         {COMPLEX_TYPES.has(txType) ? `(${unit === "pyeong" ? "평" : "㎡"}당)` : ""}
         {points.length === 0 ? " — 아직 수집된 주변 거래가 없습니다" : ` ${points.length}곳`}
         {pois.length ? " · 🚇 지하철 · 🏫 학교" : ""}
+        {boundary ? " · 주황 테두리: 필지 경계(연속지적도)" : ""}
       </p>
     </div>
   );

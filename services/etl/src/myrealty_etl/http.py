@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import date
 from urllib.parse import urlparse
@@ -93,7 +94,7 @@ def _direct(url: str, params: dict | None, headers: dict | None, retries: int) -
                 raise
             if attempt + 1 < retries:
                 wait = 2 ** (attempt + 1)
-                log.warning("GET %s 실패(%s), %ss 후 재시도", url.split("?")[0], e, wait)
+                log.warning("GET %s 실패(%s), %ss 후 재시도", url.split("?")[0], redact(str(e)), wait)
                 time.sleep(wait)
     assert last is not None
     raise last
@@ -119,14 +120,37 @@ def get(url: str, *, params: dict | None = None, headers: dict | None = None, re
         log.warning("%s 직접 호출 실패(%s) → 웹(서울) 중계로 다시 시도", host, e.__class__.__name__)
         try:
             r = _relay_get(url, params)
-        except httpx.HTTPError as re:
-            log.warning("중계 실패: %s", re)
-            raise e from re
+        except httpx.HTTPError as relay_err:
+            log.warning("중계 실패: %s", redact(str(relay_err)))
+            raise e from relay_err
         if r.status_code >= 400:
             log.warning("중계도 실패(HTTP %s): %s", r.status_code, r.text[:200])
             raise e
         _relayed.add(host)
         return r
+
+
+_SECRET_PARAM = re.compile(r"(?i)\b(serviceKey|key|apiKey|api_key|crtfc_key|confmKey)=([^&\s'\"]+)")
+
+
+def _secret_values() -> list[str]:
+    from urllib.parse import quote
+
+    vals = [settings.data_go_kr_key, settings.vworld_key, settings.ecos_key, settings.kosis_key, settings.reb_key,
+            settings.naver_client_secret, settings.ncp_key, settings.anthropic_api_key, settings.cron_secret]
+    out: list[str] = []
+    for v in vals:
+        if v and len(v) >= 8:
+            out += [v, quote(v, safe=""), quote(quote(v, safe=""), safe="")]
+    return sorted(set(out), key=len, reverse=True)
+
+
+def redact(text: str) -> str:
+    """오류 기록·로그에 키가 남지 않게 가린다: URL 쿼리의 키 파라미터 + 경로에 들어가는 키(ECOS 등) 값 자체."""
+    text = _SECRET_PARAM.sub(r"\1=***", text)
+    for v in _secret_values():
+        text = text.replace(v, "***")
+    return text
 
 
 # 공공데이터포털 오류 코드 → 사람이 읽을 사유
@@ -141,8 +165,6 @@ _DATA_GO_KR_CODES = {
 
 def explain_error(e: BaseException) -> str:
     """수집 오류를 화면에 보일 한 줄로(키 값은 넣지 않는다)."""
-    import re
-
     if isinstance(e, QuotaExceeded):
         return str(e)
     if isinstance(e, httpx.HTTPStatusError):
@@ -167,7 +189,7 @@ def explain_error(e: BaseException) -> str:
         except RuntimeError:  # 요청 정보가 없는 예외
             host = ""
         return f"{host or 'API 서버'} 연결 실패({e.__class__.__name__}) — 해외(GitHub) 접속 차단일 수 있습니다"
-    msg = str(e)
+    msg = redact(str(e))
     if "오류 30" in msg or "SERVICE_KEY_IS_NOT_REGISTERED" in msg:
         return "공공데이터포털: " + _DATA_GO_KR_CODES["30"]
     return msg[:300] or e.__class__.__name__

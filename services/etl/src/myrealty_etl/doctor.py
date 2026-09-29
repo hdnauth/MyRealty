@@ -211,19 +211,27 @@ def check_ncp(c: httpx.Client) -> Check:
 
 
 def check_naver_search(c: httpx.Client) -> Check:
+    from .collectors import naver_news
+
     cid, sec = settings.naver_client_id, settings.naver_client_secret
     if not cid and not sec:
         return Check("NAVER_CLIENT_ID", "네이버 검색(뉴스)", "optional", "뉴스 수집을 건너뜁니다.",
-                     "developers.naver.com 에서 검색 API 애플리케이션을 만들어 Client ID/Secret 을 넣으세요.")
-    try:
-        r = c.get("https://openapi.naver.com/v1/search/news.json", params={"query": "부동산", "display": 1},
-                  headers={"X-Naver-Client-Id": cid or "", "X-Naver-Client-Secret": sec or ""})
-    except httpx.HTTPError as e:
-        return Check("NAVER_CLIENT_ID", "네이버 검색(뉴스)", "error", sanitize(str(e)), fp=fingerprint(cid))
-    if r.status_code == 200:
-        return Check("NAVER_CLIENT_ID", "네이버 검색(뉴스)", "ok", "뉴스 검색 응답 정상", fp=fingerprint(cid))
-    return Check("NAVER_CLIENT_ID", "네이버 검색(뉴스)", "error", sanitize(f"HTTP {r.status_code} {r.text[:150]}"),
-                 "Client ID/Secret 과 애플리케이션의 '검색' API 사용 설정을 확인하세요. (지도용 NCP 키와는 다른 키입니다)", fingerprint(cid))
+                     "네이버 클라우드 NAVER API HUB(검색) 또는 developers.naver.com 검색 API 의 Client ID/Secret 을 넣으세요.")
+    # API HUB(네이버 클라우드)와 개발자센터 두 방식을 키 형식 순으로 시도
+    tried: list[str] = []
+    for name, url, headers in naver_news.endpoints(cid or "", sec or ""):
+        label = "NAVER API HUB" if name == "apihub" else "개발자센터 검색 API"
+        try:
+            r = c.get(url, params={"query": "부동산", "display": 1}, headers=headers)
+        except httpx.HTTPError as e:
+            tried.append(f"{label}: {sanitize(str(e))}")
+            continue
+        if r.status_code == 200:
+            return Check("NAVER_CLIENT_ID", "네이버 검색(뉴스)", "ok", f"뉴스 검색 응답 정상({label})", fp=fingerprint(cid))
+        tried.append(f"{label}: HTTP {r.status_code} {sanitize(r.text[:100])}")
+    return Check("NAVER_CLIENT_ID", "네이버 검색(뉴스)", "error", " / ".join(tried),
+                 "네이버 클라우드 콘솔 › NAVER API HUB 에서 이 키에 '검색(뉴스)' API 가 연결됐는지, 또는 developers.naver.com "
+                 "애플리케이션에 '검색' API 가 추가됐는지 확인하세요.", fingerprint(cid))
 
 
 def check_anthropic(c: httpx.Client) -> list[Check]:

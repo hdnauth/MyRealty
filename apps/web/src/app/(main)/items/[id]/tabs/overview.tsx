@@ -2,8 +2,10 @@ import { Badge, Card, CardHeader, Change, Stat } from "@/components/ui";
 import { getAreaUnit } from "@/lib/area-unit";
 import { sql } from "@/lib/db";
 import { floorBandOf, floorPremiums, jeonseCheck, rateSensitivity } from "@/lib/item-analytics";
-import { formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceLabel, unitPriceName } from "@/lib/format";
-import { itemAttrs, itemTransactions, summarize, type WatchItem } from "@/lib/queries/items";
+import { formatArea, formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceLabel, unitPriceName } from "@/lib/format";
+import { complexSales, itemAttrs, itemTransactions, summarize, type WatchItem } from "@/lib/queries/items";
+import { clusterAreas } from "@/lib/units";
+import { AreaChoice } from "@/components/items/area-choice";
 import Link from "next/link";
 import { MiniMap } from "@/components/map/mini-map";
 import { env } from "@/lib/env";
@@ -12,18 +14,36 @@ import { redevelopmentInfo } from "@/lib/queries/special";
 import { AttrsCard } from "./attrs-card";
 import { RedevelopmentCard } from "./redevelopment-card";
 
+/** 추정 시세 근거(valuations.method 앞부분) */
+const VAL_BASIS: Record<string, string> = {
+  same_complex: "같은 단지 거래로 계산",
+  neighbor_complexes: "인근 유사 단지로 계산",
+  hedonic: "지역 거래 회귀로 계산",
+  land_unit_median: "비슷한 크기 토지 거래로 계산",
+};
+
 export async function OverviewTab({ item }: { item: WatchItem }) {
-  const [points, attrs, unit, [val], [rate], redev] = await Promise.all([
+  const needArea = Boolean(item.complex_id) && !item.area_m2;
+  const [points, attrs, unit, [val], [rate], redev, sales] = await Promise.all([
     itemTransactions(item, 5),
     itemAttrs(item),
     getAreaUnit(),
-    sql<{ estimate: number; low: number | null; high: number | null; confidence: string | null; as_of: string }[]>`
-      select estimate, low, high, confidence, as_of::text from valuations where watch_item_id = ${item.id} order by as_of desc limit 1`,
+    sql<{ estimate: number; low: number | null; high: number | null; confidence: string | null; as_of: string; method: string }[]>`
+      select estimate, low, high, confidence, as_of::text, method from valuations where watch_item_id = ${item.id} order by as_of desc limit 1`,
     sql<{ value: number }[]>`select value from series_values where code = 'ecos.mortgage_rate' order by period desc limit 1`,
     redevelopmentInfo(item),
+    needArea ? complexSales(item.complex_id!, 3) : Promise.resolve([]),
   ]);
-  const s = summarize(points);
+  // 평형 미선택: 이 단지에서 거래된 평형(많은 순 6개)을 보여 주고 눌러서 정하게 한다
+  const areaTypes = clusterAreas(
+    [...sales.reduce((m, x) => m.set(x.area_m2, (m.get(x.area_m2) ?? 0) + 1), new Map<number, number>())].map(([area, count]) => ({ area, count, trades: count })),
+  )
+    .sort((a, b) => b.trades - a.trades)
+    .slice(0, 6)
+    .sort((a, b) => a.area - b.area)
+    .map((t) => ({ area: Math.round(t.area * 100) / 100, label: formatArea(t.area, unit), trades: t.trades }));
   const isComplex = Boolean(item.complex_id);
+  const s = summarize(points, new Date(), { perArea: !isComplex });
   const area = item.area_m2 ?? item.land_area_m2;
   // 단지형은 같은 단지·면적 6개월 중위, 그 외는 인근 유사 거래 ㎡당 중위 × 내 면적
   const current =
@@ -33,7 +53,12 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
       : s.unitMedian12m && area
         ? Math.round(s.unitMedian12m * area)
         : null);
-  const fromHigh = current && s.high ? current / s.high.price - 1 : null;
+  // 전고점 대비는 같은 단지·평형일 때만 의미가 있다(토지·단독은 거래마다 다른 필지·건물)
+  const isLandType = item.property_type === "land" || item.property_type === "forest";
+  const lastLandPrice = attrs.prices.filter((p) => p.target_type === "land").at(-1);
+  // 공시지가(원/㎡) × 면적 → 만원
+  const officialTotal = lastLandPrice && area ? (lastLandPrice.price * Number(area)) / 10000 : null;
+  const fromHigh = isComplex && current && s.high ? current / s.high.price - 1 : null;
   const floors = isComplex ? floorPremiums(points) : null;
   const myBand = floors ? floorBandOf(item.floor, floors.bands) : null;
   // 금리 민감도: 보유 대출이 있으면 그 대출, 매수 후보면 추정가의 50%를 현재 주담대 금리로
@@ -51,6 +76,15 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      {needArea && areaTypes.length ? (
+        <Card className="border-warn/40 p-4 lg:col-span-3">
+          <div className="text-sm font-medium">평형을 골라 주세요</div>
+          <p className="mt-0.5 text-xs text-muted">
+            지금은 단지의 모든 평형 거래를 섞어 보여 줍니다. 내 평형을 고르면 시세·㎡당 가격·전세가율·층별 차이·추정 시세가 그 평형 기준으로 바뀝니다.
+          </p>
+          <AreaChoice itemId={item.id} types={areaTypes} />
+        </Card>
+      ) : null}
       <Card className="p-4 lg:col-span-2">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
           <div>
@@ -61,7 +95,7 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
             </div>
             <div className="mt-0.5 text-xs text-muted">
               {val?.low && val.high ? `범위 ${formatManwon(val.low, { short: true })} ~ ${formatManwon(val.high, { short: true })} · ` : ""}
-              {val ? `${formatDate(val.as_of)} 기준 · 실거래·유사 단지로 계산` : `최근 거래 ${s.count12m}건 기준`}
+              {val ? `${formatDate(val.as_of)} 기준 · ${VAL_BASIS[val.method.split(":")[0]] ?? "실거래로 계산"}` : `최근 거래 ${s.count12m}건 기준`}
             </div>
           </div>
           <div className="flex gap-5 text-right text-sm">
@@ -107,7 +141,19 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <Stat label="추정가(유사 거래 기준)" value={formatManwon(current)} sub={<span className="text-muted">㎡당 중위 × {area ? `${Number(area).toLocaleString()}㎡` : "면적 미입력"}</span>} />
+            {isLandType && officialTotal ? (
+              <Stat
+                label="공시지가 대비"
+                value={current ? `${(current / officialTotal).toFixed(2)}배` : "-"}
+                sub={<span className="text-muted">공시지가 총액 {formatManwon(officialTotal, { short: true })}</span>}
+              />
+            ) : (
+              <Stat
+                label="㎡당 중위 × 내 면적"
+                value={s.unitMedian12m && area ? formatManwon(Math.round(s.unitMedian12m * Number(area))) : "-"}
+                sub={<span className="text-muted">{area ? `${Number(area).toLocaleString()}㎡ · 크기 차이 미보정` : "면적 미입력"}</span>}
+              />
+            )}
             <Stat
               label="㎡당 중위(12개월)"
               value={s.unitMedian12m ? `${formatNumber(s.unitMedian12m * 10000)}원` : "-"}
@@ -226,6 +272,7 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
               label={item.label}
               txType={PROPERTY_TYPES[item.property_type].tx}
               selfComplexId={item.complex_id}
+              pnu={item.pnu}
               unit={unit}
             />
           </div>

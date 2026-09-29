@@ -23,8 +23,12 @@ export async function PriceTab({ item, all = false }: { item: WatchItem; all?: b
     .sort((a, b) => b.trades - a.trades)
     .slice(0, 5)
     .sort((a, b) => a.area - b.area);
+  // ★ 는 내 면적에 가장 가까운 평형 하나에만(±3㎡ 안에 비슷한 타입이 둘 이상 있어도)
+  const mine = item.area_m2
+    ? types.reduce<(typeof types)[number] | null>((b, t) => (Math.abs(item.area_m2! - t.area) <= 3 && (!b || Math.abs(item.area_m2! - t.area) < Math.abs(item.area_m2! - b.area)) ? t : b), null)
+    : null;
   const lines = types.map((t) => ({
-    name: `${formatArea(t.area, unit).split(" ")[0]}${item.area_m2 && Math.abs(item.area_m2 - t.area) <= 3 ? " ★" : ""}`,
+    name: `${formatArea(t.area, unit).split(" ")[0]}${t === mine ? " ★" : ""}`,
     points: monthlyRollingMedian(sales.filter((s) => Math.abs(s.area_m2 - t.area) <= 0.5).map((s) => ({ date: s.deal_date, value: s.price })), { minN: 1 }),
   }));
 

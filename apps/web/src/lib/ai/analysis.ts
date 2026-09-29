@@ -35,7 +35,7 @@ export async function itemSnapshot(item: WatchItem) {
             from series s where s.code = any(${["ind.temp", "ind.burden", "ind.pir", "jr", "ind.supply"].map((k) => `${k}.${item.sgg_cd}`)})`
       : Promise.resolve([]),
   ]);
-  const s = summarize(points);
+  const s = summarize(points, new Date(), { perArea: !item.complex_id });
   return {
     unit: "금액 만원(공시가격은 원), 비율은 0~1",
     item: {

@@ -1,5 +1,7 @@
 "use client";
 
+import { shortAddress } from "../../lib/format";
+
 /*
  * 지도 엔진 어댑터. 화면(realty-map)은 이 인터페이스만 쓰고, 네이버 지도(키가 있을 때)와
  * Leaflet 대체 지도(브이월드 배경지도 → OpenStreetMap) 중 하나가 실제로 그린다.
@@ -14,9 +16,73 @@ declare global {
   }
 }
 
+/**
+ * 지도 라벨용 단지명 줄이기. 앞에서 자르면 "자연앤자이1단지/2단지/3단지"가 모두 "자연앤자이"로 보여
+ * 끝의 "N단지·N차"는 남기고 가운데를 줄인다.
+ */
+export function shortName(name: string, max = 9): string {
+  if (name.length <= max) return name;
+  const tail = name.match(/\d+(?:단지|차)$/)?.[0];
+  if (tail && tail.length < max - 2) return `${name.slice(0, max - tail.length - 1)}…${tail}`;
+  return `${name.slice(0, max - 1)}…`;
+}
+
+/**
+ * 핀 라벨: 주소 그대로인 이름(토지·임야는 보통 주소가 이름)은 앞의 시도·시군구를 빼야 지번이 보인다.
+ * "전남광주통합특별시 광양시 봉강면 조령리 산 164-13" → "봉강면 조령리 산 164-13"
+ */
+export function pinLabel(label: string, max = 16): string {
+  const s = shortAddress(label);
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+/**
+ * 라벨 겹침 줄이기: 중요한 순서(배열 순서)대로 화면 위치에 놓아 보고, 이미 놓인 라벨과 겹치면 뺀다.
+ * 라벨은 좌표 위쪽 가운데에 w×h px 로 그린다고 본다. keep 이 참인 점(내 단지·선택한 단지)은 항상 남긴다.
+ */
+export function declutter<T extends { lng: number; lat: number }>(
+  points: T[],
+  bbox: BBox | null,
+  size: { width: number; height: number },
+  opts: { w?: number; h?: number; keep?: (p: T) => boolean } = {},
+): T[] {
+  if (!bbox || !size.width || !size.height) return points;
+  const [west, south, east, north] = bbox;
+  const my = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+  const [yN, yS] = [my(north), my(south)];
+  const w = opts.w ?? 92;
+  const h = opts.h ?? 32;
+  const placed: [number, number][] = [];
+  const out: T[] = [];
+  const ordered = [...points].sort((a, b) => Number(opts.keep?.(b) ?? false) - Number(opts.keep?.(a) ?? false));
+  for (const p of ordered) {
+    const x = ((p.lng - west) / (east - west)) * size.width;
+    const y = ((yN - my(p.lat)) / (yN - yS)) * size.height;
+    const hit = placed.some(([px, py]) => Math.abs(px - x) < w && Math.abs(py - y) < h);
+    if (hit && !opts.keep?.(p)) continue;
+    placed.push([x, y]);
+    out.push(p);
+  }
+  return out;
+}
+
 export type BBox = [number, number, number, number];
 export type BaseMap = "normal" | "satellite" | "hybrid" | "terrain";
 export type Removable = { remove(): void };
+export type PolygonOptions = { coordinates: number[][][][]; color: string; weight?: number; fillOpacity?: number; zIndex?: number };
+
+/** MultiPolygon 좌표의 범위 [서, 남, 동, 북] */
+export function polygonBBox(coords: number[][][][]): BBox | null {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const poly of coords) for (const ring of poly) for (const [x, y] of ring) {
+    if (x < w) w = x;
+    if (x > e) e = x;
+    if (y < s) s = y;
+    if (y > n) n = y;
+  }
+  return Number.isFinite(w) ? [w, s, e, n] : null;
+}
+
 export type HtmlMarkerOptions = { lng: number; lat: number; html: string; zIndex?: number; title?: string; onClick?: () => void };
 
 export interface MapHandle {
@@ -24,6 +90,8 @@ export interface MapHandle {
   onIdle(cb: (bbox: BBox) => void): void;
   addHtmlMarker(o: HtmlMarkerOptions): Removable;
   addCircle(o: { lng: number; lat: number; radius: number; color: string }): Removable;
+  /** 다각형(필지 경계 등). coordinates 는 GeoJSON MultiPolygon 좌표([경도, 위도]) */
+  addPolygon(o: PolygonOptions): Removable;
   panTo(lng: number, lat: number): void;
   /** 좌표로 이동하며 확대 단계 지정 */
   setCenter(lng: number, lat: number, zoom?: number): void;
@@ -197,6 +265,24 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
       });
       return { remove: () => c.setMap(null) };
     },
+    addPolygon(o) {
+      // 네이버 Polygon 하나 = 바깥 고리 + 구멍들. MultiPolygon 은 조각마다 하나씩
+      const shapes = o.coordinates.map(
+        (poly) =>
+          new naver.maps.Polygon({
+            map,
+            paths: poly.map((ring) => ring.map(([x, y]) => new naver.maps.LatLng(y, x))),
+            strokeColor: o.color,
+            strokeOpacity: 0.95,
+            strokeWeight: o.weight ?? 2.5,
+            fillColor: o.color,
+            fillOpacity: o.fillOpacity ?? 0.12,
+            clickable: false,
+            zIndex: o.zIndex ?? 20,
+          }),
+      );
+      return { remove: () => shapes.forEach((p) => p.setMap(null)) };
+    },
     panTo(lng, lat) {
       map.panTo(new naver.maps.LatLng(lat, lng));
     },
@@ -328,6 +414,18 @@ export function createLeafletMap(
         interactive: false,
       }).addTo(map);
       return { remove: () => c.remove() };
+    },
+    addPolygon(o) {
+      const latlngs = o.coordinates.map((poly) => poly.map((ring) => ring.map(([x, y]) => [y, x] as [number, number])));
+      const p = L.polygon(latlngs, {
+        color: o.color,
+        weight: o.weight ?? 2.5,
+        opacity: 0.95,
+        fillColor: o.color,
+        fillOpacity: o.fillOpacity ?? 0.12,
+        interactive: false,
+      }).addTo(map);
+      return { remove: () => p.remove() };
     },
     panTo(lng, lat) {
       map.panTo([lat, lng]);

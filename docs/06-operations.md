@@ -14,7 +14,7 @@
 | `NCP_MAPS_KEY_ID` / `NCP_MAPS_KEY` | 네이버 지도 표시, 지오코딩 | 대체 지도(브이월드 배경 → OpenStreetMap)로 표시, 좌표는 VWorld 로 보조 |
 | `VWORLD_KEY` (+`VWORLD_DOMAIN`) | 토지특성·이용계획·공시가격, 지오코딩 보조, 대체 지도 배경. **웹에도 넣으면** 토지·임야 등록 시 지목·면적 자동 입력 | 토지·공시가격 없음 |
 | `ECOS_KEY`, `KOSIS_KEY`, `REB_KEY` | 금리·물가·M2, 미분양, 부동산원 지수 | 자체 지수·지표는 계산되나 금리·물가 보정 없음 |
-| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 뉴스 검색 | 뉴스 수집 건너뜀 |
+| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 뉴스 검색(NAVER API HUB 또는 개발자센터 키 — 형식으로 자동 판별) | 뉴스 수집 건너뜀 |
 | `ANTHROPIC_API_KEY` | 뉴스 분류, AI 질문·분석·비교·리포트 | AI 기능 비활성 |
 | `SMTP_*`, `MAIL_FROM` | 로그인 코드, 다이제스트, 리포트 메일 | 로그인 코드가 서버 로그에 출력(개발용) |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | 웹푸시 (`npx web-push generate-vapid-keys`) | 푸시 없이 메일만 |
@@ -146,7 +146,11 @@ GitHub Actions **ETL item** 워크플로로 그 부동산만 수집하고, 상�
 
 | 증상 | 원인·조치 |
 |---|---|
-| RTMS 오류 30 / `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` | 활용신청 승인 전이거나 Encoding 키를 넣음 → **Decoding(일반) 키**를 넣고 승인 후 1~2시간 대기 |
+| RTMS 오류 30 / `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` | 활용신청 승인 전이면 승인 후 1~2시간 대기. Encoding 키(`%2F`·`%3D` 포함)를 넣어도 웹·ETL 이 자동으로 풀어 쓴다(예전 웹은 두 번 인코딩해 등록 화면·중계가 실패했음) |
+| 공공데이터포털 403 — 상가정보(`B553077`)·병원정보(`B551182`) | 그 API 의 활용신청이 없음 → 신청하면 입지 점수의 학원·의료·음식 항목이 채워진다(`myrealty pois` 로 바로 다시 계산) |
+| 전남광주통합특별시 부동산의 지목·면적·공시지가가 빔 | 브이월드가 옛 코드(전남 46xxx·광주 29xxx)로만 답함 → 시군구 이름으로 옛 코드를 찾아 다시 조회한다([02 문서](02-data-sources.md) 식별자 체계). 다른 지역이 개편되면 `LEGACY_SGG_BY_NAME` 에 추가 |
+| 뉴스 수집 401(`NID AUTH Result Invalid`) | 네이버 클라우드 **NAVER API HUB** 키(ID 10자·Secret 40자)를 개발자센터 주소로 불렀던 문제 → 이제 키 형식으로 API HUB/개발자센터를 골라 부르고, 인증 실패면 다른 쪽도 시도한다. 둘 다 실패하면 API HUB 콘솔에서 검색(뉴스) API 연결을 확인 |
+| 휴대폰에서 `http://192.168.x.x:3000`(개발 서버)으로 열면 화면은 뜨지만 "로그인 코드 받기"가 반응 없음 | Next 16 개발 서버가 localhost 가 아닌 주소의 개발용 JS 요청을 막았음 → `next.config.ts` 의 `allowedDevOrigins` 에 사설망 대역을 넣음(개발 서버 재시작 필요). 사설망 밖 주소는 `DEV_ORIGINS` |
 | RTMS 오류 22 | 일일 트래픽 초과 → 다음 날 자동 이월 |
 | GitHub Actions 에서만 공공데이터포털 403(오류 30)·브이월드 "Server disconnected" | 러너가 해외(미국)라 거부·차단되거나 GitHub Secrets 의 키가 웹과 다름. **국내 API 중계**: GitHub Secrets 에 `CRON_SECRET`(Vercel 과 같은 값), Variables 에 `APP_URL` 을 넣으면 직접 호출이 실패할 때 웹(Vercel 서울 리전, `/api/relay`)이 **웹의 키**로 대신 호출한다. 키 점검 표의 "국내 API 중계(웹 경유)"가 정상이면 된다. 항상 중계하려면 Variables `KR_RELAY=always`, 끄려면 `off` |
 | `APP_URL` 접속 실패(UnsupportedProtocol) | `https://` 를 빼고 넣음 → 이제 자동으로 붙인다(그래도 `https://myrealty.vercel.app` 처럼 넣는 것을 권장) |

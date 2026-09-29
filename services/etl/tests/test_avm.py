@@ -18,7 +18,7 @@ def test_valuations_on_demo(conn):
     compute_region(conn, "11710", today)
     stats = avm.compute_valuations(conn, today)
     assert stats["valued"] == 3
-    rows = {r["method"]: r for r in conn.execute("select * from valuations")}
+    rows = {r["method"].split(":")[0]: r for r in conn.execute("select * from valuations")}
     apt = rows["same_complex"]
     assert apt["low"] <= apt["estimate"] <= apt["high"] and apt["confidence"] in ("high", "medium")
     # 합성 데이터의 최근 84㎡ 잠실엘스 가격대(약 18~22억)

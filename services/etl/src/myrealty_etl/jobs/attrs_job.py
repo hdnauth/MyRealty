@@ -29,12 +29,12 @@ def save_building(conn, pnu: str, reg: dict, complex_id: int | None) -> None:
         (pnu, jsonb(reg["titles"]), jsonb(reg["recap"]) if reg["recap"] else None),
     )
     s = building.summarize(reg)
-    if complex_id:
-        conn.execute(
-            """update complexes set households = coalesce(%s, households), build_year = coalesce(build_year, %s),
-                 pnu = coalesce(pnu, %s), updated_at = now() where id = %s""",
-            (s["households"], s["build_year"], pnu, complex_id),
-        )
+    # 단지가 아직 연결 전이어도 같은 필지(pnu)의 단지면 채운다
+    conn.execute(
+        """update complexes set households = coalesce(%s, households), build_year = coalesce(build_year, %s),
+             pnu = coalesce(pnu, %s), updated_at = now() where id = %s or pnu = %s""",
+        (s["households"], s["build_year"], pnu, complex_id, pnu),
+    )
 
 
 def save_parcel(conn, pnu: str, ch: dict | None, uses: list[dict]) -> None:
@@ -68,8 +68,12 @@ def refresh_attrs(conn, max_age_days: int = 30, item_id: str | None = None) -> d
         stats["skipped"].append("토지·공시가격(VWORLD_KEY)")
     items = conn.execute(
         """select w.pnu, w.property_type, w.dong_ho, w.complex_id,
-             (select fetched_at from building_registers b where b.pnu = w.pnu) as b_at,
-             (select updated_at from parcels p where p.pnu = w.pnu) as p_at
+             -- 대장이 0건이면(지번 오류·일시 오류로 빈 결과가 저장된 경우 포함) 하루만 믿고 다시 받는다
+             (select case when jsonb_array_length(b.titles) > 0 then b.fetched_at
+                          else least(b.fetched_at, now() - interval '30 days' + interval '1 day') end
+                from building_registers b where b.pnu = w.pnu) as b_at,
+             -- 지목이 빈 행은(웹이 경계만 저장했거나 예전 조회 실패) 토지특성을 아직 못 받은 것 — 다시 받는다
+             (select case when p.jimok is not null then p.updated_at end from parcels p where p.pnu = w.pnu) as p_at
            from watch_items w where w.pnu is not null and (%(id)s::uuid is null or w.id = %(id)s::uuid)""",
         {"id": item_id},
     ).fetchall()
@@ -103,7 +107,15 @@ def refresh_attrs(conn, max_age_days: int = 30, item_id: str | None = None) -> d
                 try:
                     fresh = conn.execute("select %s::timestamptz > now() - %s::interval as ok", (it["p_at"], stale)).fetchone()["ok"]
                     if not fresh:
-                        save_parcel(conn, pnu, vworld.land_characteristics(pnu, conn), vworld.land_uses(pnu, conn))
+                        ch = vworld.land_characteristics(pnu, conn)
+                        save_parcel(conn, pnu, ch, vworld.land_uses(pnu, conn))
+                        if ch and ch.get("area_m2"):
+                            # 등록 때 면적을 못 받았으면(토지특성 조회 실패 등) 토지특성 면적으로 — 추정가·배율 계산에 필요
+                            conn.execute(
+                                """update watch_items set land_area_m2 = %s, updated_at = now()
+                                   where pnu = %s and land_area_m2 is null and property_type in ('land', 'forest')""",
+                                (ch["area_m2"], pnu),
+                            )
                         stats["prices"] += save_prices(conn, "land", pnu, vworld.land_prices(pnu, conn))
                         if it["property_type"] in ("apt", "officetel", "rowhouse"):
                             dong, ho = parse_dong_ho(it["dong_ho"])

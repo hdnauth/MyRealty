@@ -81,6 +81,23 @@ def parse_recap(it: dict) -> dict:
     }
 
 
+def _get_json(op: str, pnu: str, tries: int = 2) -> dict:
+    """건축HUB 는 가끔 빈 본문·게이트웨이 HTML 을 200 으로 준다 — 한 번 더 받아 보고, 그래도 아니면 읽을 수 있는 오류로."""
+    import time
+
+    for attempt in range(tries):
+        r = http.get(f"{BASE}/{op}", params={"serviceKey": settings.data_go_kr_key, **_params(pnu)})
+        try:
+            return r.json()
+        except ValueError:
+            if attempt + 1 < tries:
+                time.sleep(2)
+                continue
+            snippet = " ".join(r.text.split())[:80] or "빈 응답"
+            raise RuntimeError(f"건축HUB 응답이 올바르지 않습니다(일시 오류일 수 있음): {snippet}") from None
+    raise AssertionError("unreachable")
+
+
 def fetch(pnu: str, conn=None) -> dict:
     """{titles: [...], recap: {...}|None}"""
     if not settings.data_go_kr_key:
@@ -88,8 +105,7 @@ def fetch(pnu: str, conn=None) -> dict:
     out: dict = {"titles": [], "recap": None}
     for op, key in (("getBrTitleInfo", "titles"), ("getBrRecapTitleInfo", "recap")):
         http.count_call(conn, f"data.go.kr:BldRgstHubService:{op}", settings.daily_quota_data_go_kr)
-        r = http.get(f"{BASE}/{op}", params={"serviceKey": settings.data_go_kr_key, **_params(pnu)})
-        data = r.json()
+        data = _get_json(op, pnu)
         check_header(data)
         items = _items(data)
         if key == "titles":

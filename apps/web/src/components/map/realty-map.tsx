@@ -6,9 +6,9 @@ import { Crosshair, Layers, Maximize2, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { MapPoint } from "@/app/api/map/points/route";
-import { type AreaUnit, formatDate, formatManwon, fromPerPyeong, unitPriceLabel } from "@/lib/format";
+import { type AreaUnit, formatDate, formatManwon, fromPerPyeong, shortAddress, unitPriceLabel } from "@/lib/format";
 import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
-import { type BaseMap, type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, satelliteSources, tileSources, vworldWmsUrl } from "./engines";
+import { type BaseMap, type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, declutter, pinLabel, satelliteSources, shortName, tileSources, vworldWmsUrl } from "./engines";
 
 export type MapWatchItem = {
   id: string;
@@ -19,6 +19,8 @@ export type MapWatchItem = {
   property_type: string;
   group_tag: string;
   complex_id: number | null;
+  /** 필지 경계 표시용(토지·임야·단독 등) */
+  pnu: string | null;
   area_m2: number | null;
   estimate: number | null;
   last_price: number | null;
@@ -233,7 +235,7 @@ export function RealtyMap({
           zIndex: 1000,
           title: it.label,
           onClick: () => onPinClick(it.id),
-          html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;cursor:pointer">★ ${escapeHtml(it.label.slice(0, 14))}${price ? `<span style="font-weight:500;opacity:.9">${formatManwon(price, { short: true })}</span>` : ""}</div>`,
+          html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;cursor:pointer">★ ${escapeHtml(pinLabel(it.label, 14))}${price ? `<span style="font-weight:500;opacity:.9">${formatManwon(price, { short: true })}</span>` : ""}</div>`,
         });
       }
       // 청약 접수(입주 예정은 레이어로 따로)
@@ -257,6 +259,30 @@ export function RealtyMap({
       layerMarkersRef.current = [];
     };
   }, [engine, keyId, vworldKey, lng0, lat0, items, events]);
+
+  // 관심 부동산 필지 경계(토지·임야·단독·상가 — 아파트는 단지 전체 필지라 라벨이 가리지 않게 뺀다)
+  const boundaryPnus = useMemo(
+    () => items.filter((i) => i.pnu && !["apt", "officetel"].includes(i.property_type)).map((i) => i.pnu as string),
+    [items],
+  );
+  const [boundaries, setBoundaries] = useState<Record<string, number[][][][] | null>>({});
+  useEffect(() => {
+    if (!boundaryPnus.length) return;
+    const ctl = new AbortController();
+    fetch(`/api/parcel/boundary?pnu=${boundaryPnus.join(",")}`, { signal: ctl.signal })
+      .then((r) => r.json())
+      .then((d) => setBoundaries(d.boundaries ?? {}))
+      .catch(() => {});
+    return () => ctl.abort();
+  }, [boundaryPnus]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const shapes = Object.values(boundaries)
+      .filter((c): c is number[][][][] => Boolean(c))
+      .map((c) => map.addPolygon({ coordinates: c, color: "#e8590c", fillOpacity: 0.1 }));
+    return () => shapes.forEach((sh) => sh.remove());
+  }, [boundaries, mapVersion]);
 
   // 고른 관심 부동산: 탐색 반경을 그리고 그 위치로 이동, 단지가 있으면 그 단지 거래를 연다
   useEffect(() => {
@@ -306,7 +332,14 @@ export function RealtyMap({
     const map = mapRef.current;
     if (!map) return;
     for (const m of markersRef.current) m.remove();
-    markersRef.current = points.map((p) => {
+    // 거래 많은 단지부터 놓고 겹치는 라벨은 뺀다(목록에는 모두 남는다). 내 단지·선택한 단지는 항상 보인다
+    const shown = declutter(
+      [...points].sort((a, b) => b.n - a.n),
+      bbox,
+      map.size(),
+      { w: 96, h: 34, keep: (p) => selected?.key === p.key || (p.complex_id !== null && myComplexes.has(p.complex_id)) },
+    );
+    markersRef.current = shown.map((p) => {
       const main = p.median_ppy && (type === "apt" || type === "officetel" || type === "rowhouse") ? `${formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}` : formatManwon(p.median_price, { short: true });
       const active = selected?.key === p.key;
       const mine = p.complex_id !== null && myComplexes.has(p.complex_id);
@@ -315,10 +348,10 @@ export function RealtyMap({
         lat: p.lat,
         zIndex: active ? 900 : 100,
         onClick: () => select(p),
-        html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer">${mine ? "★ " : ""}${main}<span style="font-weight:400;opacity:.7">${escapeHtml(p.name.slice(0, 8))} · ${p.n}건</span></div>`,
+        html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer">${mine ? "★ " : ""}${main}<span style="font-weight:400;opacity:.7">${escapeHtml(shortName(p.name))} · ${p.n}건</span></div>`,
       });
     });
-  }, [points, selected, type, select, mapVersion, unit, myComplexes]);
+  }, [points, selected, type, select, mapVersion, unit, myComplexes, bbox]);
 
   // POI 레이어 조회(수집된 시설 + 없으면 OpenStreetMap 에서 보충)
   useEffect(() => {
@@ -545,7 +578,7 @@ export function RealtyMap({
               ) : null}
               {missingItems.map((it) => (
                 <li key={it.id} className="px-4 py-2.5 text-sm">
-                  <span className="block truncate font-medium text-muted">★ {it.label}</span>
+                  <span className="block truncate font-medium text-muted">★ {shortAddress(it.label)}</span>
                   <span className="text-xs text-warn">
                     위치를 찾지 못해 지도에 표시하지 못했습니다 ·{" "}
                     <Link href={`/items/${it.id}/edit`} className="text-accent">
@@ -562,7 +595,7 @@ export function RealtyMap({
                     className={clsx("flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-surface-2", focusId === it.id && "bg-accent-soft/60")}
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">★ {it.label}</span>
+                      <span className="block truncate text-sm font-medium">★ {shortAddress(it.label)}</span>
                       <span className="text-xs text-muted">
                         {isPropertyType(it.property_type) ? PROPERTY_TYPES[it.property_type].label : it.property_type}
                         {it.group_tag in GROUP_TAGS ? ` · ${GROUP_TAGS[it.group_tag as keyof typeof GROUP_TAGS]}` : ""}
@@ -582,7 +615,7 @@ export function RealtyMap({
             <div className="border-b border-border bg-accent-soft/40 p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <h3 className="truncate font-semibold">★ {focus.label}</h3>
+                  <h3 className="truncate font-semibold">★ {shortAddress(focus.label)}</h3>
                   <p className="text-xs text-muted">
                     {focus.estimate ? `추정 시세 ${formatManwon(focus.estimate, { short: true })}` : ""}
                     {focus.estimate && focus.last_price ? " · " : ""}

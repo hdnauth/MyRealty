@@ -6,6 +6,7 @@ import logging
 
 from ..collectors import naver_news
 from ..config import settings
+from ..http import explain_error
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +56,8 @@ def collect_news(conn, per_query: int = 30, item_id: str | None = None) -> dict:
                     stats["queries"] += 1
                 except Exception as e:
                     log.warning("뉴스 검색 실패 %s: %s", q, e)
+                    stats["failed"] = stats.get("failed", 0) + 1
+                    stats.setdefault("error", explain_error(e))
                     cache[q] = []
             for a in cache[q]:
                 aid = upsert_article(conn, a)
@@ -62,4 +65,7 @@ def collect_news(conn, per_query: int = 30, item_id: str | None = None) -> dict:
                 if link(conn, aid, it["id"], it["sgg_cd"], q):
                     stats["links"] += 1
             conn.commit()
+    # 검색이 전부 실패했으면(키 오류 등) '뉴스 없음'이 아니라 실패로 — 화면이 사유를 보여 준다
+    if stats.get("failed") and not stats["queries"]:
+        raise RuntimeError(stats["error"])
     return stats

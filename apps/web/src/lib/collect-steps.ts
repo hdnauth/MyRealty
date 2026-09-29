@@ -1,3 +1,5 @@
+import { redactSecrets } from "./redact";
+
 /**
  * 관심 부동산 개별 수집 단계(서버·브라우저 공용). ETL services/etl/src/myrealty_etl/jobs/item_job.py 의 STEPS 와 같은 키·순서.
  */
@@ -52,8 +54,9 @@ export function stepNote(st: CollectStepState | undefined): string | null {
 }
 
 /** 수집 오류 → 한 줄 사유. ETL 이 사람이 읽을 문장을 남기면 그대로, 예전 형식(예외 repr)은 상태 코드로 풀어 쓴다 */
-export function errorNote(err: string): string {
-  if (!err) return "불러오지 못함";
+export function errorNote(raw: string): string {
+  if (!raw) return "불러오지 못함";
+  const err = redactSecrets(raw);
   if (err.includes("한도")) return "오늘 호출 한도 초과";
   if (!/^[A-Za-z]+(Error|Exception)\(/.test(err)) return err.length > 160 ? `${err.slice(0, 160)}…` : err;
   const api = /data\.go\.kr|odcloud/.test(err) ? "공공데이터포털" : /vworld/.test(err) ? "브이월드" : /naver/.test(err) ? "네이버" : "외부 API";

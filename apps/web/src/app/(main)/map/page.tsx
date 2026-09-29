@@ -15,7 +15,7 @@ export default async function MapPage(props: PageProps<"/map">) {
   await fillMissingItemGeoms(user.id).catch((e) => console.error("[map] geocode", e));
   const [items, missing, events, projects, unit] = await Promise.all([
     sql<MapWatchItem[]>`
-      select w.id, w.label, w.property_type, w.group_tag, w.radius_m, w.complex_id, w.area_m2::float8 as area_m2,
+      select w.id, w.label, w.property_type, w.group_tag, w.radius_m, w.complex_id, w.pnu, w.area_m2::float8 as area_m2,
         ST_X(w.geom) as lng, ST_Y(w.geom) as lat, v.estimate, lt.price as last_price, lt.deal_date::text as last_date
       from watch_items w
       left join lateral (select estimate from valuations where watch_item_id = w.id order by as_of desc limit 1) v on true

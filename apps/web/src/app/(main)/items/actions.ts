@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { refresh } from "next/cache";
 import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
-import { geocode } from "@/lib/external/geocode";
+import { geocode, geocodeQueries } from "@/lib/external/geocode";
 import { defaultRadius, GROUP_TAGS, isPropertyType, makePnu } from "@/lib/property";
 import { parseManwon } from "@/lib/format";
 import { buildKeywords } from "@/lib/keywords";
@@ -97,8 +97,10 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
       select ST_X(geom) as lng, ST_Y(geom) as lat from complexes where id = ${complexId}`;
     if (c?.lng != null && c.lat != null) pt = [c.lng, c.lat];
   }
-  if (!pt && (roadAddr || jibunAddr)) pt = await geocode(roadAddr ?? jibunAddr!);
-  if (!pt && jibunAddr) pt = await geocode(jibunAddr);
+  for (const q of pt ? [] : geocodeQueries(roadAddr, jibunAddr)) {
+    pt = await geocode(q);
+    if (pt) break;
+  }
   if (!pt && lawdCd) {
     const [r] = await sql<{ lng: number | null; lat: number | null }[]>`
       select ST_X(center) as lng, ST_Y(center) as lat from regions where lawd_cd = ${lawdCd}`;

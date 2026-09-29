@@ -5,7 +5,7 @@ import { ContribBars } from "@/components/indicators/contrib-bars";
 import { type JeonseItemOption, JeonseCheck } from "@/components/indicators/jeonse-check";
 import { BacktestCard, InsightCard } from "@/components/indicators/insight-card";
 import { Simulator } from "@/components/indicators/simulator";
-import { Badge, Card, CardHeader, EmptyState, PageHeader, Stat, Tabs } from "@/components/ui";
+import { Badge, Card, CardHeader, EmptyState, Notice, PageHeader, Stat, Tabs } from "@/components/ui";
 import { Term } from "@/components/ui/term";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
@@ -13,6 +13,7 @@ import { formatManwon, formatPct } from "@/lib/format";
 import { backtestInsights, marketInsights } from "@/lib/insights";
 import { change, INSIGHT_REGION_KEYS, indicatorRegions, MACRO_CODES, last, type Point, seriesMeta, seriesValues, TEMP_FACTORS, tempBand } from "@/lib/queries/indicators";
 import { listItems } from "@/lib/queries/items";
+import { pipelineHints } from "@/lib/queries/pipeline";
 
 export const metadata: Metadata = { title: "지표" };
 
@@ -23,6 +24,8 @@ function yoy(points: Point[]): Point[] {
     return prev ? ([[d, (v / prev - 1) * 100]] as Point[]) : [];
   });
 }
+
+const view0 = (x: unknown) => (typeof x === "string" ? x : "summary");
 
 const VIEWS = [
   { key: "summary", label: "요약" },
@@ -69,7 +72,13 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
         TEMP_FACTORS.map((f) => `ind.temp_c.${f.key}.${sgg}`),
       )
     : [];
-  const v = { ...macroV, ...(await seriesValues(regionCodes, since)) };
+  const macroEmpty = !Object.values(macroV).some((p) => p.length);
+  const [regionV, tradeHints, macroHints] = await Promise.all([
+    seriesValues(regionCodes, since),
+    !sgg && view0(sp.view) !== "macro" && view0(sp.view) !== "tools" ? pipelineHints("trades") : Promise.resolve([]),
+    macroEmpty ? pipelineHints("macro") : Promise.resolve([]),
+  ]);
+  const v = { ...macroV, ...regionV };
   const r = (k: string) => v[`${k}.${sgg}`] ?? [];
 
   const view = VIEWS.find((x) => x.key === sp.view)?.key ?? "summary";
@@ -123,7 +132,14 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
 
       {view === "macro" || view === "tools" ? null : !sgg ? (
         <Card>
-          <EmptyState title="아직 계산된 지역 지표가 없습니다" desc="관심 부동산을 등록하고 실거래가 수집되면 ETL indicators 단계에서 계산됩니다." />
+          <EmptyState title="아직 계산된 지역 지표가 없습니다" desc="관심 부동산이 있는 시군구의 아파트 실거래가 30건 이상 모이면 매일 수집(또는 부동산 '다시 불러오기') 때 계산됩니다." />
+          {tradeHints.length ? (
+            <div className="space-y-1.5 px-4 pb-4">
+              {tradeHints.map((h) => (
+                <Notice key={h} tone="warn">{h}</Notice>
+              ))}
+            </div>
+          ) : null}
         </Card>
       ) : (
         <>
@@ -242,6 +258,17 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
           ) : null}
         </>
       )}
+
+      {macroEmpty && (view === "macro" || view === "summary") ? (
+        <Notice tone="warn">
+          금리·물가·통화량 자료가 아직 없습니다. 한국은행 ECOS 키(ECOS_KEY)가 GitHub Secrets 에 있으면 매일 수집 때 채워집니다.
+          {macroHints.map((h) => (
+            <span key={h} className="mt-1 block">
+              {h}
+            </span>
+          ))}
+        </Notice>
+      ) : null}
 
       {view === "macro" ? (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

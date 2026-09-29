@@ -46,6 +46,9 @@ jobs:
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
       VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
       VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+      # 웹(Vercel 서울 리전)을 거쳐 국내 API 를 부르는 중계 인증(웹과 같은 값). 러너(해외)에서 직접 호출이 막힐 때 쓴다
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      KR_RELAY: ${{ vars.KR_RELAY }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -54,6 +57,4 @@ jobs:
       # 키 점검: 결과는 실행 요약과 관리 → 시스템 화면에 남는다. 실패해도 수집은 계속한다.
       - run: uv run myrealty doctor
         continue-on-error: true
-        env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
       - run: uv run myrealty daily ${{ inputs.only && format('--only {0}', inputs.only) || '' }}

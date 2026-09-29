@@ -2,10 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { jibunOf, searchJuso } from "@/lib/external/juso";
+import { looksLikeJibun, parsePnu, searchParcels } from "@/lib/external/parcel";
 import { parseDongList } from "@/lib/units";
 
 export type AddressCandidate = {
-  source: "juso" | "local";
+  /** juso 도로명주소 · local 수집된 단지 · parcel 건물 없는 필지(브이월드·네이버 지번 검색) */
+  source: "juso" | "local" | "parcel";
   roadAddr: string | null;
   jibunAddr: string;
   lawdCd: string | null;
@@ -78,6 +80,43 @@ export async function GET(req: NextRequest) {
     jusoError = e instanceof Error ? e.message : String(e);
   }
 
+  // 건물 없는 필지(토지·임야): 도로명주소 API 에는 안 나오므로 지번 검색으로 보충한다
+  let parcelError: string | null = null;
+  const want = q.match(/(산)?\s*(\d+)(?:-(\d+))?\s*(?:번지)?\s*$/);
+  const jusoHasJibun =
+    want &&
+    results.some((r) => r.mountain === Boolean(want[1]) && r.bonbun === Number(want[2]) && (r.bubun ?? 0) === Number(want[3] ?? 0));
+  if (looksLikeJibun(q) && !jusoHasJibun) {
+    try {
+      for (const h of await searchParcels(q, 10)) {
+        const p = parsePnu(h.pnu);
+        if (!p) continue;
+        if (results.some((r) => r.lawdCd === p.lawdCd && r.mountain === p.mountain && r.bonbun === p.bonbun && (r.bubun ?? 0) === p.bubun)) continue;
+        results.push({
+          source: "parcel",
+          roadAddr: null,
+          jibunAddr: h.address,
+          lawdCd: p.lawdCd,
+          sggCd: p.sggCd,
+          sidoName: h.sidoName,
+          sggName: h.sggName,
+          emdName: h.emdName,
+          jibun: p.jibun,
+          mountain: p.mountain,
+          bonbun: p.bonbun,
+          bubun: p.bubun,
+          buildingName: null,
+          isApartment: false,
+          complexId: null,
+          complexType: null,
+          dongs: [],
+        });
+      }
+    } catch (e) {
+      parcelError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   // 도로명주소 결과 ↔ 수집된 단지(같은 시군구·읍면동·지번)
   const usedLocal = new Set<number>();
   if (results.length) {
@@ -127,5 +166,11 @@ export async function GET(req: NextRequest) {
       dongs: [],
     });
   }
-  return NextResponse.json({ results, jusoError, jusoEnabled: Boolean(process.env.JUSO_KEY) });
+  return NextResponse.json({
+    results,
+    jusoError,
+    jusoEnabled: Boolean(process.env.JUSO_KEY),
+    parcelError,
+    parcelEnabled: Boolean(process.env.VWORLD_KEY || (process.env.NCP_MAPS_KEY_ID && process.env.NCP_MAPS_KEY)),
+  });
 }

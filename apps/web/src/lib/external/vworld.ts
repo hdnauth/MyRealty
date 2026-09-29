@@ -45,7 +45,9 @@ export async function vworldGeocode(address: string, kind: "PARCEL" | "ROAD"): P
   });
   const res = await fetch(`https://api.vworld.kr/req/address?${q}`, { cache: "no-store", signal: AbortSignal.timeout(8_000) });
   const resp = (await res.json())?.response;
-  if (resp?.status !== "OK") return null;
+  if (resp?.status === "NOT_FOUND") return null;
+  // 키·도메인 오류는 '결과 없음'과 구분(실패를 캐시하지 않도록 던진다)
+  if (resp?.status !== "OK") throw new Error(`VWorld geocode ${resp?.error?.code ?? res.status}`);
   const x = Number(resp.result?.point?.x);
   const y = Number(resp.result?.point?.y);
   return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;

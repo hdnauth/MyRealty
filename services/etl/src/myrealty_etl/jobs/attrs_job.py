@@ -8,7 +8,7 @@ import re
 from ..collectors import building, vworld
 from ..config import settings
 from ..db import jsonb
-from ..http import QuotaExceeded
+from ..http import QuotaExceeded, explain_error
 
 log = logging.getLogger(__name__)
 BUILDING_TYPES = {"apt", "officetel", "rowhouse", "house", "commercial"}
@@ -75,17 +75,32 @@ def refresh_attrs(conn, max_age_days: int = 30, item_id: str | None = None) -> d
     ).fetchall()
     stale = f"{max_age_days} days"
     done_b, done_p = set(), set()
+    def fail(what: str, pnu: str, e: Exception) -> None:
+        conn.rollback()
+        log.warning("%s 수집 실패 %s: %s", what, pnu, e)
+        stats["errors"] += 1
+        msg = f"{what}: {explain_error(e)}"
+        if msg not in stats.setdefault("error_detail", []):
+            stats["error_detail"].append(msg)
+
     try:
         for it in items:
             pnu = it["pnu"]
-            try:
-                if settings.data_go_kr_key and it["property_type"] in BUILDING_TYPES and pnu not in done_b:
+            # 건축물대장과 토지(브이월드)는 따로 — 한쪽 실패가 다른 쪽을 막지 않게
+            if settings.data_go_kr_key and it["property_type"] in BUILDING_TYPES and pnu not in done_b:
+                try:
                     fresh = conn.execute("select %s::timestamptz > now() - %s::interval as ok", (it["b_at"], stale)).fetchone()["ok"]
                     if not fresh:
                         save_building(conn, pnu, building.fetch(pnu, conn), it["complex_id"])
                         stats["buildings"] += 1
                     done_b.add(pnu)
-                if settings.vworld_key and pnu not in done_p:
+                    conn.commit()
+                except QuotaExceeded:
+                    raise
+                except Exception as e:
+                    fail("건축물대장", pnu, e)
+            if settings.vworld_key and pnu not in done_p:
+                try:
                     fresh = conn.execute("select %s::timestamptz > now() - %s::interval as ok", (it["p_at"], stale)).fetchone()["ok"]
                     if not fresh:
                         save_parcel(conn, pnu, vworld.land_characteristics(pnu, conn), vworld.land_uses(pnu, conn))
@@ -99,13 +114,11 @@ def refresh_attrs(conn, max_age_days: int = 30, item_id: str | None = None) -> d
                             stats["prices"] += save_prices(conn, "house", pnu, vworld.house_prices(pnu, conn))
                         stats["parcels"] += 1
                     done_p.add(pnu)
-                conn.commit()
-            except QuotaExceeded:
-                raise
-            except Exception as e:  # 한 필지 실패는 기록하고 계속
-                conn.rollback()
-                log.warning("속성 수집 실패 %s: %s", pnu, e)
-                stats["errors"] += 1
+                    conn.commit()
+                except QuotaExceeded:
+                    raise
+                except Exception as e:
+                    fail("토지·공시가격(브이월드)", pnu, e)
     except QuotaExceeded as e:
         log.warning("%s", e)
         stats["quota_stop"] = True

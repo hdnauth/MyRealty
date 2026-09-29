@@ -163,6 +163,7 @@ DAILY_STEPS: list[tuple[str, str]] = [
     ("backfill", "myrealty_etl.jobs.rtms_job:backfill"),
     ("geocode", "myrealty_etl.transforms.geocode:geocode_pending"),
     ("link", "myrealty_etl.transforms.complexes:link_watch_items"),
+    ("item_geom", "myrealty_etl.transforms.geocode:geocode_items"),
     ("macro", "myrealty_etl.collectors.macro:collect_macro"),
     ("attrs", "myrealty_etl.jobs.attrs_job:refresh_attrs"),
     ("events", "myrealty_etl.jobs.events_job:collect_events"),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 import httpx
 
@@ -36,33 +37,45 @@ def _vworld(query: str, kind: str = "PARCEL") -> tuple[float, float] | None:
         params["domain"] = settings.vworld_domain
     r = http.get(VWORLD_ADDRESS, params=params)
     resp = r.json().get("response", {})
-    if resp.get("status") != "OK":
+    if resp.get("status") == "NOT_FOUND":
         return None
+    if resp.get("status") != "OK":
+        # 키·도메인 오류는 '결과 없음'과 구분(실패를 캐시하지 않게)
+        raise ValueError(f"vworld {resp.get('status')}: {(resp.get('error') or {}).get('code')}")
     p = resp["result"]["point"]
     return float(p["x"]), float(p["y"])
 
 
-def geocode(conn, query: str) -> tuple[float, float] | None:
+def geocode(conn, query: str, *, retry_negative: bool = False) -> tuple[float, float] | None:
+    """retry_negative: 캐시된 '좌표 없음'도 다시 시도(관심 부동산 좌표처럼 꼭 필요한 경우).
+    '좌표 없음' 캐시는 3일이 지나면 저절로 다시 시도한다. 호출 오류(키·차단)로 실패하면 캐시하지 않는다."""
     query = " ".join(query.split())
     if not query:
         return None
-    hit = conn.execute("select lng, lat from geocode_cache where query = %s", (query,)).fetchone()
-    if hit:
-        return (hit["lng"], hit["lat"]) if hit["lng"] is not None else None
-    result, provider = None, None
+    hit = conn.execute(
+        "select lng, lat, (lng is null and fetched_at < now() - interval '3 days') as stale from geocode_cache where query = %s",
+        (query,),
+    ).fetchone()
+    if hit and hit["lng"] is not None:
+        return hit["lng"], hit["lat"]
+    if hit and not (retry_negative or hit["stale"]):
+        return None
+    result, provider, errors = None, None, 0
     for name, fn in (("naver", _naver), ("vworld", _vworld)):
         try:
             result = fn(query)
         except (httpx.HTTPError, KeyError, ValueError) as e:
             log.warning("geocode %s 실패: %s", name, e)
+            errors += 1
             continue
         if result:
             provider = name
             break
-    if provider is None and not (settings.ncp_key_id or settings.vworld_key):
-        return None  # 키가 없으면 캐시에 실패를 기록하지 않는다
+    if provider is None and (errors or not (settings.ncp_key_id or settings.vworld_key)):
+        return None  # 키가 없거나 호출 오류면 실패를 캐시하지 않는다
     conn.execute(
-        "insert into geocode_cache (query, lng, lat, provider) values (%s, %s, %s, %s) on conflict (query) do nothing",
+        """insert into geocode_cache (query, lng, lat, provider) values (%s, %s, %s, %s)
+           on conflict (query) do update set lng = excluded.lng, lat = excluded.lat, provider = excluded.provider, fetched_at = now()""",
         (query, result[0] if result else None, result[1] if result else None, provider),
     )
     conn.commit()
@@ -128,3 +141,51 @@ def propagate_tx_geom(conn) -> int:
     ).rowcount
     conn.commit()
     return n
+
+
+def ensure_item_geom(conn, item_id: str) -> str | None:
+    """관심 부동산 좌표가 없으면 채운다: 단지 좌표 → 주소 지오코딩(네이버·브이월드) → 읍면동 중심.
+    등록 때 웹 지오코딩이 실패했어도(키·일시 오류) 여기서 다시 시도한다. 채운 방법을 돌려준다."""
+    w = conn.execute(
+        """select w.id, w.geom is not null as has, w.road_address, w.jibun_address, w.lawd_cd,
+                  ST_X(c.geom) as clng, ST_Y(c.geom) as clat
+           from watch_items w left join complexes c on c.id = w.complex_id where w.id = %s""",
+        (item_id,),
+    ).fetchone()
+    if not w or w["has"]:
+        return None
+    pt, how = None, None
+    if w["clng"] is not None:
+        pt, how = (w["clng"], w["clat"]), "complex"
+    if pt is None:
+        qs = [w["road_address"], w["jibun_address"]]
+        if w["jibun_address"]:
+            qs.append(re.sub(r"산\s+(\d)", r"산\1", w["jibun_address"]))
+        for q in dict.fromkeys(x for x in qs if x):
+            pt = geocode(conn, q, retry_negative=True)
+            if pt:
+                how = "geocode"
+                break
+    if pt is None and w["lawd_cd"]:
+        r = conn.execute("select ST_X(center) as lng, ST_Y(center) as lat from regions where lawd_cd = %s and center is not null",
+                         (w["lawd_cd"],)).fetchone()
+        if r:
+            pt, how = (r["lng"], r["lat"]), "region_center"
+    if pt is None:
+        return None
+    conn.execute("update watch_items set geom = ST_SetSRID(ST_MakePoint(%s, %s), 4326), updated_at = now() where id = %s",
+                 (pt[0], pt[1], item_id))
+    conn.commit()
+    return how
+
+
+def geocode_items(conn, limit: int = 50) -> dict:
+    """좌표가 없는 관심 부동산을 모두 채운다(매일 파이프라인)."""
+    ids = [r["id"] for r in conn.execute(
+        "select id::text as id from watch_items where geom is null order by created_at desc limit %s", (limit,))]
+    done: dict[str, int] = {}
+    for i in ids:
+        how = ensure_item_geom(conn, i)
+        if how:
+            done[how] = done.get(how, 0) + 1
+    return {"missing": len(ids), **done}

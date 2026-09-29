@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
 from pathlib import Path
 
@@ -90,15 +91,39 @@ def parse_hira(data: dict) -> list[dict]:
 
 
 def upsert_pois(conn, rows: list[dict]) -> int:
+    plain = [r for r in rows if not r.get("lines")]
+    shaped = [r for r in rows if r.get("lines")]
     with conn.cursor() as cur:
-        cur.executemany(
-            """insert into pois (source, source_id, category, subcategory, name, geom, area_m2, attrs, updated_at)
-               values (%(source)s, %(source_id)s, %(category)s, %(subcategory)s, %(name)s,
-                 ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326), %(area_m2)s, %(attrs_j)s, now())
-               on conflict (source, source_id) do update set category = excluded.category, subcategory = excluded.subcategory,
-                 name = excluded.name, geom = excluded.geom, area_m2 = excluded.area_m2, attrs = excluded.attrs, updated_at = now()""",
-            [{**r, "attrs_j": jsonb(r.get("attrs") or {})} for r in rows],
-        )
+        if plain:
+            cur.executemany(
+                """insert into pois (source, source_id, category, subcategory, name, geom, area_m2, attrs, updated_at)
+                   values (%(source)s, %(source_id)s, %(category)s, %(subcategory)s, %(name)s,
+                     ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326), %(area_m2)s, %(attrs_j)s, now())
+                   on conflict (source, source_id) do update set category = excluded.category, subcategory = excluded.subcategory,
+                     name = excluded.name, geom = excluded.geom, area_m2 = excluded.area_m2, attrs = excluded.attrs, updated_at = now()""",
+                [{**r, "attrs_j": jsonb(r.get("attrs") or {})} for r in plain],
+            )
+        if shaped:
+            # 경계선 → 폴리곤(끊긴 멤버 잇기·구멍 처리). 조립이 안 되면(열린 선만) 점으로만 저장된다
+            cur.executemany(
+                """with g as (
+                     select ST_Multi(ST_CollectionExtract(ST_MakeValid(ST_BuildArea(
+                              ST_SetSRID(ST_GeomFromGeoJSON(%(lines_j)s::text), 4326))), 3)) as shape
+                   )
+                   insert into pois (source, source_id, category, subcategory, name, geom, shape, area_m2, attrs, updated_at)
+                   select %(source)s, %(source_id)s, %(category)s, %(subcategory)s, %(name)s,
+                     case when ST_IsEmpty(shape) or shape is null then ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326)
+                          else ST_PointOnSurface(shape) end,
+                     nullif(shape, ST_GeomFromText('MULTIPOLYGON EMPTY', 4326)),
+                     case when shape is null or ST_IsEmpty(shape) then null else round(ST_Area(shape::geography)) end,
+                     %(attrs_j)s, now()
+                   from g
+                   on conflict (source, source_id) do update set category = excluded.category, subcategory = excluded.subcategory,
+                     name = excluded.name, geom = excluded.geom, shape = excluded.shape, area_m2 = excluded.area_m2,
+                     attrs = excluded.attrs, updated_at = now()""",
+                [{**r, "attrs_j": jsonb(r.get("attrs") or {}),
+                  "lines_j": json.dumps({"type": "MultiLineString", "coordinates": r["lines"]})} for r in shaped],
+            )
     return len(rows)
 
 

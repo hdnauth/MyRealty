@@ -23,7 +23,6 @@ def query(lng: float, lat: float, radius: int) -> str:
   nwr["railway"="station"]{near};
   nwr["station"="subway"]{near};
   nwr["amenity"="school"]{near};
-  nwr["leisure"="park"]{near};
   nwr["amenity"="hospital"]{near};
   nwr["amenity"~"^(clinic|doctors)$"]{small};
   nwr["shop"~"^(supermarket|department_store|mall)$"]{near};
@@ -31,7 +30,13 @@ def query(lng: float, lat: float, radius: int) -> str:
   nwr["shop"="convenience"]{small};
   nwr["amenity"~"^(restaurant|fast_food|cafe)$"]{small};
 );
-out center tags;"""
+out center tags;
+(
+  way["leisure"="park"]{near};
+  relation["leisure"="park"]{near};
+  node["leisure"="park"]{near};
+);
+out geom tags;"""
 
 
 def classify(tags: dict) -> tuple[str, str | None] | None:
@@ -65,6 +70,22 @@ def classify(tags: dict) -> tuple[str, str | None] | None:
     return None
 
 
+def outline(el: dict) -> list[list[list[float]]] | None:
+    """`out geom` 결과의 경계선들([[경도, 위도], …] 목록). 웨이는 한 줄, 멀티폴리곤 릴레이션은 outer·inner 멤버들.
+    폴리곤 조립(끊긴 선 잇기·구멍)은 저장할 때 PostGIS ST_BuildArea 가 한다."""
+    def line(geom: list[dict] | None) -> list[list[float]] | None:
+        pts = [[g["lon"], g["lat"]] for g in (geom or []) if "lon" in g and "lat" in g]
+        return pts if len(pts) >= 2 else None
+
+    if el.get("type") == "way":
+        ln = line(el.get("geometry"))
+        return [ln] if ln and len(ln) >= 4 else None
+    if el.get("type") == "relation":
+        lines = [ln for m in el.get("members") or [] if m.get("role") in ("outer", "inner", "") and (ln := line(m.get("geometry")))]
+        return lines or None
+    return None
+
+
 def parse(data: dict) -> list[dict]:
     out = []
     for el in data.get("elements") or []:
@@ -72,8 +93,13 @@ def parse(data: dict) -> list[dict]:
         c = classify(tags)
         if not c:
             continue
+        lines = outline(el) if c[0] == "park" else None
         lat = el.get("lat") or (el.get("center") or {}).get("lat")
         lng = el.get("lon") or (el.get("center") or {}).get("lon")
+        if (lat is None or lng is None) and lines:
+            # out geom 에는 center 가 없다 — 경계 점들의 평균(저장할 때 영역 안쪽 점으로 바뀐다)
+            pts = [p for ln in lines for p in ln]
+            lng, lat = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
         if lat is None or lng is None:
             continue
         name = tags.get("name:ko") or tags.get("name") or {"bus": "버스정류장", "park": "공원"}.get(c[0], "")
@@ -81,7 +107,8 @@ def parse(data: dict) -> list[dict]:
             continue
         out.append({"source": "osm", "source_id": f"{el['type']}/{el['id']}", "category": c[0], "subcategory": c[1],
                     "name": name[:200], "lng": float(lng), "lat": float(lat), "area_m2": None,
-                    "attrs": {k: tags[k] for k in ("operator", "line", "network") if k in tags}})
+                    "attrs": {k: tags[k] for k in ("operator", "line", "network") if k in tags},
+                    **({"lines": lines} if lines else {})})
     return out
 
 

@@ -2,7 +2,7 @@ import "server-only";
 import { sql } from "../db";
 
 export type LocDetail =
-  | { type: "near"; cats: string[]; subs: string[] | null; score: number; name: string | null; dist_m: number | null }
+  | { type: "near"; cats: string[]; subs: string[] | null; score: number; name: string | null; dist_m: number | null; area_m2?: number }
   | { type: "count"; cats: string[]; subs: string[] | null; score: number; count: number; radius: number }
   | { type: "area"; cats: string[]; score: number; area_m2: number; radius: number };
 
@@ -21,22 +21,32 @@ export type Development = {
 
 export type LocationScore = { total: number | null; scores: Record<string, LocCategory>; development: Development | null; computed_at: string };
 
-export async function itemLocation(itemId: string, sggCd: string | null) {
-  // 점수와 시군구 내 백분위를 한 쿼리로(왕복 1회)
+/**
+ * 입지 점수 + 백분위. 백분위는 반경 1km 안에서 점수를 계산한 단지들과 비교한다 — 시설 자료는 관심 부동산 주변만
+ * 모으므로(ETL analytics/location.py COVER_M) 멀리 있는 단지와 비교하면 순위가 부풀려진다.
+ */
+export async function itemLocation(itemId: string) {
+  // 점수와 백분위를 한 쿼리로(왕복 1회)
   const [row] = await sql<(LocationScore & { below: number | null; n: number | null })[]>`
     select l.total, l.scores, l.development, l.computed_at::text, p.below, p.n
     from location_scores l
+    join watch_items w on w.id::text = l.target_id
     left join lateral (
       select count(*) filter (where s.total < l.total)::int as below, count(*)::int as n
       from location_scores s join complexes c on c.id::text = s.target_id
-      where s.target_type = 'complex' and c.sgg_cd = ${sggCd} and s.total is not null
-    ) p on l.total is not null and ${sggCd}::text is not null
+      where s.target_type = 'complex' and s.total is not null and c.geom is not null and w.geom is not null
+        and ST_DWithin(c.geom::geography, w.geom::geography, ${PEER_RADIUS_M})
+        and (w.complex_id is null or c.id <> w.complex_id)
+    ) p on l.total is not null
     where l.target_type = 'item' and l.target_id = ${itemId}`;
   if (!row) return null;
   const { below, n, ...score } = row;
   const percentile = below !== null && n !== null && n >= 3 ? below / n : null;
-  return { ...score, percentile };
+  return { ...score, percentile, peers: n ?? 0 };
 }
+
+/** 백분위 비교 반경(m) */
+export const PEER_RADIUS_M = 1000;
 
 export type OpeningEffect = { name: string; opened: string; dist_m: number; complex: number | null; region: number | null; excess: number | null };
 

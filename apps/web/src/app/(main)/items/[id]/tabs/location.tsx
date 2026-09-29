@@ -15,13 +15,18 @@ export const ORDER = ["transit", "school", "shopping", "park", "academy", "medic
 export function detailText(d: LocDetail) {
   const what =
     d.cats.includes("hospital") ? "종합병원" : d.type !== "area" && d.subs?.length ? d.subs.join("·") : d.cats.map((c) => CAT_LABEL[c] ?? c).join("·");
-  if (d.type === "near") return d.name ? `가장 가까운 ${what}: ${d.name} ${d.dist_m?.toLocaleString()}m` : `${what} 5km 내 없음`;
+  if (d.type === "near") {
+    if (!d.name) return `${what} 5km 내 없음`;
+    // 공원 등 영역이 있는 시설은 경계까지 거리와 규모(가장 가까운 곳이 아니라 거리·규모로 본 가장 좋은 곳)
+    if (d.area_m2) return `${what}: ${d.name}(${(d.area_m2 / 10000).toFixed(1)}ha) 경계까지 ${d.dist_m?.toLocaleString()}m`;
+    return `가장 가까운 ${what}: ${d.name} ${d.dist_m?.toLocaleString()}m`;
+  }
   if (d.type === "count") return `${d.radius.toLocaleString()}m 내 ${what} ${d.count}곳`;
   return `${d.radius.toLocaleString()}m 내 공원 면적 ${(d.area_m2 / 10000).toFixed(1)}ha`;
 }
 
 export async function LocationTab({ item }: { item: WatchItem }) {
-  const [loc, effects] = await Promise.all([itemLocation(item.id, item.sgg_cd), openingEffects(item)]);
+  const [loc, effects] = await Promise.all([itemLocation(item.id), openingEffects(item)]);
   if (!loc) {
     return (
       <Card>
@@ -43,10 +48,12 @@ export async function LocationTab({ item }: { item: WatchItem }) {
           <span className="text-sm text-muted">/ 100</span>
         </div>
         {loc.percentile !== null ? (
-          <p className="mt-1 text-sm">같은 시군구 아파트 중 상위 <b>{formatPct(1 - loc.percentile, 0, false)}</b></p>
+          <p className="mt-1 text-sm">
+            반경 1km 단지 {loc.peers}곳 중 상위 <b>{formatPct(Math.max(0.01, 1 - loc.percentile), 0, false)}</b>
+          </p>
         ) : null}
         <p className="mt-3 text-[11px] text-muted">
-          교통 25 · 학교 15 · 쇼핑 15 · 공원 15 · 학원 10 · 의료 10 · 음식 10 가중. 거리는 직선거리 기준, 미수집 항목은 제외. 계산 {formatDate(loc.computed_at)}
+          교통 25 · 학교 15 · 쇼핑 15 · 공원 15 · 학원 10 · 의료 10 · 음식 10 가중. 거리는 직선거리(공원은 경계까지, 규모 반영), 미수집 항목은 제외. 계산 {formatDate(loc.computed_at)}
         </p>
       </Card>
 

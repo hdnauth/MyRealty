@@ -5,15 +5,16 @@ import { TypeIcon } from "@/components/items/item-card";
 import { Badge, LinkButton, Tabs } from "@/components/ui";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { getAreaUnit } from "@/lib/area-unit";
-import { formatArea } from "@/lib/format";
+import { formatArea, shortAddress } from "@/lib/format";
 import { GROUP_TAGS, PROPERTY_TYPES } from "@/lib/property";
-import { getItem, itemDataStatus } from "@/lib/queries/items";
+import { complexSales, getItem, itemDataStatus } from "@/lib/queries/items";
 import { fillMissingItemGeoms } from "@/lib/external/geocode";
 import { collectRunner, latestRun } from "@/lib/collect";
 import { DataStatusCard } from "@/components/items/data-status";
 import { ItemSwitcher, type SwitcherItem } from "@/components/items/item-switcher";
+import { AreaBar } from "@/components/items/area-bar";
+import { clusterAreas } from "@/lib/units";
 import { sql } from "@/lib/db";
-import { shortAddress } from "@/lib/format";
 import { NearbyTab } from "./tabs/nearby";
 import { AnalysisTab } from "./tabs/analysis";
 import { LocationTab } from "./tabs/location";
@@ -55,7 +56,23 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
   if (item.lng === null && (await fillMissingItemGeoms(user.id).catch(() => 0)) > 0) item = (await getItem(uid, id)) ?? item;
   const tab = TABS.find((t) => t.key === sp.tab)?.key ?? "overview";
   const welcome = sp.welcome === "1";
-  const [status, run] = tab === "overview" ? await Promise.all([itemDataStatus(item), latestRun(item.id)]) : [null, null];
+  const areaTab = tab === "overview" || tab === "price" || tab === "nearby";
+  const [[status, run], sales] = await Promise.all([
+    tab === "overview" ? Promise.all([itemDataStatus(item), latestRun(item.id)]) : Promise.resolve([null, null] as const),
+    // 평형 막대: 이 단지에서 최근 3년 거래된 평형(많은 순 6개, 면적 순)
+    item.complex_id && areaTab ? complexSales(item.complex_id, 3) : Promise.resolve([]),
+  ]);
+  const areaTypes = clusterAreas(
+    [...sales.reduce((m, x) => m.set(x.area_m2, (m.get(x.area_m2) ?? 0) + 1), new Map<number, number>())].map(([area, count]) => ({ area, count, trades: count })),
+  )
+    .sort((a, b) => b.trades - a.trades)
+    .slice(0, 6)
+    .sort((a, b) => a.area - b.area)
+    .map((t) => ({ area: Math.round(t.area * 100) / 100, label: formatArea(t.area, unit).split(" ")[0], trades: t.trades }));
+  // ?area= : 저장하지 않고 다른 평형 기준으로 보기(단지형만). 탭에는 면적만 바꾼 부동산을 넘긴다
+  const wanted = Number(sp.area);
+  const viewing = item.complex_id && Number.isFinite(wanted) && wanted > 5 && wanted < 1000 ? wanted : null;
+  const viewItem = viewing !== null ? { ...item, area_m2: viewing } : item;
 
   return (
     <div>
@@ -91,11 +108,15 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
 
       {status ? <DataStatusCard item={item} st={status} welcome={welcome} run={run} runnerReady={collectRunner() !== null} /> : null}
 
-      <Tabs active={tab} items={TABS.map((t) => ({ ...t, href: `/items/${item.id}?tab=${t.key}` }))} />
+      <Tabs active={tab} items={TABS.map((t) => ({ ...t, href: `/items/${item.id}?tab=${t.key}${viewing !== null && (t.key === "overview" || t.key === "price" || t.key === "nearby") ? `&area=${viewing}` : ""}` }))} />
 
-      {tab === "overview" ? <OverviewTab item={item} /> : null}
-      {tab === "price" ? <PriceTab item={item} all={sp.all === "1"} /> : null}
-      {tab === "nearby" ? <NearbyTab item={item} all={sp.all === "1"} /> : null}
+      {areaTab && (areaTypes.length > 1 || (areaTypes.length === 1 && !item.area_m2)) ? (
+        <AreaBar itemId={item.id} tab={tab} types={areaTypes} saved={item.area_m2 ? Number(item.area_m2) : null} viewing={viewing} dongHo={item.dong_ho} />
+      ) : null}
+
+      {tab === "overview" ? <OverviewTab item={viewItem} viewing={viewing !== null} /> : null}
+      {tab === "price" ? <PriceTab item={viewItem} all={sp.all === "1"} /> : null}
+      {tab === "nearby" ? <NearbyTab item={viewItem} all={sp.all === "1"} /> : null}
       {tab === "location" ? <LocationTab item={item} /> : null}
       {tab === "news" ? <NewsTab item={item} /> : null}
       {tab === "analysis" ? <AnalysisTab item={item} /> : null}

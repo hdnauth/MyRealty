@@ -34,7 +34,7 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
   const id = Number(raw);
   const [, c, unit, mine] = await Promise.all([requireUser(), getComplex(id), getAreaUnit(), myComplexItems(uid)]);
   if (!c) notFound();
-  const [txs, loc] = await Promise.all([complexTransactions(id, 5), complexLocation(id, c.sgg_cd)]);
+  const [txs, loc] = await Promise.all([complexTransactions(id, 5), complexLocation(id)]);
   const myItemId = mine[id] ?? null;
 
   // 평형(전용면적) 목록: 거래 많은 순 최대 6개. 기본은 가장 많이 거래된 평형
@@ -146,7 +146,7 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
               <div className="mt-0.5 flex items-baseline gap-2">
                 <span className="tabular text-3xl font-bold">{Math.round(loc.total)}</span>
                 <span className="text-sm text-muted">/ 100</span>
-                {loc.percentile !== null ? <Badge tone="accent">시군구 상위 {Math.max(1, Math.round((1 - loc.percentile) * 100))}%</Badge> : null}
+                {loc.percentile !== null ? <Badge tone="accent">주변 {loc.peers}곳 중 상위 {Math.max(1, Math.round((1 - loc.percentile) * 100))}%</Badge> : null}
               </div>
               <ul className="mt-3 space-y-1.5 text-[13px]">
                 {ORDER.filter((k) => loc.scores[k]).map((k) => {
@@ -164,7 +164,7 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
               </ul>
             </>
           ) : (
-            <p className="mt-2 text-sm text-muted">아직 계산되지 않았습니다. 이 동네의 관심 부동산이 수집될 때 함께 계산됩니다.</p>
+            <p className="mt-2 text-sm text-muted">아직 계산되지 않았습니다. 주변 시설 자료는 관심 부동산 근처만 모으므로, 관심 부동산에서 500m 안 단지만 계산됩니다.</p>
           )}
         </Card>
 

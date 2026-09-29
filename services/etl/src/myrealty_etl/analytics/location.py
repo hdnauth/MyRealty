@@ -2,6 +2,9 @@
 
 항목별 점수는 '가까울수록'(거리 체감) 또는 '많을수록'(포화 곡선)으로 계산해 가중 평균한다.
 해당 카테고리 데이터가 20km 안에 전혀 없으면 '미수집'으로 보고 총점 계산에서 제외한다.
+
+영역이 있는 시설(공원 등, pois.shape)은 중심이 아니라 경계까지 거리를 재고, 면적 항목은 반경 안에 실제로 겹치는
+면적만 센다. 공원은 규모도 본다(큰 공원 바로 옆 = 100점, 어린이공원만 가까우면 그보다 낮게).
 """
 
 from __future__ import annotations
@@ -28,20 +31,38 @@ SPECS: dict[str, tuple[str, float, list[tuple]]] = {
     "shopping": ("쇼핑", 0.15, [("near", ["mart"], None, {"good": 500, "bad": 3000}, 0.6),
                                ("count", ["convenience"], None, {"r": 500, "sat": 8}, 0.4)]),
     "food": ("음식·카페", 0.10, [("count", ["food", "cafe"], None, {"r": 500, "sat": 120}, 1.0)]),
-    "park": ("공원", 0.15, [("near", ["park"], None, {"good": 200, "bad": 1500}, 0.7),
+    "park": ("공원", 0.15, [("near", ["park"], None, {"good": 300, "bad": 1500, "sized": True}, 0.7),
                            ("area", ["park"], None, {"r": 1000, "sat": 100_000}, 0.3)]),
 }
+
+
+def park_size_factor(area_m2: float | None) -> float:
+    """가까운 공원의 규모 인정 비율: 5ha 이상 1.0 · 1~5ha 0.85 · 1ha 미만(어린이·소공원) 0.6 · 면적 모름 0.7."""
+    if area_m2 is None:
+        return 0.7
+    if area_m2 >= 50_000:
+        return 1.0
+    if area_m2 >= 10_000:
+        return 0.85
+    return 0.6
 
 # 용도지역별 용적률 상한(서울시 도시계획 조례 기준, 참고용)
 FAR_CAP = {"제1종전용주거지역": 100, "제2종전용주거지역": 120, "제1종일반주거지역": 150, "제2종일반주거지역": 200,
            "제3종일반주거지역": 250, "준주거지역": 400}
 REBUILD_AGE = 30
+# 단지 점수(백분위 비교용)를 계산하는 범위: 관심 부동산에서 이 거리 안(시설 수집 반경 안쪽)
+COVER_M = 500
 
+# d: 영역이 있으면 경계까지(안에 있으면 0), 없으면 점까지. area_1km: 반경 1km 원과 겹치는 면적(영역 없으면 area_m2)
 POI_SQL = """
-select category, subcategory, name, area_m2,
-       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326)::geography) as d
-from pois
-where ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326)::geography, 5000)
+with pt as (select ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326)::geography as g)
+select category, subcategory, name, area_m2::float8 as area_m2,
+       ST_Distance(coalesce(shape, geom)::geography, pt.g) as d,
+       case when shape is not null and category = 'park'
+            then ST_Area(ST_Intersection(shape::geography, ST_Buffer(pt.g, 1000)))
+            else area_m2::float8 end as area_1km
+from pois, pt
+where ST_DWithin(coalesce(shape, geom)::geography, pt.g, 5000)
 """
 
 
@@ -74,16 +95,24 @@ def score_point(pois: list[dict], available: set[str]) -> tuple[float | None, di
         for kind, cats, subs, prm, share in comps:
             cand = [p for p in pois if p["category"] in cats and (subs is None or (p["subcategory"] or "") in subs)]
             if kind == "near":
-                near = min(cand, key=lambda p: p["d"], default=None)
-                s = linear(near["d"], prm["good"], prm["bad"]) if near else 0.0
+                if prm.get("sized"):
+                    # 거리 점수 × 규모 인정 비율이 가장 높은 곳(가까운 소공원보다 조금 먼 큰 공원이 나을 수 있다)
+                    def val(p, good=prm["good"], bad=prm["bad"]):
+                        return linear(p["d"], good, bad) * park_size_factor(p["area_m2"])
+                    near = max(cand, key=val, default=None)
+                    s = val(near) if near else 0.0
+                else:
+                    near = min(cand, key=lambda p: p["d"], default=None)
+                    s = linear(near["d"], prm["good"], prm["bad"]) if near else 0.0
                 details.append({"type": "near", "cats": cats, "subs": subs, "score": round(s, 1),
-                                "name": near and near["name"], "dist_m": near and int(near["d"])})
+                                "name": near and near["name"], "dist_m": near and int(near["d"]),
+                                **({"area_m2": round(near["area_m2"])} if near and near.get("area_m2") else {})})
             elif kind == "count":
                 n = sum(1 for p in cand if p["d"] <= prm["r"])
                 s = min(n / prm["sat"], 1.0) * 100
                 details.append({"type": "count", "cats": cats, "subs": subs, "score": round(s, 1), "count": n, "radius": prm["r"]})
             else:
-                a = sum(float(p["area_m2"] or 0) for p in cand if p["d"] <= prm["r"])
+                a = sum(float(p.get("area_1km") or p["area_m2"] or 0) for p in cand if p["d"] <= prm["r"])
                 s = min(a / prm["sat"], 1.0) * 100
                 details.append({"type": "area", "cats": cats, "score": round(s, 1), "area_m2": round(a), "radius": prm["r"]})
             part_score += s * share
@@ -165,13 +194,21 @@ def compute_locations(conn, item_id: str | None = None) -> dict:
         score_target(conn, "item", str(it["id"]), it["lng"], it["lat"], avail, build_year=it["build_year"],
                      vl_rat=it["vl_rat"], zones=it["zones"])
         stats["items"] += 1
-    # 같은 시군구 단지들도 계산해 백분위 비교에 쓴다
+    # 주변 단지도 계산해 백분위 비교에 쓴다. 시설은 관심 부동산 주변(상가 1.5km·OSM 2km)만 모으므로
+    # 그보다 먼 단지는 시설이 덜 잡혀 점수가 낮게 나온다 — 관심 부동산 COVER_M 안 단지만 계산하고, 밖의 예전 점수는 지운다
+    conn.execute(
+        """delete from location_scores s where s.target_type = 'complex' and not exists (
+             select 1 from complexes c join watch_items w on w.geom is not null
+             where c.id::text = s.target_id and c.geom is not null
+               and ST_DWithin(c.geom::geography, w.geom::geography, %s))""",
+        (COVER_M,),
+    )
     cxs = conn.execute(
-        """select c.id, ST_X(c.geom) as lng, ST_Y(c.geom) as lat, c.build_year from complexes c
-           where c.geom is not null and c.sgg_cd in (select sgg_cd from collect_targets where enabled)
-             and c.property_type = 'apt'
-             and (%(id)s::uuid is null or c.sgg_cd = (select sgg_cd from watch_items where id = %(id)s::uuid))""",
-        {"id": item_id},
+        """select distinct c.id, ST_X(c.geom) as lng, ST_Y(c.geom) as lat, c.build_year from complexes c
+           join watch_items w on w.geom is not null and ST_DWithin(c.geom::geography, w.geom::geography, %(cover)s)
+           where c.geom is not null and c.property_type = 'apt'
+             and (%(id)s::uuid is null or w.id = %(id)s::uuid)""",
+        {"id": item_id, "cover": COVER_M},
     ).fetchall()
     for c in cxs:
         k = (round(c["lng"], 1), round(c["lat"], 1))

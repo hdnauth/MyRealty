@@ -1,4 +1,6 @@
 import { ExternalLink } from "lucide-react";
+import Link from "next/link";
+import { mapAtHref } from "@/lib/links";
 import { NotificationRow } from "@/components/feed/notification-row";
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
 import { formatDate, formatManwon, formatPct, safeHref } from "@/lib/format";
@@ -84,7 +86,20 @@ export async function NewsTab({ item }: { item: WatchItem }) {
                       {e.dist_m !== null ? ` · ${(e.dist_m / 1000).toFixed(1)}km` : ""}
                     </span>
                   </div>
-                  <p className="mt-1 font-medium">{e.title}</p>
+                  <p className="mt-1 font-medium">
+                    {e.lng !== null && e.lat !== null ? (
+                      <Link href={mapAtHref(e.lng, e.lat, "apt")} className="hover:text-accent hover:underline" title="지도에서 보기">
+                        {e.title}
+                      </Link>
+                    ) : (
+                      e.title
+                    )}
+                    {safeHref(e.source_url) ? (
+                      <a href={safeHref(e.source_url)!} target="_blank" rel="noreferrer" className="ml-1 text-xs font-normal text-accent">
+                        공고 <ExternalLink size={11} className="inline" />
+                      </a>
+                    ) : null}
+                  </p>
                   {e.payload?.households ? <p className="text-xs text-muted">{String(e.payload.households)}세대</p> : null}
                   {presale.get(e.id)?.length ? (
                     <table className="mt-1.5 w-full text-xs">

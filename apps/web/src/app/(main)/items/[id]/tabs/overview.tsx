@@ -3,7 +3,7 @@ import { getAreaUnit } from "@/lib/area-unit";
 import { sql } from "@/lib/db";
 import { floorBandOf, floorPremiums, jeonseCheck, rateSensitivity } from "@/lib/item-analytics";
 import { formatArea, formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceLabel, unitPriceName } from "@/lib/format";
-import { complexSales, itemAttrs, itemTransactions, summarize, type WatchItem } from "@/lib/queries/items";
+import { complexSales, itemAttrs, itemTransactions, myComplexItems, summarize, type WatchItem } from "@/lib/queries/items";
 import { clusterAreas } from "@/lib/units";
 import { AreaChoice } from "@/components/items/area-choice";
 import Link from "next/link";
@@ -24,7 +24,7 @@ const VAL_BASIS: Record<string, string> = {
 
 export async function OverviewTab({ item }: { item: WatchItem }) {
   const needArea = Boolean(item.complex_id) && !item.area_m2;
-  const [points, attrs, unit, [val], [rate], redev, sales] = await Promise.all([
+  const [points, attrs, unit, [val], [rate], redev, sales, mine] = await Promise.all([
     itemTransactions(item, 5),
     itemAttrs(item),
     getAreaUnit(),
@@ -33,6 +33,7 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
     sql<{ value: number }[]>`select value from series_values where code = 'ecos.mortgage_rate' order by period desc limit 1`,
     redevelopmentInfo(item),
     needArea ? complexSales(item.complex_id!, 3) : Promise.resolve([]),
+    myComplexItems(item.user_id),
   ]);
   // 평형 미선택: 이 단지에서 거래된 평형(많은 순 6개)을 보여 주고 눌러서 정하게 한다
   const areaTypes = clusterAreas(
@@ -273,6 +274,7 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
               txType={PROPERTY_TYPES[item.property_type].tx}
               selfComplexId={item.complex_id}
               pnu={item.pnu}
+              myComplexes={mine}
               unit={unit}
             />
           </div>

@@ -1,7 +1,9 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { complexHref, type MyComplexes } from "@/lib/links";
 import type { MapPoint } from "@/app/api/map/points/route";
 import { type AreaUnit, formatManwon, fromPerPyeong } from "@/lib/format";
 import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, declutter, pinLabel, polygonBBox, type Removable, shortName, tileSources } from "./engines";
@@ -31,6 +33,7 @@ export function MiniMap({
   txType,
   selfComplexId = null,
   pnu = null,
+  myComplexes = null,
   unit = "m2",
   height = 240,
 }: {
@@ -43,10 +46,13 @@ export function MiniMap({
   selfComplexId?: number | null;
   /** 필지 경계를 그릴 PNU(토지·임야는 필지 영역이 곧 부동산) */
   pnu?: string | null;
+  /** 라벨을 누르면 이동: 내 관심 부동산 단지는 그 상세, 아니면 단지 상세 */
+  myComplexes?: MyComplexes | null;
   unit?: AreaUnit;
   height?: number;
 }) {
   const el = useRef<HTMLDivElement>(null);
+  const router = useRouter();
   const mapRef = useRef<MapHandle | null>(null);
   const [engine, setEngine] = useState<"naver" | "leaflet">(keys.keyId ? "naver" : "leaflet");
   const [bbox, setBbox] = useState<BBox | null>(null);
@@ -168,8 +174,9 @@ export function MiniMap({
           lng: p.lng,
           lat: p.lat,
           zIndex: self ? 900 : 100,
-          title: `${p.name} · 최근 1년 ${p.n}건`,
-          html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:2px 6px;border-radius:7px;background:${self ? "#2563eb" : "#fff"};color:${self ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.15);font-size:10.5px;line-height:1.2;white-space:nowrap;font-weight:600">${main}<span style="font-weight:400;opacity:.75">${esc(shortName(p.name))} · ${p.n}건</span></div>`,
+          title: `${p.name} · 최근 1년 ${p.n}건${p.complex_id ? " — 눌러서 단지 보기" : ""}`,
+          onClick: p.complex_id ? () => router.push(complexHref(p.complex_id!, myComplexes)) : undefined,
+          html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:2px 6px;border-radius:7px;background:${self ? "#2563eb" : "#fff"};color:${self ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.15);font-size:10.5px;line-height:1.2;white-space:nowrap;font-weight:600;cursor:${p.complex_id ? "pointer" : "default"}">${main}<span style="font-weight:400;opacity:.75">${esc(shortName(p.name))} · ${p.n}건</span></div>`,
         }),
       );
     }
@@ -187,7 +194,7 @@ export function MiniMap({
       );
     }
     return () => ms.forEach((m) => m.remove());
-  }, [points, pois, txType, selfComplexId, unit, version, bbox]);
+  }, [points, pois, txType, selfComplexId, unit, version, bbox, router, myComplexes]);
 
   return (
     <div className="overflow-hidden rounded-lg border border-border">

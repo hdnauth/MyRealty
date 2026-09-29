@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { type MapEvent, type MapProject, type MapWatchItem, RealtyMap } from "@/components/map/realty-map";
+import { type MapEvent, type MapFocusComplex, type MapProject, type MapWatchItem, RealtyMap } from "@/components/map/realty-map";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { fillMissingItemGeoms } from "@/lib/external/geocode";
@@ -46,6 +46,35 @@ export default async function MapPage(props: PageProps<"/map">) {
     getAreaUnit(),
   ]);
   const focus = typeof sp.item === "string" ? items.find((i) => i.id === sp.item) : undefined;
-  const center: [number, number] = focus ? [focus.lng, focus.lat] : items[0] ? [items[0].lng, items[0].lat] : [126.978, 37.5665];
-  return <RealtyMap keyId={env.ncpKeyId ?? null} vworldKey={env.vworldKey ?? null} vworldDomain={env.vworldDomain ?? null} items={items} events={events} projects={projects} initialCenter={center} focusItemId={focus?.id ?? null} unit={unit} missingItems={missing} />;
+  // ?complex=단지 id: 그 단지를 골라 연다(단지 상세·유사 단지에서) / ?at=경도,위도&type=: 그 위치(단지 없는 거래)
+  const complexId = typeof sp.complex === "string" ? Number(sp.complex) : NaN;
+  const [focusComplex] = Number.isInteger(complexId)
+    ? await sql<MapFocusComplex[]>`
+        select id::int as id, name, property_type, ST_X(geom) as lng, ST_Y(geom) as lat from complexes where id = ${complexId} and geom is not null`
+    : [];
+  const at = typeof sp.at === "string" ? sp.at.split(",").map(Number) : null;
+  const atPoint: [number, number] | null = at && at.length === 2 && at.every(Number.isFinite) ? [at[0], at[1]] : null;
+  const center: [number, number] = focusComplex
+    ? [focusComplex.lng, focusComplex.lat]
+    : atPoint ?? (focus ? [focus.lng, focus.lat] : items[0] ? [items[0].lng, items[0].lat] : [126.978, 37.5665]);
+  const initialType = typeof sp.type === "string" ? sp.type : focusComplex?.property_type ?? null;
+  const myComplexes = Object.fromEntries(items.filter((i) => i.complex_id !== null).map((i) => [i.complex_id!, i.id]));
+  return (
+    <RealtyMap
+      keyId={env.ncpKeyId ?? null}
+      vworldKey={env.vworldKey ?? null}
+      vworldDomain={env.vworldDomain ?? null}
+      items={items}
+      events={events}
+      projects={projects}
+      initialCenter={center}
+      focusItemId={focusComplex || atPoint ? null : (focus?.id ?? null)}
+      focusComplex={focusComplex ?? null}
+      atPoint={atPoint}
+      initialType={initialType}
+      complexItems={myComplexes}
+      unit={unit}
+      missingItems={missing}
+    />
+  );
 }

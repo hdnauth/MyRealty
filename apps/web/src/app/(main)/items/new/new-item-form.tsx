@@ -61,12 +61,12 @@ function withLivePrices(types: AreaType[], preview: TradePreview | null): AreaTy
   });
 }
 
-export function NewItemForm({ mapKeys, unit }: { mapKeys: MapKeys; unit: AreaUnit }) {
-  const [q, setQ] = useState("");
+export function NewItemForm({ mapKeys, unit, initialPick = null }: { mapKeys: MapKeys; unit: AreaUnit; initialPick?: AddressCandidate | null }) {
+  const [q, setQ] = useState(initialPick?.buildingName ?? "");
   const [results, setResults] = useState<AddressCandidate[]>([]);
   const [meta, setMeta] = useState<{ jusoEnabled?: boolean; jusoError?: string | null; parcelError?: string | null; parcelEnabled?: boolean; searched?: string }>({});
   const [loading, setLoading] = useState(false);
-  const [picked, setPicked] = useState<AddressCandidate | null>(null);
+  const [picked, setPicked] = useState<AddressCandidate | null>(initialPick);
   // 사용자가 직접 바꾼 유형(없으면 자동 판별 값을 쓴다)
   const [typeOverride, setTypeOverride] = useState<PropertyType | null>(null);
   const [inspect, setInspect] = useState<{ key: string; data: InspectResult | null } | null>(null);

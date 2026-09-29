@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { MapPoint } from "@/app/api/map/points/route";
 import { type AreaUnit, formatDate, formatManwon, fromPerPyeong, shortAddress, unitPriceLabel } from "@/lib/format";
+import { complexHref, type MyComplexes, registerComplexHref } from "@/lib/links";
 import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
 import { type BaseMap, type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, declutter, pinLabel, satelliteSources, shortName, tileSources, vworldWmsUrl } from "./engines";
 
@@ -26,6 +27,7 @@ export type MapWatchItem = {
   last_price: number | null;
   last_date: string | null;
 };
+export type MapFocusComplex = { id: number; name: string; property_type: string; lng: number; lat: number };
 export type MapEvent = { id: number; title: string; kind: string; lng: number; lat: number; starts_on: string | null; households: number | null };
 export type MapProject = { type: "zone" | "infra"; id: number; name: string; kind: string; status: string | null; step: number | null; expected_open: string | null; lng: number; lat: number };
 type MapPoi = { id: number; category: string; subcategory: string | null; name: string; lng: number; lat: number };
@@ -104,7 +106,19 @@ export function RealtyMap({
   focusItemId = null,
   unit = "m2",
   missingItems = [],
+  focusComplex = null,
+  atPoint = null,
+  initialType = null,
+  complexItems = {},
 }: {
+  /** 처음 골라 둘 단지(/map?complex=) */
+  focusComplex?: MapFocusComplex | null;
+  /** 처음 표시할 위치(/map?at=경도,위도) — 단지 없는 거래 위치 */
+  atPoint?: [number, number] | null;
+  /** 처음 거래 유형 필터(/map?type=) */
+  initialType?: string | null;
+  /** 단지 id → 내 관심 부동산 id(선택 카드의 '상세' 링크) */
+  complexItems?: MyComplexes;
   /** 좌표를 못 찾은 관심 부동산(목록에만 안내) */
   missingItems?: { id: string; label: string }[];
   /** 처음 선택할 관심 부동산(/map?item=) */
@@ -130,14 +144,22 @@ export function RealtyMap({
   const [notice, setNotice] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(focusItemId);
   const focus = items.find((i) => i.id === focusId) ?? null;
-  const [panel, setPanel] = useState<"trades" | "items">(focusItemId || !items.length ? "trades" : "items");
-  // 관심 부동산을 골라 들어오면 그 유형의 거래를 보여 준다
-  const [type, setType] = useState<string>(() => txOf(items.find((i) => i.id === focusItemId)) ?? "apt");
+  const [panel, setPanel] = useState<"trades" | "items">(focusItemId || focusComplex || atPoint || !items.length ? "trades" : "items");
+  // 관심 부동산·단지를 골라 들어오면 그 유형의 거래를 보여 준다
+  const [type, setType] = useState<string>(() => {
+    const t = initialType === "forest" ? "land" : initialType;
+    if (t && TYPE_OPTIONS.some((o) => o.key === t)) return t;
+    return txOf(items.find((i) => i.id === focusItemId)) ?? "apt";
+  });
   const [kind, setKind] = useState<"sale" | "jeonse">("sale");
   const [months, setMonths] = useState(6);
   const [points, setPoints] = useState<MapPoint[]>([]);
   const [bbox, setBbox] = useState<BBox | null>(null);
-  const [selected, setSelected] = useState<MapPoint | null>(null);
+  const [selected, setSelected] = useState<MapPoint | null>(() =>
+    focusComplex
+      ? { key: `c${focusComplex.id}`, kind: "complex", complex_id: focusComplex.id, name: focusComplex.name, lng: focusComplex.lng, lat: focusComplex.lat, n: 0, median_price: 0, median_ppy: null, last_date: "" }
+      : null,
+  );
   const [detail, setDetail] = useState<{ complex: { name: string; build_year: number | null; households: number | null }; trades: Trade[] } | null>(null);
   const [layers, setLayers] = useState<Set<string>>(() => new Set(["projects", "subway", "school"]));
   const [pois, setPois] = useState<MapPoi[]>([]);
@@ -259,6 +281,24 @@ export function RealtyMap({
       layerMarkersRef.current = [];
     };
   }, [engine, keyId, vworldKey, lng0, lat0, items, events]);
+
+  // /map?complex= 로 들어오면 그 단지 거래를 연다
+  useEffect(() => {
+    if (focusComplex) loadComplex(focusComplex.id);
+  }, [focusComplex, loadComplex]);
+  // /map?at= : 단지 없는 거래 위치 표시(실거래 좌표는 읍면동 중심일 수 있다)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !atPoint) return;
+    const m = map.addHtmlMarker({
+      lng: atPoint[0],
+      lat: atPoint[1],
+      zIndex: 950,
+      title: "거래 위치(읍면동 중심일 수 있음)",
+      html: `<div style="transform:translate(-50%,-100%);padding:3px 8px;border-radius:999px;background:#e8590c;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap">📍 거래 위치</div>`,
+    });
+    return () => m.remove();
+  }, [atPoint, mapVersion]);
 
   // 관심 부동산 필지 경계(토지·임야·단독·상가 — 아파트는 단지 전체 필지라 라벨이 가리지 않게 뺀다)
   const boundaryPnus = useMemo(
@@ -662,8 +702,20 @@ export function RealtyMap({
               <p className="text-xs text-muted">
                 {detail?.complex?.build_year ? `${detail.complex.build_year}년 · ` : ""}
                 {detail?.complex?.households ? `${detail.complex.households.toLocaleString()}세대 · ` : ""}
-                최근 {months}개월 {selected.n}건 · 중위 {formatManwon(selected.median_price)}
+                {selected.n ? `최근 ${months}개월 ${selected.n}건 · 중위 ${formatManwon(selected.median_price)}` : "최근 거래"}
               </p>
+              {selected.complex_id ? (
+                <div className="mt-2 flex gap-3 text-sm">
+                  <Link href={complexHref(selected.complex_id, complexItems)} className="text-accent">
+                    {complexItems[selected.complex_id] ? "내 부동산 상세" : "단지 상세"}
+                  </Link>
+                  {!complexItems[selected.complex_id] ? (
+                    <Link href={registerComplexHref(selected.complex_id)} className="text-accent">
+                      관심 등록
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
               {detail ? (
                 <ul className="mt-3 divide-y divide-border text-sm">
                   {detail.trades.map((t) => (

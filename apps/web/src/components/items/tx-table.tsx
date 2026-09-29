@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { formatDate, formatManwon } from "@/lib/format";
 import { DEAL_KIND_LABEL } from "@/lib/property";
+import { complexHref, mapAtHref, type MyComplexes } from "@/lib/links";
 import type { TxPoint } from "@/lib/queries/items";
 
 export function TxTable({
@@ -10,8 +11,14 @@ export function TxTable({
   limit = 30,
   extra,
   moreHref,
+  myComplexes = null,
+  mapType = null,
 }: {
-  rows: (TxPoint & { dist_m?: number })[];
+  rows: (TxPoint & { dist_m?: number; lng?: number | null; lat?: number | null })[];
+  /** 위치 칸 링크: 단지는 내 관심 부동산/단지 상세로, 단지 없는 거래는 지도 위치로 */
+  myComplexes?: MyComplexes | null;
+  /** 지도 링크의 유형 필터(land·house 등) */
+  mapType?: string | null;
   showName?: boolean;
   limit?: number;
   extra?: "dist";
@@ -38,7 +45,7 @@ export function TxTable({
               <td className="px-4 py-2">{formatDate(r.deal_date)}</td>
               {showName ? (
                 <td className="max-w-[180px] truncate px-2 py-2">
-                  {r.name ?? [r.umd_nm, r.jibun].filter(Boolean).join(" ")}
+                  <PlaceLink r={r} myComplexes={myComplexes} mapType={mapType} />
                   {r.jimok ? <span className="ml-1 text-xs text-muted">{r.jimok}</span> : null}
                 </td>
               ) : null}
@@ -69,6 +76,17 @@ export function TxTable({
         </Link>
       ) : null}
     </div>
+  );
+}
+
+function PlaceLink({ r, myComplexes, mapType }: { r: TxPoint & { lng?: number | null; lat?: number | null }; myComplexes: MyComplexes | null; mapType: string | null }) {
+  const text = r.name ?? [r.umd_nm, r.jibun].filter(Boolean).join(" ");
+  const href = r.complex_id ? complexHref(r.complex_id, myComplexes) : r.lng != null && r.lat != null ? mapAtHref(r.lng, r.lat, mapType) : null;
+  if (!href) return <>{text}</>;
+  return (
+    <Link href={href} className="hover:text-accent hover:underline" title={r.complex_id ? "단지 보기" : "지도에서 보기(읍면동 중심 좌표일 수 있음)"}>
+      {text}
+    </Link>
   );
 }
 

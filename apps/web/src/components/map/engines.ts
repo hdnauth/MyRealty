@@ -223,8 +223,21 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
     mapDataControl: false,
     scaleControl: false,
   });
+  // 지도를 파괴한 뒤(인증 실패로 대체 지도 전환, 화면 이동) React 정리 함수가 마커·원을 지우면 네이버 지도가
+  // TypeError(Circle.setMap … 'capitalize')를 던진다 — 파괴 뒤의 제거는 무시한다
+  let alive = true;
+  const safe = (fn: () => void): Removable => ({
+    remove: () => {
+      if (!alive) return;
+      try {
+        fn();
+      } catch {
+        /* 이미 지도에서 빠진 도형 */
+      }
+    },
+  });
   // 목록 패널 높이가 바뀌는 등 컨테이너 크기가 변하면 다시 맞춘다
-  const ro = new ResizeObserver(() => map.setSize(new naver.maps.Size(el.clientWidth, el.clientHeight)));
+  const ro = new ResizeObserver(() => alive && map.setSize(new naver.maps.Size(el.clientWidth, el.clientHeight)));
   ro.observe(el);
   let cadastral: any = null;
   let traffic: any = null;
@@ -249,7 +262,7 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
         icon: { content: o.html, anchor: new naver.maps.Point(0, 0) },
       });
       if (o.onClick) naver.maps.Event.addListener(m, "click", o.onClick);
-      return { remove: () => m.setMap(null) };
+      return safe(() => m.setMap(null));
     },
     addCircle(o) {
       const c = new naver.maps.Circle({
@@ -263,7 +276,7 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
         fillOpacity: 0.04,
         clickable: false,
       });
-      return { remove: () => c.setMap(null) };
+      return safe(() => c.setMap(null));
     },
     addPolygon(o) {
       // 네이버 Polygon 하나 = 바깥 고리 + 구멍들. MultiPolygon 은 조각마다 하나씩
@@ -281,7 +294,7 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
             zIndex: o.zIndex ?? 20,
           }),
       );
-      return { remove: () => shapes.forEach((p) => p.setMap(null)) };
+      return safe(() => shapes.forEach((p) => p.setMap(null)));
     },
     panTo(lng, lat) {
       map.panTo(new naver.maps.LatLng(lat, lng));
@@ -312,7 +325,7 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
         clickable: false,
       });
       g.setMap(map);
-      return { remove: () => g.setMap(null) };
+      return safe(() => g.setMap(null));
     },
     setCadastral(on) {
       if (!naver.maps.CadastralLayer) return false;
@@ -323,6 +336,7 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
     size: () => ({ width: el.clientWidth, height: el.clientHeight }),
     zoom: () => map.getZoom(),
     destroy() {
+      alive = false;
       ro.disconnect();
       cadastral?.setMap(null);
       traffic?.setMap(null);
@@ -379,7 +393,18 @@ export function createLeafletMap(
     layer.addTo(map);
   };
   applySource(0);
-  const ro = new ResizeObserver(() => map.invalidateSize());
+  let alive = true;
+  const safe = (fn: () => void): Removable => ({
+    remove: () => {
+      if (!alive) return;
+      try {
+        fn();
+      } catch {
+        /* 이미 지도에서 빠진 도형 */
+      }
+    },
+  });
+  const ro = new ResizeObserver(() => alive && map.invalidateSize());
   ro.observe(el);
 
   // 위성·하이브리드: 기본 배경 위에 덮는다
@@ -401,7 +426,7 @@ export function createLeafletMap(
       const m = L.marker([o.lat, o.lng], { icon: html(o), zIndexOffset: (o.zIndex ?? 100) * 10, title: o.title ?? "", keyboard: false });
       if (o.onClick) m.on("click", o.onClick);
       m.addTo(map);
-      return { remove: () => m.remove() };
+      return safe(() => m.remove());
     },
     addCircle(o) {
       const c = L.circle([o.lat, o.lng], {
@@ -413,7 +438,7 @@ export function createLeafletMap(
         fillOpacity: 0.04,
         interactive: false,
       }).addTo(map);
-      return { remove: () => c.remove() };
+      return safe(() => c.remove());
     },
     addPolygon(o) {
       const latlngs = o.coordinates.map((poly) => poly.map((ring) => ring.map(([x, y]) => [y, x] as [number, number])));
@@ -425,7 +450,7 @@ export function createLeafletMap(
         fillOpacity: o.fillOpacity ?? 0.12,
         interactive: false,
       }).addTo(map);
-      return { remove: () => p.remove() };
+      return safe(() => p.remove());
     },
     panTo(lng, lat) {
       map.panTo([lat, lng]);
@@ -452,12 +477,13 @@ export function createLeafletMap(
     addImageOverlay(o) {
       const [w, s, e, n] = o.bbox;
       const img = L.imageOverlay(o.url, [[s, w], [n, e]], { opacity: o.opacity ?? 0.6, interactive: false }).addTo(map);
-      return { remove: () => img.remove() };
+      return safe(() => img.remove());
     },
     setCadastral: () => false,
     size: () => ({ width: el.clientWidth, height: el.clientHeight }),
     zoom: () => map.getZoom(),
     destroy() {
+      alive = false;
       ro.disconnect();
       map.remove();
     },

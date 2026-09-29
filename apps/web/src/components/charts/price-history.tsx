@@ -35,13 +35,15 @@ function monthlyMedian(points: TxPoint[]) {
 /** 실거래 산점도(매매·전세) + 매매 월 중위선. y축 하나(만원→억 표시). */
 export function PriceHistoryChart({ points, height = 280 }: { points: TxPoint[]; height?: number }) {
   const [range, setRange] = useState<(typeof RANGES)[number]["key"]>("3y");
-  const filtered = useMemo(() => {
+  const { filtered, sinceDay } = useMemo(() => {
     const months = RANGES.find((r) => r.key === range)!.months;
     const since = new Date();
     since.setMonth(since.getMonth() - months);
     const s = since.toISOString().slice(0, 10);
-    return points.filter((p) => !p.is_canceled && p.price && p.deal_date >= s);
+    return { filtered: points.filter((p) => !p.is_canceled && p.price && p.deal_date >= s), sinceDay: s };
   }, [points, range]);
+  // 거래가 드물면(1~2건) 시간축이 며칠 단위로 좁아져 '15 16 17…'처럼 보인다 — 고른 기간 전체를 축으로 쓴다
+  const sparse = filtered.length > 0 && filtered.length < 6;
 
   const build = useCallback(
     (t: ChartTokens): EChartsOption => {
@@ -63,7 +65,11 @@ export function PriceHistoryChart({ points, height = 280 }: { points: TxPoint[];
             return `${s} · ${p.deal_date}<br/><b>${formatManwon(p.price)}</b>${p.area_m2 ? ` · ${p.area_m2}㎡` : ""}${p.floor ? ` · ${p.floor}층` : ""}${p.is_direct ? " · 직거래" : ""}`;
           },
         },
-        xAxis: { type: "time", ...b.xAxisStyle },
+        xAxis: {
+          type: "time",
+          ...b.xAxisStyle,
+          ...(sparse ? { min: range === "all" ? filtered[0].deal_date : sinceDay, max: new Date().toISOString().slice(0, 10) } : {}),
+        },
         yAxis: {
           type: "value",
           scale: true,
@@ -98,7 +104,7 @@ export function PriceHistoryChart({ points, height = 280 }: { points: TxPoint[];
         ],
       };
     },
-    [filtered],
+    [filtered, sparse, sinceDay, range],
   );
 
   return (

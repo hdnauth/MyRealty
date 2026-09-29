@@ -9,7 +9,8 @@ import { landMarket } from "@/lib/queries/special";
 import { LandMarketCard } from "./land-market-card";
 import { groupChange, regionChange, relativePosition, similarComplexes } from "@/lib/queries/comps";
 import { LineSeriesChart } from "@/components/charts/series-chart";
-import { nearbyTransactions, similarCriteria, type WatchItem } from "@/lib/queries/items";
+import { myComplexItems, nearbyTransactions, similarCriteria, type WatchItem } from "@/lib/queries/items";
+import { complexHref } from "@/lib/links";
 
 export async function NearbyTab({ item, all = false }: { item: WatchItem; all?: boolean }) {
   if (item.lng === null) {
@@ -21,13 +22,14 @@ export async function NearbyTab({ item, all = false }: { item: WatchItem; all?: 
   }
   const isLand = item.property_type === "land" || item.property_type === "forest";
   const months = nearbyMonths(item.property_type);
-  const [rows, sim, sgg, unit, land] = await Promise.all([
+  const [rows, sim, sgg, unit, land, mine] = await Promise.all([
     // 기본은 내 부동산과 비슷한 거래만(면적·연식·지목), 전체 보기로 바꿀 수 있다
     nearbyTransactions(item, { months, similar: !all }),
     similarComplexes(item),
     item.sgg_cd ? regionChange(item.sgg_cd, PROPERTY_TYPES[item.property_type].tx, item.area_m2) : Promise.resolve(null),
     getAreaUnit(),
     isLand ? landMarket(item) : Promise.resolve(null),
+    myComplexItems(item.user_id),
   ]);
   const compChange = groupChange(sim.comps);
   const pos = await relativePosition(item, sim.comps);
@@ -89,7 +91,7 @@ export async function NearbyTab({ item, all = false }: { item: WatchItem; all?: 
 
       {sim.comps.length ? (
         <Card>
-          <CardHeader title="유사 단지" sub="거리·연식·세대수·단위면적당 가격이 비슷한 순 (유사도 0~100)" />
+          <CardHeader title="유사 단지" sub="거리·연식·세대수·단위면적당 가격이 비슷한 순 (유사도 0~100) · 단지명을 누르면 그 단지 시세" />
           <div className="overflow-x-auto pb-2">
             <table className="w-full min-w-[560px] whitespace-nowrap text-sm">
               <thead>
@@ -106,7 +108,7 @@ export async function NearbyTab({ item, all = false }: { item: WatchItem; all?: 
               <tbody className="tabular">
                 {sim.self ? <CompRow c={sim.self} unit={unit} self /> : null}
                 {sim.comps.map((c) => (
-                  <CompRow key={c.id} c={c} unit={unit} />
+                  <CompRow key={c.id} c={c} unit={unit} href={complexHref(c.id, mine, { area: item.area_m2 })} />
                 ))}
               </tbody>
             </table>
@@ -127,7 +129,7 @@ export async function NearbyTab({ item, all = false }: { item: WatchItem; all?: 
             </span>
           }
         />
-        <TxTable rows={rows} showName extra="dist" />
+        <TxTable rows={rows} showName extra="dist" myComplexes={mine} mapType={PROPERTY_TYPES[item.property_type].tx} />
       </Card>
     </div>
   );
@@ -143,10 +145,20 @@ function similarText(item: WatchItem) {
   return parts.length ? ` · ${parts.join(" · ")}` : "";
 }
 
-function CompRow({ c, unit, self = false }: { unit: AreaUnit; c: { id: number; name: string; score: number; dist_m: number; build_year: number | null; ppy_recent: number | null; change: number | null; last_price: number | null }; self?: boolean }) {
+function CompRow({ c, unit, self = false, href }: { unit: AreaUnit; c: { id: number; name: string; score: number; dist_m: number; build_year: number | null; ppy_recent: number | null; change: number | null; last_price: number | null }; self?: boolean; href?: string }) {
   return (
-    <tr className={`border-b border-border/60 last:border-0 ${self ? "bg-accent-soft/50 font-medium" : ""}`}>
-      <td className="max-w-[180px] truncate px-4 py-2">{self ? `★ ${c.name}` : c.name}</td>
+    <tr className={`border-b border-border/60 last:border-0 ${self ? "bg-accent-soft/50 font-medium" : "hover:bg-surface-2"}`}>
+      <td className="max-w-[180px] truncate px-4 py-2">
+        {self ? (
+          `★ ${c.name}`
+        ) : href ? (
+          <Link href={href} className="text-accent hover:underline">
+            {c.name}
+          </Link>
+        ) : (
+          c.name
+        )}
+      </td>
       <td className="px-2 py-2 text-right">{self ? "-" : Math.round(c.score * 100)}</td>
       <td className="px-2 py-2 text-right">{self ? "-" : `${(c.dist_m / 1000).toFixed(1)}km`}</td>
       <td className="px-2 py-2 text-right">{c.build_year ?? "-"}</td>

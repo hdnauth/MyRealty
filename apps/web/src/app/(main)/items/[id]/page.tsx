@@ -11,6 +11,9 @@ import { getItem, itemDataStatus } from "@/lib/queries/items";
 import { fillMissingItemGeoms } from "@/lib/external/geocode";
 import { collectRunner, latestRun } from "@/lib/collect";
 import { DataStatusCard } from "@/components/items/data-status";
+import { ItemSwitcher, type SwitcherItem } from "@/components/items/item-switcher";
+import { sql } from "@/lib/db";
+import { shortAddress } from "@/lib/format";
 import { NearbyTab } from "./tabs/nearby";
 import { AnalysisTab } from "./tabs/analysis";
 import { LocationTab } from "./tabs/location";
@@ -37,7 +40,15 @@ const TABS = [
 
 export default async function ItemPage(props: PageProps<"/items/[id]">) {
   const [uid, { id }, sp] = await Promise.all([sessionUserId(), props.params, props.searchParams]);
-  const [user, first, unit] = await Promise.all([requireUser(), getItem(uid, id), getAreaUnit()]);
+  const [user, first, unit, siblings] = await Promise.all([
+    requireUser(),
+    getItem(uid, id),
+    getAreaUnit(),
+    // 다른 관심 부동산으로 바로 옮겨 가기(그룹 순 → 목록 순)
+    sql<SwitcherItem[]>`
+      select id, label, property_type, group_tag from watch_items where user_id = ${uid}
+      order by array_position(array['owned', 'candidate', 'watch', 'tenant'], group_tag), sort_order, created_at`,
+  ]);
   if (!first) notFound();
   let item = first;
   // 좌표가 없으면(등록 때 지오코딩 실패 등) 지금 채운다 — 주변·입지·지도가 비지 않도록
@@ -54,9 +65,12 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <h1 className="truncate text-xl font-bold tracking-tight md:text-2xl">{item.label}</h1>
+            <h1 className="truncate text-xl font-bold tracking-tight md:text-2xl" title={item.label}>
+              {shortAddress(item.label)}
+            </h1>
             <Badge tone="accent">{PROPERTY_TYPES[item.property_type].label}</Badge>
             <Badge>{GROUP_TAGS[item.group_tag as keyof typeof GROUP_TAGS]}</Badge>
+            <ItemSwitcher items={siblings} currentId={item.id} tab={tab} />
           </div>
           <p className="mt-0.5 truncate text-sm text-muted">
             {item.road_address ?? item.jibun_address} · {formatArea(item.area_m2 ?? item.land_area_m2, unit)}

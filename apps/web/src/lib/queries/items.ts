@@ -80,6 +80,7 @@ export const getItem = cache(async (userId: string, id: string): Promise<WatchIt
 
 export type TxPoint = {
   id: number;
+  complex_id: number | null;
   deal_kind: "sale" | "jeonse" | "wolse";
   deal_date: string;
   price: number;
@@ -103,8 +104,8 @@ export type TxPoint = {
   unregistered: boolean;
 };
 
-const TX_COLUMNS = sql`
-  t.id, t.deal_kind, t.deal_date::text as deal_date, t.price, t.monthly_rent, t.area_m2, t.land_area_m2, t.floor,
+export const TX_COLUMNS = sql`
+  t.id, t.complex_id::int as complex_id, t.deal_kind, t.deal_date::text as deal_date, t.price, t.monthly_rent, t.area_m2, t.land_area_m2, t.floor,
   t.is_canceled, t.is_direct, t.name, t.umd_nm, t.jibun, t.jimok, t.build_year, t.house_type,
   t.buyer_type, t.registered_at::text as registered_at, t.contract_type, t.prev_deposit,
   (t.deal_kind = 'sale' and not t.is_canceled and t.registered_at is null and t.buyer_type is not null
@@ -136,7 +137,7 @@ export async function itemTransactions(item: WatchItem, years = 10): Promise<TxP
     order by t.deal_date`;
 }
 
-export type NearbyTx = TxPoint & { dist_m: number; complex_id: number | null; lng: number; lat: number };
+export type NearbyTx = TxPoint & { dist_m: number; lng: number; lat: number };
 
 /** 주변 거래에서 '비슷한' 조건: 면적 ±20%(토지 ±40%), 준공 ±10년. 기준 값이 없으면 그 조건은 뺀다 */
 export function similarCriteria(item: WatchItem) {
@@ -159,7 +160,7 @@ export async function nearbyTransactions(item: WatchItem, opts: { radius?: numbe
   const txType = PROPERTY_TYPES[item.property_type].tx;
   const { areaRange, yearRange } = opts.similar ? similarCriteria(item) : { areaRange: null, yearRange: null };
   return sql<NearbyTx[]>`
-    select ${TX_COLUMNS}, t.complex_id, ST_X(t.geom) as lng, ST_Y(t.geom) as lat,
+    select ${TX_COLUMNS}, ST_X(t.geom) as lng, ST_Y(t.geom) as lat,
       ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(${item.lng}, ${item.lat}), 4326)::geography)::int as dist_m
     from transactions t
     where t.property_type = ${txType} and t.deal_kind = 'sale' and not t.is_canceled
@@ -320,4 +321,12 @@ export async function complexSales(complexId: number, years = 5) {
     where complex_id = ${complexId} and deal_kind = 'sale' and not is_canceled and area_m2 > 0
       and deal_date >= current_date - ${`${years} years`}::interval
     order by deal_date`;
+}
+
+/** 내 관심 부동산이 연결된 단지 → 관심 부동산 id(링크 규칙 lib/links.ts 용) */
+export async function myComplexItems(userId: string): Promise<Record<number, string>> {
+  const rows = await sql<{ complex_id: number; id: string }[]>`
+    select distinct on (complex_id) complex_id::int as complex_id, id from watch_items
+    where user_id = ${userId} and complex_id is not null order by complex_id, sort_order, created_at`;
+  return Object.fromEntries(rows.map((r) => [r.complex_id, r.id]));
 }

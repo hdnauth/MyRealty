@@ -10,9 +10,9 @@ const CAT_LABEL: Record<string, string> = {
 };
 const ZONE_STAGES = ["기본계획", "정비구역지정", "추진위", "조합설립", "사업시행인가", "관리처분인가", "이주·철거", "착공", "준공"];
 
-const ORDER = ["transit", "school", "shopping", "park", "academy", "medical", "food"];
+export const ORDER = ["transit", "school", "shopping", "park", "academy", "medical", "food"];
 
-function detailText(d: LocDetail) {
+export function detailText(d: LocDetail) {
   const what =
     d.cats.includes("hospital") ? "종합병원" : d.type !== "area" && d.subs?.length ? d.subs.join("·") : d.cats.map((c) => CAT_LABEL[c] ?? c).join("·");
   if (d.type === "near") return d.name ? `가장 가까운 ${what}: ${d.name} ${d.dist_m?.toLocaleString()}m` : `${what} 5km 내 없음`;

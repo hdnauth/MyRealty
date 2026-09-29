@@ -11,6 +11,7 @@ import { getAreaUnit } from "@/lib/area-unit";
 import { logoutAction, revokeSessionAction, setAreaUnitAction, updateNotificationSettingsAction } from "./actions";
 import { DeleteAccount } from "./delete-account";
 import { PushManager } from "./push-manager";
+import { ThemePicker } from "@/components/shell/theme-picker";
 
 export const metadata: Metadata = { title: "설정" };
 
@@ -62,6 +63,11 @@ export default async function SettingsPage() {
         ) : (
           <div className="h-2" />
         )}
+      </Card>
+
+      <Card>
+        <CardHeader title="화면 테마" sub="시스템은 기기의 다크 모드 설정을 따릅니다. 이 기기에 저장됩니다(상단·사이드바의 해·달 버튼으로도 바꿀 수 있습니다)." />
+        <ThemePicker />
       </Card>
 
       <Card>

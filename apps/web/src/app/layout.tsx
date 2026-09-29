@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { THEME_BG, THEME_INIT_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: { default: "MyRealty", template: "%s · MyRealty" },
@@ -13,14 +14,18 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f1115" },
+    { media: "(prefers-color-scheme: light)", color: THEME_BG.light },
+    { media: "(prefers-color-scheme: dark)", color: THEME_BG.dark },
   ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="ko" className="h-full antialiased">
+    // data-theme 은 첫 페인트 전 스크립트가 붙인다(설정 › 화면 테마) — 서버 HTML 과 달라도 경고하지 않게
+    <html lang="ko" className="h-full antialiased" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-full">{children}</body>
     </html>
   );

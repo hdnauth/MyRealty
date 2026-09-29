@@ -69,3 +69,33 @@ def test_compute_locations_db(conn, fixture_text, tmp_path):
     row = conn.execute("select total, scores, development from location_scores").fetchone()
     assert row["scores"]["transit"]["details"][0]["name"] == "잠실새내"
     assert row["development"]["zones_count"] == 1 and row["development"]["nearest_planned_station"]["name"] == "테스트역"
+
+
+def test_park_score_uses_edge_distance_size_and_area():
+    # 큰 공원(30ha) 경계가 바로 옆(d=0), 반경 1km 안에 25ha 가 겹침 → 공원 100
+    big = [{"category": "park", "subcategory": None, "name": "호수공원", "area_m2": 300_000.0, "area_1km": 250_000.0, "d": 0.0}]
+    _, s = loc.score_point(big, {"park"})
+    assert s["park"]["score"] == 100.0
+    assert s["park"]["details"][0]["area_m2"] == 300_000
+    # 어린이공원(3천㎡)만 100m → 거리는 만점이지만 규모 60% · 면적 3%
+    small = [{"category": "park", "subcategory": None, "name": "어린이공원", "area_m2": 3_000.0, "area_1km": 3_000.0, "d": 100.0}]
+    _, s2 = loc.score_point(small, {"park"})
+    assert 40 < s2["park"]["score"] < 45
+    # 둘 다 있으면 조금 멀어도 큰 공원을 가장 좋은 공원으로 본다
+    both = small + [{**big[0], "d": 400.0}]
+    _, s3 = loc.score_point(both, {"park"})
+    assert s3["park"]["details"][0]["name"] == "호수공원"
+
+
+def test_osm_outline_way_and_relation():
+    from myrealty_etl.collectors import osm
+
+    way = {"type": "way", "id": 1, "tags": {"leisure": "park", "name": "A공원"},
+           "geometry": [{"lat": 37.0, "lon": 127.0}, {"lat": 37.0, "lon": 127.01}, {"lat": 37.01, "lon": 127.01}, {"lat": 37.0, "lon": 127.0}]}
+    rel = {"type": "relation", "id": 2, "tags": {"leisure": "park", "name": "B공원"},
+           "members": [{"type": "way", "role": "outer", "geometry": [{"lat": 37.0, "lon": 127.0}, {"lat": 37.0, "lon": 127.02}]},
+                       {"type": "way", "role": "outer", "geometry": [{"lat": 37.0, "lon": 127.02}, {"lat": 37.02, "lon": 127.0}, {"lat": 37.0, "lon": 127.0}]}]}
+    rows = osm.parse({"elements": [way, rel]})
+    assert [r["name"] for r in rows] == ["A공원", "B공원"]
+    assert len(rows[0]["lines"]) == 1 and len(rows[1]["lines"]) == 2
+    assert all(r["category"] == "park" and r["lng"] and r["lat"] for r in rows)

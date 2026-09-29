@@ -14,7 +14,9 @@ export async function PriceTab({ item, all = false }: { item: WatchItem; all?: b
     item.complex_id ? complexSales(item.complex_id, 5) : Promise.resolve([]),
     getAreaUnit(),
   ]);
-  const scope = item.complex_id ? `${item.complex_name} · 면적 ±3㎡` : `${item.umd_nm ?? "같은 지역"} · 유사 면적`;
+  const scope = item.complex_id
+    ? `${item.complex_name} · ${item.area_m2 ? `전용 ${formatArea(item.area_m2, unit).split(" ")[0]} ±3㎡` : "전체 평형"}`
+    : `${item.umd_nm ?? "같은 지역"} · 유사 면적`;
 
   // 평형별 추이: 거래가 많은 평형 최대 5개, 면적 오름차순으로 색을 고정(평형이 곧 색)
   const types = clusterAreas(

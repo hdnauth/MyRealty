@@ -21,7 +21,8 @@ def collect_osm(conn, max_age_days: int = 30, item_id: str | None = None) -> int
                        {"id": item_id}).fetchall()
     n = 0
     for p in pts:
-        key = f"osm:{p['lng']:.3f}:{p['lat']:.3f}:2000"
+        # osm2: 공원 영역(경계)까지 받는 버전 — 예전(점만) 수집분을 다시 받는다
+        key = f"osm2:{p['lng']:.3f}:{p['lat']:.3f}:2000"
         if conn.execute("select 1 from poi_fetches where key = %s and fetched_at > now() - %s::interval",
                         (key, f"{max_age_days} days")).fetchone():
             continue
@@ -49,7 +50,8 @@ def collect_pois(conn, max_age_days: int = 30, item_id: str | None = None) -> di
                            {"id": item_id}).fetchall()
         try:
             for p in pts:
-                for source, radius, fn in (("semas", 1000, pois.fetch_semas), ("hira", 5000, pois.fetch_hira)):
+                # 상가 1.5km: 주변 단지(500m 안)의 '1km 내 학원·의원' 개수까지 빠짐없이 세려면 1km + 500m
+                for source, radius, fn in (("semas", 1500, pois.fetch_semas), ("hira", 5000, pois.fetch_hira)):
                     key = f"{source}:{p['lng']:.3f}:{p['lat']:.3f}:{radius}"
                     fresh = conn.execute(
                         "select 1 from poi_fetches where key = %s and fetched_at > now() - %s::interval",

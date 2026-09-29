@@ -2,10 +2,8 @@ import { Badge, Card, CardHeader, Change, Stat } from "@/components/ui";
 import { getAreaUnit } from "@/lib/area-unit";
 import { sql } from "@/lib/db";
 import { floorBandOf, floorPremiums, jeonseCheck, rateSensitivity } from "@/lib/item-analytics";
-import { formatArea, formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceLabel, unitPriceName } from "@/lib/format";
-import { complexSales, itemAttrs, itemTransactions, myComplexItems, summarize, type WatchItem } from "@/lib/queries/items";
-import { clusterAreas } from "@/lib/units";
-import { AreaChoice } from "@/components/items/area-choice";
+import { formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceLabel, unitPriceName } from "@/lib/format";
+import { itemAttrs, itemTransactions, myComplexItems, summarize, type WatchItem } from "@/lib/queries/items";
 import Link from "next/link";
 import { MiniMap } from "@/components/map/mini-map";
 import { env } from "@/lib/env";
@@ -22,9 +20,9 @@ const VAL_BASIS: Record<string, string> = {
   land_unit_median: "비슷한 크기 토지 거래로 계산",
 };
 
-export async function OverviewTab({ item }: { item: WatchItem }) {
-  const needArea = Boolean(item.complex_id) && !item.area_m2;
-  const [points, attrs, unit, [val], [rate], redev, sales, mine] = await Promise.all([
+/** viewing: 평형 막대에서 다른 평형을 '보기만' 하는 중(추정 시세는 저장된 내 평형 기준이라 쓰지 않는다) */
+export async function OverviewTab({ item, viewing = false }: { item: WatchItem; viewing?: boolean }) {
+  const [points, attrs, unit, [valSaved], [rate], redev, mine] = await Promise.all([
     itemTransactions(item, 5),
     itemAttrs(item),
     getAreaUnit(),
@@ -32,17 +30,9 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
       select estimate, low, high, confidence, as_of::text, method from valuations where watch_item_id = ${item.id} order by as_of desc limit 1`,
     sql<{ value: number }[]>`select value from series_values where code = 'ecos.mortgage_rate' order by period desc limit 1`,
     redevelopmentInfo(item),
-    needArea ? complexSales(item.complex_id!, 3) : Promise.resolve([]),
     myComplexItems(item.user_id),
   ]);
-  // 평형 미선택: 이 단지에서 거래된 평형(많은 순 6개)을 보여 주고 눌러서 정하게 한다
-  const areaTypes = clusterAreas(
-    [...sales.reduce((m, x) => m.set(x.area_m2, (m.get(x.area_m2) ?? 0) + 1), new Map<number, number>())].map(([area, count]) => ({ area, count, trades: count })),
-  )
-    .sort((a, b) => b.trades - a.trades)
-    .slice(0, 6)
-    .sort((a, b) => a.area - b.area)
-    .map((t) => ({ area: Math.round(t.area * 100) / 100, label: formatArea(t.area, unit), trades: t.trades }));
+  const val = viewing ? undefined : valSaved;
   const isComplex = Boolean(item.complex_id);
   const s = summarize(points, new Date(), { perArea: !isComplex });
   const area = item.area_m2 ?? item.land_area_m2;
@@ -77,15 +67,6 @@ export async function OverviewTab({ item }: { item: WatchItem }) {
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      {needArea && areaTypes.length ? (
-        <Card className="border-warn/40 p-4 lg:col-span-3">
-          <div className="text-sm font-medium">평형을 골라 주세요</div>
-          <p className="mt-0.5 text-xs text-muted">
-            지금은 단지의 모든 평형 거래를 섞어 보여 줍니다. 내 평형을 고르면 시세·㎡당 가격·전세가율·층별 차이·추정 시세가 그 평형 기준으로 바뀝니다.
-          </p>
-          <AreaChoice itemId={item.id} types={areaTypes} />
-        </Card>
-      ) : null}
       <Card className="p-4 lg:col-span-2">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
           <div>

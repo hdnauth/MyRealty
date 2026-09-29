@@ -15,7 +15,7 @@ export async function NearbyTab({ item, all = false }: { item: WatchItem; all?: 
   if (item.lng === null) {
     return (
       <Card>
-        <EmptyState title="좌표가 없어 주변 거래를 찾을 수 없습니다" desc="지오코딩 키(NCP)를 설정하거나 ETL 지오코딩 작업을 실행하세요." />
+        <EmptyState title="좌표가 없어 주변 거래를 찾을 수 없습니다" desc="주소로 위치를 찾지 못했습니다. 웹(Vercel)의 NCP_MAPS_KEY_ID·NCP_MAPS_KEY(Geocoding 사용 설정) 또는 VWORLD_KEY 를 확인하거나, 수정 화면에서 주소를 다시 골라 보세요." />
       </Card>
     );
   }

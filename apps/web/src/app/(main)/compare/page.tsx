@@ -6,9 +6,9 @@ import { latestCompare } from "@/lib/ai/compare";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { getAreaUnit } from "@/lib/area-unit";
-import { formatArea, formatManwon, formatPct, perUnitArea, unitPriceName } from "@/lib/format";
+import { formatArea, formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceName } from "@/lib/format";
 import { PROPERTY_TYPES } from "@/lib/property";
-import { itemTransactions, listItems, summarize } from "@/lib/queries/items";
+import { itemAttrs, itemTransactions, listItems, summarize } from "@/lib/queries/items";
 import { getItem } from "@/lib/queries/items";
 import { CompareButton } from "./compare-button";
 import { LineSeriesChart } from "@/components/charts/series-chart";
@@ -39,7 +39,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
           select count(*) filter (where impact > 0)::int as pos, count(*) filter (where impact < 0)::int as neg
           from article_links where watch_item_id = ${id} and status = 'classified' and relevance >= 0.7 and classified_at > now() - interval '60 days'`,
       ]);
-      const [txs, region, pos] = await Promise.all([
+      const [txs, region, pos, attrs] = await Promise.all([
         itemTransactions(it, 5),
         it.sgg_cd
           ? sql<{ code: string; value: number }[]>`
@@ -47,6 +47,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
               from series s where s.code in (${`ind.temp.${it.sgg_cd}`}, ${`ind.burden.${it.sgg_cd}`})`
           : [],
         it.complex_id ? similarComplexes(it).then((sim) => relativePosition(it, sim.comps)) : Promise.resolve(null),
+        itemAttrs(it),
       ]);
       const s = summarize(txs);
       // 단위면적당 가격 추이(3개월 이동 중위) — 크기가 다른 부동산도 같은 축에서 비교
@@ -68,6 +69,8 @@ export default async function ComparePage(props: PageProps<"/compare">) {
         ppy: v && area ? perUnitArea(v.estimate, area, unit) : null,
         trend,
         rel: pos?.rel ?? null,
+        attrs,
+        tradeCount: txs.filter((t) => t.deal_kind === "sale" && !t.is_canceled).length,
       };
     }),
   );
@@ -81,9 +84,25 @@ export default async function ComparePage(props: PageProps<"/compare">) {
   const otherFamily = charted.filter((r) => !absRows.includes(r)).map((r) => r.it.label);
   const enabled = aiEnabled();
 
-  const metrics: { label: string; get: (r: (typeof rows)[number]) => string }[] = [
+  type Row = (typeof rows)[number];
+  const lastOfficial = (r: Row, types: string[]) => r.attrs.prices.filter((p) => types.includes(p.target_type)).at(-1) ?? null;
+  const titleOf = (r: Row) => (r.attrs.building?.titles?.[0] ?? null) as { useAprDay?: string; mainPurpsCdNm?: string; grndFlrCnt?: string | number } | null;
+  const metrics: { label: string; get: (r: Row) => string }[] = [
     { label: "유형", get: (r) => PROPERTY_TYPES[r.it.property_type].label },
+    { label: "위치", get: (r) => r.it.umd_nm ?? (r.it.jibun_address ?? r.it.road_address ?? "-").split(" ").slice(-3, -1).join(" ") },
     { label: "면적", get: (r) => formatArea(r.it.area_m2 ?? r.it.land_area_m2, unit) },
+    { label: "층·동호", get: (r) => [r.it.dong_ho, r.it.floor ? `${r.it.floor}층` : null].filter(Boolean).join(" · ") || "-" },
+    { label: "매입가", get: (r) => (r.it.purchase_price ? formatManwon(r.it.purchase_price, { short: true }) : "-") },
+    {
+      label: "평가 손익",
+      get: (r) => {
+        const now = r.v?.estimate ?? r.s.lastSale?.price ?? null;
+        if (!r.it.purchase_price || !now) return "-";
+        return `${now >= r.it.purchase_price ? "+" : ""}${formatManwon(now - r.it.purchase_price, { short: true })} (${formatPct(now / r.it.purchase_price - 1)})`;
+      },
+    },
+    { label: "최근 매매", get: (r) => (r.s.lastSale ? `${formatManwon(r.s.lastSale.price, { short: true })} · ${formatDate(r.s.lastSale.deal_date)}` : "-") },
+    { label: "매매 건수(5년)", get: (r) => `${r.tradeCount}건` },
     { label: "추정 시세", get: (r) => (r.v ? `${formatManwon(r.v.estimate, { short: true })}` : "-") },
     { label: "추정 범위", get: (r) => (r.v ? `${formatManwon(r.v.low, { short: true })}~${formatManwon(r.v.high, { short: true })}` : "-") },
     { label: `${unitPriceName(unit)}(추정)`, get: (r) => formatManwon(r.ppy, { short: true }) },
@@ -91,7 +110,23 @@ export default async function ComparePage(props: PageProps<"/compare">) {
     { label: "유사 단지 대비(평소)", get: (r) => (r.rel ? `${formatPct(r.rel.current, 0)} (${formatPct(r.rel.average, 0)}) · ${r.rel.verdict}` : "-") },
     { label: "전세가율", get: (r) => formatPct(r.s.jeonseRatio, 0, false) },
     { label: "최근 3개월 거래", get: (r) => `${r.s.count3m}건` },
-    { label: "준공", get: (r) => (r.it.complex_build_year ? `${r.it.complex_build_year}년` : "-") },
+    {
+      label: "준공",
+      get: (r) => {
+        const y = r.it.complex_build_year ?? (titleOf(r)?.useAprDay ? Number(String(titleOf(r)!.useAprDay).slice(0, 4)) : null);
+        return y ? `${y}년 (${new Date().getFullYear() - y}년차)` : "-";
+      },
+    },
+    {
+      label: "공시가격",
+      get: (r) => {
+        const u = lastOfficial(r, ["apt_unit", "house"]);
+        if (u) return `${formatManwon(u.price / 10000, { short: true })} (${u.year})`;
+        const l = lastOfficial(r, ["land"]);
+        return l ? `${formatNumber(l.price)}원/㎡ (${l.year})` : "-";
+      },
+    },
+    { label: "지목 · 용도지역", get: (r) => (r.attrs.parcel ? [r.attrs.parcel.jimok, r.attrs.parcel.land_use_zone?.[0]].filter(Boolean).join(" · ") || "-" : "-") },
     { label: "생활편의 점수", get: (r) => (r.loc?.total != null ? String(Math.round(r.loc.total)) : "-") },
     { label: "교통 / 학교", get: (r) => (r.loc ? `${r.loc.scores.transit?.score != null ? Math.round(r.loc.scores.transit.score) : "-"} / ${r.loc.scores.school?.score != null ? Math.round(r.loc.scores.school.score) : "-"}` : "-") },
     { label: "주변 정비구역", get: (r) => (r.loc?.development?.zones_count != null ? `${r.loc.development.zones_count}곳` : "-") },
@@ -116,6 +151,16 @@ export default async function ComparePage(props: PageProps<"/compare">) {
         <Card><EmptyState title="2개 이상 선택하세요" /></Card>
       ) : (
         <>
+          {rows.some((r) => !r.tradeCount && !r.v && !r.loc && !r.attrs.building && !r.attrs.parcel) ? (
+            <Notice tone="warn">
+              아직 공공데이터가 수집되지 않은 부동산이 있어 일부 칸이 비어 있습니다(
+              {rows
+                .filter((r) => !r.tradeCount && !r.v && !r.loc && !r.attrs.building && !r.attrs.parcel)
+                .map((r) => r.it.label)
+                .join(", ")}
+              ). 각 부동산 개요의 &quot;데이터 상태&quot;에서 사유를 확인하고 다시 불러올 수 있습니다.
+            </Notice>
+          ) : null}
           <Card>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[560px] whitespace-nowrap text-sm">

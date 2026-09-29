@@ -18,9 +18,9 @@ from dateutil.relativedelta import relativedelta
 from ..collectors import rtms
 from ..config import settings
 from ..db import jsonb
-from ..http import QuotaExceeded
+from ..http import QuotaExceeded, explain_error, relay_state
 from ..transforms.complexes import ComplexMatcher, link_watch_items
-from ..transforms.geocode import geocode_pending
+from ..transforms.geocode import ensure_item_geom, geocode_pending
 from .rtms_job import month_list, upsert_regions
 
 log = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ STEPS: list[tuple[str, str]] = [
     ("attrs", "건축물대장·토지·공시가격"),
     ("location", "주변 시설·입지 점수"),
     ("valuation", "추정 시세"),
+    ("market", "금리·물가·지역 지표"),
     ("news", "관련 뉴스"),
     ("history", "과거 실거래(3년)"),
 ]
@@ -70,10 +71,15 @@ def place(conn, item: dict) -> dict:
 
 
 def trades_step(conn, item: dict, today: date) -> dict:
+    # 좌표는 거래 수집 성공 여부와 상관없이 먼저(주변·입지·지도가 이것만 있으면 된다)
+    geo = ensure_item_geom(conn, item["id"])
     s = collect_months(conn, item, month_list(today, RECENT_MONTHS))
     if "skipped" in s:
         return s
-    return {**s, **place(conn, item)}
+    out = {**s, **place(conn, item)}
+    if geo:
+        out["item_geom"] = geo
+    return out
 
 
 def history_step(conn, item: dict, today: date) -> dict:
@@ -105,15 +111,51 @@ def attrs_step(conn, item: dict, today: date) -> dict:
     # 키가 없어 아무것도 못 받았으면 '없음'이 아니라 '건너뜀'으로(화면이 사유를 보여 준다)
     if s.get("skipped") and not (s["buildings"] or s["parcels"] or s["prices"] or s["errors"]):
         return {"skipped": " · ".join(s["skipped"]) + " 미설정"}
+    # 호출이 모두 실패했으면 '자료 없음'이 아니라 오류로(사유 표시)
+    if s["errors"] and not (s["buildings"] or s["parcels"] or s["prices"]):
+        raise StepFailed(" · ".join(s.get("error_detail") or ["불러오지 못함"]))
     return s
+
+
+def market_step(conn, item: dict, today: date) -> dict:
+    """금리·물가·통화량(ECOS·KOSIS·R-ONE)이 하루 넘게 묵었으면 받고, 이 시군구 지역 지표를 계산한다.
+    매일 수집을 기다리지 않고 지표·금리 화면이 채워지도록."""
+    from ..analytics.indicators import compute_region, detect_rate_change
+    from ..collectors.macro import collect_macro
+
+    out: dict = {}
+    fresh = conn.execute(
+        "select 1 from series where code = 'ecos.base_rate' and updated_at > now() - interval '20 hours'"
+    ).fetchone()
+    if fresh:
+        out["macro"] = "최근 수집됨"
+    elif settings.ecos_key or settings.kosis_key or settings.reb_key:
+        m = collect_macro(conn, today=today)
+        out["macro"] = {"series": sum(1 for v in m.values() if isinstance(v, int)),
+                        "errors": [k for k, v in m.items() if isinstance(v, str) and v.startswith("error")]}
+        try:
+            out["rate"] = detect_rate_change(conn)
+        except Exception as e:  # 보조 정보
+            log.warning("금리 변화 확인 실패: %s", e)
+    else:
+        out["macro"] = "ECOS_KEY·KOSIS_KEY·REB_KEY 미설정"
+    if item["sgg_cd"]:
+        try:
+            out["region"] = compute_region(conn, item["sgg_cd"], today)
+        except Exception as e:
+            conn.rollback()
+            log.warning("지역 지표 계산 실패 %s: %s", item["sgg_cd"], e)
+            out["region"] = {"error": explain_error(e)}
+    return out
 
 
 def location_step(conn, item: dict, today: date) -> dict:
     from .pois_job import collect_pois
 
     # 좌표는 trades 단계에서 단지와 연결되며 생길 수 있다
+    ensure_item_geom(conn, item["id"])
     if not conn.execute("select 1 from watch_items where id = %s and geom is not null", (item["id"],)).fetchone():
-        return {"skipped": "좌표를 찾지 못했습니다(주소 지오코딩 키 확인)"}
+        return {"skipped": "주소로 좌표를 찾지 못했습니다(NCP_MAPS_KEY_ID·VWORLD_KEY 확인 또는 주소 다시 선택)"}
     return collect_pois(conn, item_id=item["id"])
 
 
@@ -143,9 +185,14 @@ STEP_FNS: dict[str, Callable[..., dict]] = {
     "attrs": attrs_step,
     "location": location_step,
     "valuation": valuation_step,
+    "market": market_step,
     "news": news_step,
     "history": history_step,
 }
+
+
+class StepFailed(RuntimeError):
+    """단계가 끝났지만 결과가 전부 실패(사유를 화면에 그대로 보인다)."""
 
 
 def _set_step(conn, run_id: int, key: str, value: dict) -> None:
@@ -191,13 +238,13 @@ def collect_item(conn, item: str, run: int | None = None, today: date | None = N
             else:
                 detail = STEP_FNS[key](conn, dict(it), today) or {}
             status = "skipped" if "skipped" in detail and len(detail) == 1 else "done"
-        except QuotaExceeded as e:
+        except (QuotaExceeded, StepFailed) as e:
             conn.rollback()
             detail, status = {"error": str(e)}, "error"
         except Exception as e:  # 한 단계 실패가 나머지를 막지 않게
             conn.rollback()
             log.exception("개별 수집 %s 실패", key)
-            detail, status = {"error": repr(e)[:500]}, "error"
+            detail, status = {"error": explain_error(e)}, "error"
         _set_step(conn, run, key, {"status": status, "detail": detail, "started_at": started, "finished_at": _now(conn)})
         result[key] = {"status": status, **detail}
         # 단지가 새로 연결되면 다음 단계(공시가격·추정 시세)에 반영
@@ -205,6 +252,8 @@ def collect_item(conn, item: str, run: int | None = None, today: date | None = N
             it = conn.execute(
                 "select id::text as id, property_type, sgg_cd, lawd_cd, pnu, complex_id from watch_items where id = %s", (item,)
             ).fetchone() or it
+    if relay_state()["hosts"]:
+        log.info("국내 API 중계 사용: %s", relay_state()["hosts"])
     conn.execute("update item_collect_runs set status = 'done', finished_at = now() where id = %s", (run,))
     conn.commit()
     return result

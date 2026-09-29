@@ -25,6 +25,10 @@ jobs:
           if [ "$(TZ=Asia/Seoul date -d '+2 hours' +%d)" = "01" ]; then echo "kind=monthly" >> $GITHUB_OUTPUT; else echo "kind=" >> $GITHUB_OUTPUT; fi
       - name: Call app
         if: steps.k.outputs.kind != ''
+        env:
+          APP_URL: ${{ vars.APP_URL }}
         run: |
-          curl -fsS --max-time 290 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ vars.APP_URL }}/api/cron/reports?kind=${{ steps.k.outputs.kind }}"
+          # APP_URL 에 https:// 가 빠져 있어도(예: myrealty.vercel.app) 동작하게
+          case "$APP_URL" in http://*|https://*) ;; *) APP_URL="https://$APP_URL" ;; esac
+          curl -fsSL --max-time 290 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${APP_URL%/}/api/cron/reports?kind=${{ steps.k.outputs.kind }}"

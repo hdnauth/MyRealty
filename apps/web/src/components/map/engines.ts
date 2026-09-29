@@ -15,6 +15,7 @@ declare global {
 }
 
 export type BBox = [number, number, number, number];
+export type BaseMap = "normal" | "satellite" | "hybrid" | "terrain";
 export type Removable = { remove(): void };
 export type HtmlMarkerOptions = { lng: number; lat: number; html: string; zIndex?: number; title?: string; onClick?: () => void };
 
@@ -24,6 +25,14 @@ export interface MapHandle {
   addHtmlMarker(o: HtmlMarkerOptions): Removable;
   addCircle(o: { lng: number; lat: number; radius: number; color: string }): Removable;
   panTo(lng: number, lat: number): void;
+  /** 좌표로 이동하며 확대 단계 지정 */
+  setCenter(lng: number, lat: number, zoom?: number): void;
+  /** 범위가 한 화면에 들어오게 */
+  fitBounds(b: BBox): void;
+  /** 배경 지도 종류. 엔진이 지원하지 않으면 false */
+  setBaseMap(kind: BaseMap): boolean;
+  /** 실시간 교통정보(네이버만). 없으면 false */
+  setTraffic(on: boolean): boolean;
   /** 현재 화면 크기·범위의 이미지(WMS GetMap 등)를 지도 위에 덮는다 */
   addImageOverlay(o: { url: string; bbox: BBox; opacity?: number }): Removable;
   /** 엔진 자체 지적도가 있으면 켠다(네이버 CadastralLayer). 없으면 false */
@@ -58,6 +67,26 @@ export function vworldWmsUrl(p: { key: string; domain?: string | null; layers: s
 }
 
 export type TileSource = { url: string; attribution: string; maxZoom: number };
+
+/** 위성 배경: 브이월드 영상(+하이브리드 지명), 키가 없으면 Esri World Imagery */
+export function satelliteSources(vworldKey: string | null): { base: TileSource; labels: TileSource | null } {
+  if (vworldKey) {
+    const k = encodeURIComponent(vworldKey);
+    const attribution = '&copy; <a href="https://www.vworld.kr" target="_blank" rel="noreferrer">VWorld</a>';
+    return {
+      base: { url: `https://api.vworld.kr/req/wmts/1.0.0/${k}/Satellite/{z}/{y}/{x}.jpeg`, attribution, maxZoom: 19 },
+      labels: { url: `https://api.vworld.kr/req/wmts/1.0.0/${k}/Hybrid/{z}/{y}/{x}.png`, attribution, maxZoom: 19 },
+    };
+  }
+  return {
+    base: {
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      attribution: "Tiles &copy; Esri",
+      maxZoom: 19,
+    },
+    labels: null,
+  };
+}
 
 const OSM: TileSource = {
   url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -130,6 +159,7 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
   const ro = new ResizeObserver(() => map.setSize(new naver.maps.Size(el.clientWidth, el.clientHeight)));
   ro.observe(el);
   let cadastral: any = null;
+  let traffic: any = null;
   return {
     engine: "naver",
     onIdle(cb) {
@@ -170,6 +200,25 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
     panTo(lng, lat) {
       map.panTo(new naver.maps.LatLng(lat, lng));
     },
+    setCenter(lng, lat, zoom) {
+      if (zoom) map.setZoom(zoom, false);
+      map.setCenter(new naver.maps.LatLng(lat, lng));
+    },
+    fitBounds([w, s, e, n]) {
+      map.fitBounds(new naver.maps.LatLngBounds(new naver.maps.LatLng(s, w), new naver.maps.LatLng(n, e)), { top: 40, right: 40, bottom: 40, left: 40 });
+    },
+    setBaseMap(kind) {
+      const id = naver.maps.MapTypeId?.[kind.toUpperCase()];
+      if (!id) return false;
+      map.setMapTypeId(id);
+      return true;
+    },
+    setTraffic(on) {
+      if (!naver.maps.TrafficLayer) return false;
+      traffic ??= new naver.maps.TrafficLayer({ interval: 300000 });
+      traffic.setMap(on ? map : null);
+      return true;
+    },
     addImageOverlay(o) {
       const [w, s, e, n] = o.bbox;
       const g = new naver.maps.GroundOverlay(o.url, new naver.maps.LatLngBounds(new naver.maps.LatLng(s, w), new naver.maps.LatLng(n, e)), {
@@ -190,6 +239,7 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
     destroy() {
       ro.disconnect();
       cadastral?.setMap(null);
+      traffic?.setMap(null);
       try {
         map.destroy();
       } catch {
@@ -216,6 +266,7 @@ export function createLeafletMap(
   zoom: number,
   sources: TileSource[],
   onTileFallback?: (from: TileSource, to: TileSource) => void,
+  satellite?: { base: TileSource; labels: TileSource | null },
 ): MapHandle {
   const map = L.map(el, { zoomControl: false, attributionControl: true }).setView([center[1], center[0]], zoom);
   L.control.zoom({ position: "topright" }).addTo(map);
@@ -245,6 +296,8 @@ export function createLeafletMap(
   const ro = new ResizeObserver(() => map.invalidateSize());
   ro.observe(el);
 
+  // 위성·하이브리드: 기본 배경 위에 덮는다
+  let satLayers: import("leaflet").TileLayer[] = [];
   const html = (o: HtmlMarkerOptions) =>
     L.divIcon({ html: o.html, className: "map-html-marker", iconSize: [0, 0], iconAnchor: [0, 0] });
 
@@ -279,6 +332,25 @@ export function createLeafletMap(
     panTo(lng, lat) {
       map.panTo([lat, lng]);
     },
+    setCenter(lng, lat, zoom) {
+      map.setView([lat, lng], zoom ?? map.getZoom());
+    },
+    fitBounds([w, s, e, n]) {
+      map.fitBounds([[s, w], [n, e]], { padding: [40, 40], maxZoom: 16 });
+    },
+    setBaseMap(kind) {
+      if (kind === "terrain") return false;
+      satLayers.forEach((l) => l.remove());
+      satLayers = [];
+      if ((kind === "satellite" || kind === "hybrid") && satellite) {
+        satLayers.push(L.tileLayer(satellite.base.url, { attribution: satellite.base.attribution, maxZoom: satellite.base.maxZoom }).addTo(map));
+        if (kind === "hybrid" && satellite.labels) {
+          satLayers.push(L.tileLayer(satellite.labels.url, { attribution: satellite.labels.attribution, maxZoom: satellite.labels.maxZoom }).addTo(map));
+        }
+      }
+      return true;
+    },
+    setTraffic: () => false,
     addImageOverlay(o) {
       const [w, s, e, n] = o.bbox;
       const img = L.imageOverlay(o.url, [[s, w], [n, e]], { opacity: o.opacity ?? 0.6, interactive: false }).addTo(map);

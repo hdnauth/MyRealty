@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { type MapEvent, type MapProject, type MapWatchItem, RealtyMap } from "@/components/map/realty-map";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
+import { fillMissingItemGeoms } from "@/lib/external/geocode";
 import { env } from "@/lib/env";
 import { getAreaUnit } from "@/lib/area-unit";
 
@@ -9,8 +10,10 @@ export const metadata: Metadata = { title: "지도" };
 
 export default async function MapPage(props: PageProps<"/map">) {
   const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
-  const [, items, events, projects, unit] = await Promise.all([
-    requireUser(),
+  const user = await requireUser();
+  // 좌표가 없는 부동산(등록 때 지오코딩 실패 등)은 지금 채워 지도에 빠지지 않게 한다
+  await fillMissingItemGeoms(user.id).catch((e) => console.error("[map] geocode", e));
+  const [items, missing, events, projects, unit] = await Promise.all([
     sql<MapWatchItem[]>`
       select w.id, w.label, w.property_type, w.group_tag, w.radius_m, w.complex_id, w.area_m2::float8 as area_m2,
         ST_X(w.geom) as lng, ST_Y(w.geom) as lat, v.estimate, lt.price as last_price, lt.deal_date::text as last_date
@@ -22,6 +25,8 @@ export default async function MapPage(props: PageProps<"/map">) {
           and (w.area_m2 is null or abs(t.area_m2 - w.area_m2) <= 3)
         order by t.deal_date desc limit 1) lt on true
       where w.user_id = ${uid} and w.geom is not null order by w.sort_order, w.created_at`,
+    sql<{ id: string; label: string }[]>`
+      select id, label from watch_items where user_id = ${uid} and geom is null order by sort_order, created_at`,
     sql<MapEvent[]>`
       select id, title, kind, ST_X(geom) as lng, ST_Y(geom) as lat, starts_on::text as starts_on,
         nullif(regexp_replace(coalesce(payload->>'households', ''), '[^0-9]', '', 'g'), '')::int as households
@@ -42,5 +47,5 @@ export default async function MapPage(props: PageProps<"/map">) {
   ]);
   const focus = typeof sp.item === "string" ? items.find((i) => i.id === sp.item) : undefined;
   const center: [number, number] = focus ? [focus.lng, focus.lat] : items[0] ? [items[0].lng, items[0].lat] : [126.978, 37.5665];
-  return <RealtyMap keyId={env.ncpKeyId ?? null} vworldKey={env.vworldKey ?? null} vworldDomain={env.vworldDomain ?? null} items={items} events={events} projects={projects} initialCenter={center} focusItemId={focus?.id ?? null} unit={unit} />;
+  return <RealtyMap keyId={env.ncpKeyId ?? null} vworldKey={env.vworldKey ?? null} vworldDomain={env.vworldDomain ?? null} items={items} events={events} projects={projects} initialCenter={center} focusItemId={focus?.id ?? null} unit={unit} missingItems={missing} />;
 }

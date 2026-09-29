@@ -148,6 +148,12 @@ GitHub Actions **ETL item** 워크플로로 그 부동산만 수집하고, 상�
 |---|---|
 | RTMS 오류 30 / `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` | 활용신청 승인 전이거나 Encoding 키를 넣음 → **Decoding(일반) 키**를 넣고 승인 후 1~2시간 대기 |
 | RTMS 오류 22 | 일일 트래픽 초과 → 다음 날 자동 이월 |
+| GitHub Actions 에서만 공공데이터포털 403(오류 30)·브이월드 "Server disconnected" | 러너가 해외(미국)라 거부·차단되거나 GitHub Secrets 의 키가 웹과 다름. **국내 API 중계**: GitHub Secrets 에 `CRON_SECRET`(Vercel 과 같은 값), Variables 에 `APP_URL` 을 넣으면 직접 호출이 실패할 때 웹(Vercel 서울 리전, `/api/relay`)이 **웹의 키**로 대신 호출한다. 키 점검 표의 "국내 API 중계(웹 경유)"가 정상이면 된다. 항상 중계하려면 Variables `KR_RELAY=always`, 끄려면 `off` |
+| `APP_URL` 접속 실패(UnsupportedProtocol) | `https://` 를 빼고 넣음 → 이제 자동으로 붙인다(그래도 `https://myrealty.vercel.app` 처럼 넣는 것을 권장) |
+| 주변 거래·입지가 "좌표가 없어…" | 등록 때 지오코딩이 실패한 부동산. 이제 지도·상세 화면을 열 때와 개별/매일 수집(`item_geom`) 때 주소로 다시 찾는다(도로명 → 지번 → '산' 붙여 쓰기 → 읍면동 중심). 오류로 실패한 결과는 캐시하지 않고, '좌표 없음' 캐시도 3일 뒤 다시 시도 |
+| 임야·토지(건물 없는 필지)가 주소 검색에 안 나옴 | 도로명주소 API 는 건물 있는 주소만 준다 → 지번으로 검색하면 브이월드 주소 검색(없으면 네이버 지오코딩+역지오코딩)으로 필지를 찾는다. 웹에 `VWORLD_KEY` 또는 NCP 키(Geocoding·Reverse Geocoding 사용 설정) 필요 |
+| 금리·물가가 "데이터 없음" | ECOS 키를 넣은 뒤 아직 매일 수집이 돌지 않음 → 부동산 "다시 불러오기"(금리·물가·지역 지표 단계가 하루 넘게 묵은 거시 지표를 받음) 또는 Actions › ETL daily 실행 |
+| 지도에 주변 시설이 없음 | 공공 API·표준데이터 CSV 가 없어도 OpenStreetMap(Overpass)에서 지하철·학교·공원·병원·마트를 보충한다(화면 확대 시, 30일 캐시). 입지 점수도 ETL 이 같은 원천을 쓴다 |
 | 지도가 빈 화면(회색) | (이전 버전) Tailwind 의 `img { max-width: 100% }` 가 지도 타일을 0px 로 줄이던 문제 → 수정됨. 지금은 네이버 키가 없거나 인증에 실패하면 대체 지도가 뜬다 |
 | 지도 위 "네이버 지도 인증에 실패했습니다" | NCP Maps Application 에 Dynamic Map 선택, Web 서비스 URL 에 안내된 주소 등록. `NCP_MAPS_KEY_ID` 는 **Client ID**(Secret 아님) |
 | 지도 좌하단 "대체 지도" | `NCP_MAPS_KEY_ID` 미설정. 배경은 `VWORLD_KEY` 가 있으면 브이월드(서비스 URL 에 배포 도메인 등록), 없거나 실패하면 OpenStreetMap |

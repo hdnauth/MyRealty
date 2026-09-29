@@ -2,8 +2,8 @@ import { jwtVerify, SignJWT, type JWTPayload } from "jose";
 import { NextResponse, type NextRequest } from "next/server";
 import { REMEMBER_DAYS, SESSION_COOKIE, shouldRenew } from "@/lib/auth/policy";
 
-// /api/cron 은 라우트에서 CRON_SECRET 으로 인증한다
-const PUBLIC_PATHS = ["/login", "/manifest.webmanifest", "/sw.js", "/offline", "/api/cron", "/api/health"];
+// /api/cron·/api/relay 는 라우트에서 CRON_SECRET 으로 인증한다
+const PUBLIC_PATHS = ["/login", "/manifest.webmanifest", "/sw.js", "/offline", "/api/cron", "/api/relay", "/api/health"];
 
 function secretKey() {
   const secret = process.env.AUTH_SECRET || (process.env.NODE_ENV !== "production" ? "dev-only-insecure-secret-change-me" : "");

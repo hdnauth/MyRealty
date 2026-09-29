@@ -8,6 +8,7 @@ import { getAreaUnit } from "@/lib/area-unit";
 import { formatArea } from "@/lib/format";
 import { GROUP_TAGS, PROPERTY_TYPES } from "@/lib/property";
 import { getItem, itemDataStatus } from "@/lib/queries/items";
+import { fillMissingItemGeoms } from "@/lib/external/geocode";
 import { collectRunner, latestRun } from "@/lib/collect";
 import { DataStatusCard } from "@/components/items/data-status";
 import { NearbyTab } from "./tabs/nearby";
@@ -36,8 +37,11 @@ const TABS = [
 
 export default async function ItemPage(props: PageProps<"/items/[id]">) {
   const [uid, { id }, sp] = await Promise.all([sessionUserId(), props.params, props.searchParams]);
-  const [, item, unit] = await Promise.all([requireUser(), getItem(uid, id), getAreaUnit()]);
-  if (!item) notFound();
+  const [user, first, unit] = await Promise.all([requireUser(), getItem(uid, id), getAreaUnit()]);
+  if (!first) notFound();
+  let item = first;
+  // 좌표가 없으면(등록 때 지오코딩 실패 등) 지금 채운다 — 주변·입지·지도가 비지 않도록
+  if (item.lng === null && (await fillMissingItemGeoms(user.id).catch(() => 0)) > 0) item = (await getItem(uid, id)) ?? item;
   const tab = TABS.find((t) => t.key === sp.tab)?.key ?? "overview";
   const welcome = sp.welcome === "1";
   const [status, run] = tab === "overview" ? await Promise.all([itemDataStatus(item), latestRun(item.id)]) : [null, null];

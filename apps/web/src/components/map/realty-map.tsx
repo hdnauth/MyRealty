@@ -2,12 +2,13 @@
 
 import clsx from "clsx";
 import "leaflet/dist/leaflet.css";
+import { Crosshair, Layers, Maximize2, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { MapPoint } from "@/app/api/map/points/route";
 import { type AreaUnit, formatDate, formatManwon, fromPerPyeong, unitPriceLabel } from "@/lib/format";
 import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
-import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, tileSources, vworldWmsUrl } from "./engines";
+import { type BaseMap, type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, satelliteSources, tileSources, vworldWmsUrl } from "./engines";
 
 export type MapWatchItem = {
   id: string;
@@ -27,17 +28,40 @@ export type MapEvent = { id: number; title: string; kind: string; lng: number; l
 export type MapProject = { type: "zone" | "infra"; id: number; name: string; kind: string; status: string | null; step: number | null; expected_open: string | null; lng: number; lat: number };
 type MapPoi = { id: number; category: string; subcategory: string | null; name: string; lng: number; lat: number };
 
-const LAYERS = [
-  { key: "projects", label: "개발사업" },
-  { key: "subway", label: "지하철" },
-  { key: "school", label: "학교" },
-  { key: "park", label: "공원" },
-  { key: "hospital", label: "병원" },
-  { key: "mart", label: "마트" },
-  { key: "movein", label: "입주 예정" },
-  { key: "cadastral", label: "지적도" },
-  { key: "zoning", label: "용도지역" },
+const LAYER_GROUPS = [
+  {
+    title: "주변 시설",
+    layers: [
+      { key: "subway", label: "🚇 지하철·철도역" },
+      { key: "school", label: "🏫 학교" },
+      { key: "park", label: "🌳 공원" },
+      { key: "hospital", label: "🏥 병원" },
+      { key: "mart", label: "🛒 마트·백화점" },
+    ],
+  },
+  {
+    title: "개발 · 공급",
+    layers: [
+      { key: "projects", label: "🏗 정비구역·철도/도로 사업" },
+      { key: "movein", label: "🏠 입주 예정" },
+    ],
+  },
+  {
+    title: "필지 · 규제",
+    layers: [
+      { key: "cadastral", label: "지적도(필지 경계)" },
+      { key: "zoning", label: "용도지역" },
+    ],
+  },
+  { title: "교통", layers: [{ key: "traffic", label: "실시간 교통정보(네이버 지도)" }] },
 ] as const;
+const POI_LAYERS = new Set(["subway", "school", "park", "hospital", "mart"]);
+const BASE_MAPS: { key: BaseMap; label: string }[] = [
+  { key: "normal", label: "일반" },
+  { key: "satellite", label: "위성" },
+  { key: "hybrid", label: "위성+지명" },
+  { key: "terrain", label: "지형" },
+];
 // 지도 위에 이미지를 덮는 레이어(브이월드 WMS). 지적도는 네이버 지도에서는 자체 지적편집도를 쓴다
 const ZONING_LAYERS = ["lt_c_uq111", "lt_c_uq112", "lt_c_uq113", "lt_c_uq114"];
 const CADASTRAL_LAYERS = ["lp_pa_cbnd_bubun", "lp_pa_cbnd_bonbun"];
@@ -77,7 +101,10 @@ export function RealtyMap({
   initialCenter,
   focusItemId = null,
   unit = "m2",
+  missingItems = [],
 }: {
+  /** 좌표를 못 찾은 관심 부동산(목록에만 안내) */
+  missingItems?: { id: string; label: string }[];
   /** 처음 선택할 관심 부동산(/map?item=) */
   focusItemId?: string | null;
   unit?: AreaUnit;
@@ -110,8 +137,21 @@ export function RealtyMap({
   const [bbox, setBbox] = useState<BBox | null>(null);
   const [selected, setSelected] = useState<MapPoint | null>(null);
   const [detail, setDetail] = useState<{ complex: { name: string; build_year: number | null; households: number | null }; trades: Trade[] } | null>(null);
-  const [layers, setLayers] = useState<Set<string>>(() => new Set(["projects"]));
+  const [layers, setLayers] = useState<Set<string>>(() => new Set(["projects", "subway", "school"]));
   const [pois, setPois] = useState<MapPoi[]>([]);
+  const [poiNote, setPoiNote] = useState<string | null>(null);
+  const [poiInfo, setPoiInfo] = useState<MapPoi | null>(null);
+  const [layerOpen, setLayerOpen] = useState(false);
+  const [baseMap, setBaseMap] = useState<BaseMap>("normal");
+  const [locating, setLocating] = useState(false);
+  const meRef = useRef<Removable[]>([]);
+  const toggleLayer = (key: string) =>
+    setLayers((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const [lng0, lat0] = initialCenter;
 
   const loadComplex = useCallback((id: number) => {
@@ -162,8 +202,15 @@ export function RealtyMap({
         } else {
           const L = await loadLeaflet();
           if (cancelled) return;
-          handle = createLeafletMap(L, node, [lng0, lat0], 15, tileSources(vworldKey), (from, to) =>
-            setNotice(`배경지도(${from.url.includes("vworld") ? "브이월드" : "기본"})를 불러오지 못해 ${to.url.includes("openstreetmap") ? "OpenStreetMap" : "다른 배경"}으로 바꿨습니다. 브이월드 키의 서비스 URL 에 ${origin} 이 등록돼 있는지 확인하세요.`),
+          handle = createLeafletMap(
+            L,
+            node,
+            [lng0, lat0],
+            15,
+            tileSources(vworldKey),
+            (from, to) =>
+              setNotice(`배경지도(${from.url.includes("vworld") ? "브이월드" : "기본"})를 불러오지 못해 ${to.url.includes("openstreetmap") ? "OpenStreetMap" : "다른 배경"}으로 바꿨습니다. 브이월드 키의 서비스 URL 에 ${origin} 이 등록돼 있는지 확인하세요.`),
+            satelliteSources(vworldKey),
           );
         }
       } catch {
@@ -273,17 +320,85 @@ export function RealtyMap({
     });
   }, [points, selected, type, select, mapVersion, unit, myComplexes]);
 
-  // POI 레이어 조회
+  // POI 레이어 조회(수집된 시설 + 없으면 OpenStreetMap 에서 보충)
   useEffect(() => {
-    const cats = [...layers].filter((l) => l !== "projects");
+    const cats = [...layers].filter((l) => POI_LAYERS.has(l));
     if (!bbox || !cats.length) return;
     const ctl = new AbortController();
-    fetch(`/api/map/pois?bbox=${bbox.map((v) => v.toFixed(5)).join(",")}&cats=${cats.join(",")}`, { signal: ctl.signal })
-      .then((r) => r.json())
-      .then((d) => setPois(d.pois ?? []))
-      .catch(() => {});
-    return () => ctl.abort();
+    const t = setTimeout(() => {
+      fetch(`/api/map/pois?bbox=${bbox.map((v) => v.toFixed(5)).join(",")}&cats=${cats.join(",")}`, { signal: ctl.signal })
+        .then((r) => r.json())
+        .then((d) => {
+          setPois(d.pois ?? []);
+          setPoiNote(d.note ?? null);
+        })
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(t);
+      ctl.abort();
+    };
   }, [bbox, layers]);
+
+  // 배경 지도·교통정보
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!map.setBaseMap(baseMap) && baseMap !== "normal") setNotice("이 지도에서는 지형 배경을 지원하지 않습니다.");
+  }, [baseMap, mapVersion]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const on = layers.has("traffic");
+    if (!map.setTraffic(on) && on) setNotice("실시간 교통정보는 네이버 지도에서만 볼 수 있습니다.");
+  }, [layers, mapVersion]);
+
+  // 현재 위치: 파란 점 + 정확도 원, 그 위치로 이동
+  const locate = useCallback(() => {
+    if (!navigator.geolocation) {
+      setNotice("이 브라우저는 위치 확인을 지원하지 않습니다.");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        const map = mapRef.current;
+        if (!map) return;
+        const { longitude: lng, latitude: lat, accuracy } = pos.coords;
+        meRef.current.forEach((m) => m.remove());
+        meRef.current = [
+          map.addCircle({ lng, lat, radius: Math.min(accuracy, 2000), color: "#2563eb" }),
+          map.addHtmlMarker({
+            lng,
+            lat,
+            zIndex: 2000,
+            title: "현재 위치",
+            html: `<div style="transform:translate(-50%,-50%);width:16px;height:16px;border-radius:999px;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 4px rgba(37,99,235,.25),0 1px 4px rgba(0,0,0,.3)"></div>`,
+          }),
+        ];
+        map.setCenter(lng, lat, Math.max(map.zoom(), 15));
+      },
+      (err) => {
+        setLocating(false);
+        setNotice(err.code === err.PERMISSION_DENIED ? "위치 권한이 거부됐습니다. 브라우저 설정에서 이 사이트의 위치 권한을 허용하세요." : "현재 위치를 확인하지 못했습니다.");
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
+    );
+  }, []);
+
+  // 내 부동산이 모두 보이게
+  const fitItems = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !items.length) return;
+    if (items.length === 1) {
+      map.setCenter(items[0].lng, items[0].lat, 15);
+      return;
+    }
+    const xs = items.map((i) => i.lng);
+    const ys = items.map((i) => i.lat);
+    map.fitBounds([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
+  }, [items]);
 
   // 개발사업·POI 마커
   useEffect(() => {
@@ -307,12 +422,14 @@ export function RealtyMap({
     }
     for (const p of pois.filter((x) => layers.has(x.category))) {
       const st = POI_STYLE[p.category];
+      if (!st) continue;
       ms.push(
         map.addHtmlMarker({
           lng: p.lng,
           lat: p.lat,
           zIndex: 50,
           title: p.name,
+          onClick: () => setPoiInfo(p),
           html: `<div title="${escapeHtml(p.name)}" style="transform:translate(-50%,-50%);width:22px;height:22px;border-radius:999px;background:${st.bg};display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${st.icon}</div>`,
         }),
       );
@@ -394,22 +511,10 @@ export function RealtyMap({
           </Chip>
         ))}
         <span className="mx-1 w-px shrink-0 bg-border" />
-        {LAYERS.map((l) => (
-          <Chip
-            key={l.key}
-            active={layers.has(l.key)}
-            onClick={() =>
-              setLayers((prev) => {
-                const next = new Set(prev);
-                if (next.has(l.key)) next.delete(l.key);
-                else next.add(l.key);
-                return next;
-              })
-            }
-          >
-            {l.label}
-          </Chip>
-        ))}
+        <Chip active={layerOpen} onClick={() => setLayerOpen((v) => !v)}>
+          <Layers size={13} className="-mt-0.5 mr-1 inline" />
+          레이어 {layers.size ? `${layers.size}` : ""}
+        </Chip>
       </div>
 
       <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row lg:overflow-hidden lg:rounded-b-xl lg:border lg:border-t-0 lg:border-border">
@@ -418,7 +523,7 @@ export function RealtyMap({
             {(
               [
                 ["trades", `주변 거래 ${sorted.length}`],
-                ["items", `내 부동산 ${items.length}`],
+                ["items", `내 부동산 ${items.length + missingItems.length}`],
               ] as const
             ).map(([k, label]) => (
               <button
@@ -433,11 +538,22 @@ export function RealtyMap({
           </div>
           {panel === "items" ? (
             <ul className="divide-y divide-border">
-              {items.length === 0 ? (
+              {items.length === 0 && missingItems.length === 0 ? (
                 <li className="p-4 text-sm text-muted">
-                  좌표가 있는 관심 부동산이 없습니다. <Link href="/items/new" className="text-accent">등록하기</Link>
+                  관심 부동산이 없습니다. <Link href="/items/new" className="text-accent">등록하기</Link>
                 </li>
               ) : null}
+              {missingItems.map((it) => (
+                <li key={it.id} className="px-4 py-2.5 text-sm">
+                  <span className="block truncate font-medium text-muted">★ {it.label}</span>
+                  <span className="text-xs text-warn">
+                    위치를 찾지 못해 지도에 표시하지 못했습니다 ·{" "}
+                    <Link href={`/items/${it.id}/edit`} className="text-accent">
+                      주소 다시 선택
+                    </Link>
+                  </span>
+                </li>
+              ))}
               {items.map((it) => (
                 <li key={it.id}>
                   <button
@@ -569,6 +685,76 @@ export function RealtyMap({
               대체 지도 · NCP_MAPS_KEY_ID 를 설정하면 네이버 지도로 표시됩니다
             </div>
           ) : null}
+          <div className="absolute bottom-6 right-2 z-[500] flex flex-col gap-2 lg:bottom-8">
+            <MapButton label="현재 위치" onClick={locate} busy={locating}>
+              <Crosshair size={18} />
+            </MapButton>
+            {items.length ? (
+              <MapButton label="내 부동산 모두 보기" onClick={fitItems}>
+                <Maximize2 size={18} />
+              </MapButton>
+            ) : null}
+            <MapButton label="레이어·배경 지도" onClick={() => setLayerOpen((v) => !v)} active={layerOpen}>
+              <Layers size={18} />
+            </MapButton>
+          </div>
+          {layerOpen ? (
+            <div className="absolute bottom-6 right-14 z-[600] max-h-[80%] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-3 text-sm shadow-lg lg:bottom-8">
+              <div className="mb-2 flex items-center justify-between">
+                <b>지도 설정</b>
+                <button type="button" aria-label="닫기" onClick={() => setLayerOpen(false)} className="text-muted">
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="mb-1 text-xs font-medium text-muted">배경 지도</p>
+              <div className="mb-3 grid grid-cols-4 gap-1">
+                {BASE_MAPS.map((b) => (
+                  <button
+                    key={b.key}
+                    type="button"
+                    disabled={b.key === "terrain" && engine !== "naver"}
+                    onClick={() => setBaseMap(b.key)}
+                    className={clsx(
+                      "rounded-md border px-1 py-1 text-xs disabled:opacity-40",
+                      baseMap === b.key ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted",
+                    )}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+              {LAYER_GROUPS.map((g) => (
+                <div key={g.title} className="mb-2">
+                  <p className="mb-1 text-xs font-medium text-muted">{g.title}</p>
+                  {g.layers.map((l) => (
+                    <label key={l.key} className="flex cursor-pointer items-center gap-2 py-0.5">
+                      <input
+                        type="checkbox"
+                        checked={layers.has(l.key)}
+                        disabled={l.key === "traffic" && engine !== "naver"}
+                        onChange={() => toggleLayer(l.key)}
+                      />
+                      <span className={clsx(l.key === "traffic" && engine !== "naver" && "text-muted")}>{l.label}</span>
+                    </label>
+                  ))}
+                </div>
+              ))}
+              {poiNote ? <p className="mt-1 text-[11px] text-muted">{poiNote}</p> : null}
+            </div>
+          ) : null}
+          {poiInfo ? (
+            <div className="absolute bottom-6 left-2 z-[550] max-w-[70%] rounded-lg border border-border bg-surface px-3 py-2 text-sm shadow lg:bottom-8">
+              <div className="flex items-start gap-2">
+                <span className="min-w-0">
+                  <b className="block truncate">{poiInfo.name}</b>
+                  <span className="text-xs text-muted">{poiInfo.subcategory ?? ""}</span>
+                </span>
+                <button type="button" aria-label="닫기" onClick={() => setPoiInfo(null)} className="text-muted">
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          ) : null}
           {notice ? (
             <div role="status" className="absolute inset-x-4 top-4 z-[500] flex items-start gap-2 rounded-lg bg-warn/95 p-2 text-sm text-white shadow lg:right-auto lg:max-w-lg">
               <span className="min-w-0 flex-1">{notice}</span>
@@ -580,6 +766,24 @@ export function RealtyMap({
         </div>
       </div>
     </div>
+  );
+}
+
+function MapButton({ label, onClick, busy = false, active = false, children }: { label: string; onClick: () => void; busy?: boolean; active?: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={clsx(
+        "flex h-10 w-10 items-center justify-center rounded-full border border-border shadow-md",
+        active ? "bg-accent text-white" : "bg-surface text-text hover:bg-surface-2",
+        busy && "animate-pulse",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

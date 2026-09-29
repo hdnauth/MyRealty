@@ -62,7 +62,7 @@ function withLivePrices(types: AreaType[], preview: TradePreview | null): AreaTy
 export function NewItemForm({ mapKeys, unit }: { mapKeys: MapKeys; unit: AreaUnit }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<AddressCandidate[]>([]);
-  const [meta, setMeta] = useState<{ jusoEnabled?: boolean; jusoError?: string | null }>({});
+  const [meta, setMeta] = useState<{ jusoEnabled?: boolean; jusoError?: string | null; parcelError?: string | null; parcelEnabled?: boolean; searched?: string }>({});
   const [loading, setLoading] = useState(false);
   const [picked, setPicked] = useState<AddressCandidate | null>(null);
   // 사용자가 직접 바꾼 유형(없으면 자동 판별 값을 쓴다)
@@ -80,7 +80,7 @@ export function NewItemForm({ mapKeys, unit }: { mapKeys: MapKeys; unit: AreaUni
         const r = await fetch(`/api/address?q=${encodeURIComponent(q)}`, { signal: ctl.signal });
         const data = await r.json();
         setResults(data.results ?? []);
-        setMeta({ jusoEnabled: data.jusoEnabled, jusoError: data.jusoError });
+        setMeta({ jusoEnabled: data.jusoEnabled, jusoError: data.jusoError, parcelError: data.parcelError, parcelEnabled: data.parcelEnabled, searched: q });
       } catch {
         /* 입력 중 취소 */
       } finally {
@@ -179,6 +179,13 @@ export function NewItemForm({ mapKeys, unit }: { mapKeys: MapKeys; unit: AreaUni
           <p className="mt-2 text-xs text-muted">JUSO_KEY 가 없어 수집된 단지명만 검색됩니다.</p>
         ) : null}
         {meta.jusoError && !picked ? <p className="mt-2 text-xs text-warn">주소 API 오류: {meta.jusoError}</p> : null}
+        {meta.parcelError && !picked ? <p className="mt-2 text-xs text-warn">지번 검색 오류: {meta.parcelError}</p> : null}
+        {!picked && !loading && meta.searched === q && results.length === 0 ? (
+          <p className="mt-2 text-xs text-muted">
+            검색 결과가 없습니다. 토지·임야는 &quot;읍면 리 산 번지&quot;(예: 연풍면 조령리 산 164-1)처럼 지번으로 찾아 보세요.
+            {meta.parcelEnabled === false ? " 건물 없는 필지는 브이월드(VWORLD_KEY) 또는 네이버 지오코딩 키가 있어야 찾을 수 있습니다." : ""}
+          </p>
+        ) : null}
         {!picked && results.length > 0 ? (
           <ul className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border">
             {results.map((r, i) => (

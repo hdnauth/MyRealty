@@ -108,7 +108,9 @@ export function DataStatusLive({
       ? "필요한 정보가 모두 준비됐습니다."
       : run?.status === "error" && !done
         ? `바로 불러오기에 실패했습니다${run.error ? `: ${run.error}` : ""}. 매일 아침(06시 전후) 수집 때 다시 채워집니다.`
-        : ended
+        : ended && Object.values(run.steps).some((x) => x?.status === "error")
+          ? "불러오기를 마쳤지만 일부 항목은 호출이 실패했습니다(아래 사유). 키를 고친 뒤 다시 불러오거나, 매일 수집 때 다시 시도합니다."
+          : ended
           ? "불러오기를 마쳤습니다. 남은 항목은 공공데이터에 자료가 없거나 매일 수집 때 다시 시도합니다."
           : runnerReady
             ? "빈 항목을 바로 불러올 수 있습니다."

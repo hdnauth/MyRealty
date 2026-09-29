@@ -75,7 +75,7 @@ def _client() -> httpx.Client:
 DATA_GO_KR_FIX = {
     "20": "공공데이터포털에서 이 서비스 활용신청이 안 됐거나 승인 대기 중입니다(마이페이지 → 활용신청 현황).",
     "22": "오늘 호출 한도를 넘었습니다. 내일 다시 확인하거나 운영계정으로 전환하세요.",
-    "30": "등록되지 않은 키입니다. 일반 인증키 중 Decoding 키를 넣었는지, 승인 후 1~2시간이 지났는지 확인하세요.",
+    "30": "등록되지 않은 키입니다. 일반 인증키(Decoding)를 넣었는지, 승인 후 1~2시간이 지났는지 확인하세요. 웹(Vercel)에서는 되는데 여기서만 실패하면 아래 '국내 API 중계'가 정상인지 보세요(정상이면 수집은 웹을 거쳐 됩니다).",
     "31": "키 사용 기간이 끝났습니다. 활용신청 기간을 연장하세요.",
     "32": "등록되지 않은 IP 입니다. 활용신청의 IP 제한을 해제하세요.",
 }
@@ -299,7 +299,10 @@ def check_vapid() -> Check:
 
 def check_app(c: httpx.Client) -> list[Check]:
     """APP_URL 로 웹 앱 상태를 보고, CRON_SECRET 이 있으면 웹과 같은 값인지 확인한다."""
-    app = (os.environ.get("APP_URL") or "").rstrip("/")
+    from .config import _app_url
+
+    # https:// 가 빠진 값(myrealty.vercel.app)도 받아 준다
+    app = _app_url(os.environ.get("APP_URL")) if os.environ.get("APP_URL") else ""
     cron = os.environ.get("CRON_SECRET")
     if not app or app.startswith("http://localhost"):
         return [Check("APP_URL", "웹 앱 주소", "warn" if cron else "optional", "APP_URL 이 없거나 localhost 라 웹 앱을 확인하지 않았습니다.",
@@ -332,6 +335,31 @@ def check_app(c: httpx.Client) -> list[Check]:
     return out
 
 
+def check_relay(c: httpx.Client) -> Check:
+    """웹(서울 리전) 중계로 공공데이터포털이 되는지. GitHub 러너(해외)에서 직접 호출이 거부될 때 수집이 이 경로로 돈다."""
+    if not (settings.cron_secret and os.environ.get("APP_URL")):
+        return Check("CRON_SECRET", "국내 API 중계(웹 경유)", "optional",
+                     "GitHub 에서 공공데이터포털·브이월드 직접 호출이 막히면 우회할 수 없습니다.",
+                     "GitHub Secrets 에 CRON_SECRET(Vercel 과 같은 값), Variables 에 APP_URL 을 넣으세요.")
+    today = date.today()
+    ym = f"{today.year - (today.month == 1)}{(today.month - 2) % 12 + 1:02d}"
+    try:
+        r = c.get(f"{settings.app_url}/api/relay", params={"url": f"{rtms.BASE}/{rtms.SERVICES[0].path}", "LAWD_CD": "11110",
+                                                          "DEAL_YMD": ym, "numOfRows": 1, "pageNo": 1},
+                  headers={"Authorization": f"Bearer {settings.cron_secret}"}, timeout=httpx.Timeout(30.0, connect=8.0))
+    except httpx.HTTPError as e:
+        return Check("CRON_SECRET", "국내 API 중계(웹 경유)", "error", sanitize(str(e)), "APP_URL 이 배포 주소인지 확인하세요.")
+    if r.headers.get("x-relay") != "1":
+        return Check("CRON_SECRET", "국내 API 중계(웹 경유)", "error", f"HTTP {r.status_code} — 웹이 중계를 받지 않았습니다",
+                     "웹을 최신 버전으로 배포하고, Vercel 과 GitHub 의 CRON_SECRET 이 같은지 확인하세요." if r.status_code == 401 else "")
+    try:
+        rtms.parse_xml(r.text)
+    except Exception as e:
+        return Check("CRON_SECRET", "국내 API 중계(웹 경유)", "error", sanitize(f"웹의 DATA_GO_KR_KEY 로도 실패: {e}"),
+                     "Vercel 의 DATA_GO_KR_KEY 와 활용신청(실거래가 11종·건축물대장)을 확인하세요.")
+    return Check("CRON_SECRET", "국내 API 중계(웹 경유)", "ok", "웹(서울)을 거쳐 실거래가 응답 정상 — 직접 호출이 막혀도 수집됩니다")
+
+
 def check_database() -> tuple[Check, object | None]:
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -361,7 +389,7 @@ def run_checks() -> tuple[list[Check], object | None]:
         steps: list[Callable[[], Check | list[Check]]] = [
             lambda: check_data_go_kr(c), lambda: check_vworld(c), lambda: check_ncp(c), lambda: check_naver_search(c),
             lambda: check_ecos(c), lambda: check_kosis(c), lambda: check_reb(c), lambda: check_anthropic(c),
-            check_smtp, check_vapid, lambda: check_app(c),
+            check_smtp, check_vapid, lambda: check_app(c), lambda: check_relay(c),
         ]
         for step in steps:
             try:

@@ -54,7 +54,10 @@ def job_run(conn: psycopg.Connection, job: str) -> Iterator[dict]:
         conn.commit()
     except Exception as e:
         conn.rollback()
-        detail["error"] = repr(e)
+        from .http import explain_error
+
+        detail["error"] = explain_error(e)
+        detail["exception"] = repr(e)[:500]
         conn.execute(
             "update job_runs set finished_at = now(), status = 'error', detail = %s where id = %s",
             (jsonb(detail), row["id"]),

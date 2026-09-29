@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* 디자인 토큰 — 라이트/다크. 시세 색상은 국내 관례(상승=빨강, 하락=파랑). */
+/* 디자인 토큰 — 라이트(기본)/다크. 시세 색상은 국내 관례(상승=빨강, 하락=파랑). */
 :root {
   --bg: #f5f6f8;
   --surface: #ffffff;
@@ -27,6 +27,10 @@
   --chart-muted: #898781;
 }
 
+/*
+ * 다크 토큰: OS 가 다크이고 사용자가 라이트를 고르지 않았을 때, 또는 사용자가 다크를 골랐을 때(설정 › 화면 테마).
+ * 두 규칙의 값은 같아야 한다(미디어 쿼리와 속성 선택자를 한 규칙으로 묶을 수 없어 두 번 쓴다).
+ */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0f1115;
@@ -52,6 +56,40 @@
     --chart-ink: #c3c2b7;
     --chart-muted: #898781;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1115;
+  --surface: #171a21;
+  --surface-2: #1f232c;
+  --border: #2a2f3a;
+  --text: #e8eaef;
+  --muted: #9aa3b2;
+  --accent: #6c9cff;
+  --accent-soft: #1d2a47;
+  --up: #ff6b6e;
+  --down: #6aa2ff;
+  --warn: #f0a33a;
+  --ok: #34c79a;
+  --shadow: none;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --chart-grid: #2a2f3a;
+  --chart-axis: #3a404c;
+  --chart-ink: #c3c2b7;
+  --chart-muted: #898781;
+}
+
+:root {
+  color-scheme: light dark;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 @theme inline {

@@ -66,7 +66,13 @@ export function EChart({
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const on = () => setScheme((x) => x + 1);
     mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
+    // 설정 › 화면 테마로 <html data-theme> 이 바뀌어도 다시 그린다
+    const mo = new MutationObserver(on);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => {
+      mq.removeEventListener("change", on);
+      mo.disconnect();
+    };
   }, []);
 
   useEffect(() => {

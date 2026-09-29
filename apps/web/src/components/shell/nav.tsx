@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ThemeToggle } from "./theme-picker";
 
 const PRIMARY = [
   { href: "/", label: "홈", icon: Home },
@@ -58,7 +59,10 @@ export function Sidebar({ unread, email, isAdmin = false }: { unread: number; em
         ))}
         {isAdmin ? <NavLink href="/admin" label="관리" icon={ShieldCheck} active={isActive(path, "/admin")} /> : null}
       </nav>
-      <div className="mt-auto truncate px-2 text-xs text-muted">{email}</div>
+      <div className="mt-auto flex items-center gap-1">
+        <span className="min-w-0 flex-1 truncate px-2 text-xs text-muted">{email}</span>
+        <ThemeToggle className="shrink-0" />
+      </div>
     </aside>
   );
 }
@@ -128,6 +132,7 @@ export function MobileTopBar({ unread }: { unread: number }) {
         <span className="font-bold tracking-tight">MyRealty</span>
       </Link>
       <div className="flex items-center gap-1">
+        <ThemeToggle />
         <Link href="/calendar" aria-label="캘린더" className="rounded-lg p-2 text-muted hover:bg-surface-2">
           <CalendarDays size={20} />
         </Link>

@@ -93,6 +93,7 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 | `news` / `classify` | 키워드 뉴스 수집 → Claude 분류(소량 동기, 대량 Batch) | NAVER, ANTHROPIC |
 | `indicators` | 자체 지수·조합 지표·온도계, 금리 변경·온도 구간 알림 | - |
 | `pois` | 주변 편의시설 수집 → 생활편의 점수 | DATA_GO_KR(없으면 CSV 데이터로 점수만) |
+| `location_check` | 입지 점수 검증(단지 평당가 회귀 → 설명력·항목별 효과·권장 가중, AVM 입지 보정 계수) — `myrealty location-check` | - |
 | `avm` | 추정 시세 | - |
 | `alerts` / `push` / `digest` | 알림 규칙 → 웹푸시(중요) / 이메일 다이제스트 | VAPID / SMTP |
 

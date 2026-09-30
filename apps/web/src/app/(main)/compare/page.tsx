@@ -128,7 +128,10 @@ export default async function ComparePage(props: PageProps<"/compare">) {
     },
     { label: "지목 · 용도지역", get: (r) => (r.attrs.parcel ? [r.attrs.parcel.jimok, r.attrs.parcel.land_use_zone?.[0]].filter(Boolean).join(" · ") || "-" : "-") },
     { label: "생활편의 점수", get: (r) => (r.loc?.total != null ? String(Math.round(r.loc.total)) : "-") },
-    { label: "교통 / 학교", get: (r) => (r.loc ? `${r.loc.scores.transit?.score != null ? Math.round(r.loc.scores.transit.score) : "-"} / ${r.loc.scores.school?.score != null ? Math.round(r.loc.scores.school.score) : "-"}` : "-") },
+    {
+      label: "교통 / 직주근접 / 학교",
+      get: (r) => (r.loc ? (["transit", "jobs", "school"] as const).map((k) => (r.loc!.scores[k]?.score != null ? Math.round(r.loc!.scores[k].score!) : "-")).join(" / ") : "-"),
+    },
     { label: "주변 정비구역", get: (r) => (r.loc?.development?.zones_count != null ? `${r.loc.development.zones_count}곳` : "-") },
     { label: "신설역 거리", get: (r) => (r.loc?.development?.nearest_planned_station ? `${(r.loc.development.nearest_planned_station.dist_m / 1000).toFixed(1)}km` : "-") },
     { label: "지역 온도계", get: (r) => (r.temp != null ? String(Math.round(r.temp)) : "-") },

@@ -369,7 +369,7 @@ def _seed_location(conn) -> None:
         rows.append({"source": "demo", "source_id": f"{cat}:{len(rows)}", "category": cat, "subcategory": sub,
                      "name": name, "lng": lng, "lat": lat, "area_m2": area, "attrs": {"demo": True}})
 
-    for name, line, lng, lat in [("잠실", "2호선", 127.1001, 37.5133), ("잠실새내", "2호선", 127.0862, 37.5117),
+    for name, line, lng, lat in [("잠실", "2호선", 127.1001, 37.5133), ("잠실", "8호선", 127.1003, 37.5138), ("잠실새내", "2호선", 127.0862, 37.5117),
                                  ("종합운동장", "2호선", 127.0736, 37.5109), ("잠실나루", "2호선", 127.1038, 37.5207),
                                  ("석촌", "8호선", 127.1068, 37.5055)]:
         add("subway", line, f"{name}역", lng, lat)

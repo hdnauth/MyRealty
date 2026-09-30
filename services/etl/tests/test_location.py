@@ -1,3 +1,6 @@
+import json
+import math
+
 from myrealty_etl.analytics import location as loc
 from myrealty_etl.collectors import pois, projects
 
@@ -40,8 +43,11 @@ def test_score_point_missing_categories():
     pts = [{"category": "subway", "subcategory": "2호선", "name": "잠실", "area_m2": None, "d": 250.0},
            {"category": "cafe", "subcategory": "카페", "name": "c", "area_m2": None, "d": 100.0}]
     total, s = loc.score_point(pts, {"subway", "cafe"})
-    assert s["transit"]["score"] == 70.0  # 역 100×0.7 + 버스 0
+    # 버스정류장 자료가 없으면 버스 구성요소를 빼고 나머지 비중으로: 역 거리 100×0.55 + 1개 노선 45×0.15 → /0.7
+    assert s["transit"]["score"] == 88.2
+    assert s["transit"]["details"][1]["n_lines"] == 1
     assert s["school"]["status"] == "미수집"
+    assert s["jobs"]["status"] == "미수집"  # 좌표를 안 주면 직주근접은 계산하지 않는다
     assert total is not None and 0 <= total <= 100
 
 
@@ -75,7 +81,7 @@ def test_park_score_uses_edge_distance_size_and_area():
     # 큰 공원(30ha) 경계가 바로 옆(d=0), 반경 1km 안에 25ha 가 겹침 → 공원 100
     big = [{"category": "park", "subcategory": None, "name": "호수공원", "area_m2": 300_000.0, "area_1km": 250_000.0, "d": 0.0}]
     _, s = loc.score_point(big, {"park"})
-    assert s["park"]["score"] == 100.0
+    assert s["park"]["score"] > 98
     assert s["park"]["details"][0]["area_m2"] == 300_000
     # 어린이공원(3천㎡)만 100m → 거리는 만점이지만 규모 60% · 면적 3%
     small = [{"category": "park", "subcategory": None, "name": "어린이공원", "area_m2": 3_000.0, "area_1km": 3_000.0, "d": 100.0}]
@@ -99,3 +105,139 @@ def test_osm_outline_way_and_relation():
     assert [r["name"] for r in rows] == ["A공원", "B공원"]
     assert len(rows[0]["lines"]) == 1 and len(rows[1]["lines"]) == 2
     assert all(r["category"] == "park" and r["lng"] and r["lat"] for r in rows)
+
+
+def test_saturate_and_decay():
+    assert loc.saturate(0, 10) == 0
+    assert 63 < loc.saturate(10, 10) < 64 and 86 < loc.saturate(20, 10) < 87
+    assert loc.decay_weight(100, 500) == 1 and loc.decay_weight(375, 500) == 0.5 and loc.decay_weight(600, 500) == 0
+
+
+def _pts(cat, n, d, sub=None, prefix="p"):
+    return [{"category": cat, "subcategory": sub, "name": f"{prefix}{cat}{i}", "area_m2": None, "d": float(d)} for i in range(n)]
+
+
+def test_counts_no_longer_saturate_in_dense_areas():
+    """예전 산식(개수/포화, 100 상한)은 도시에서 거의 다 만점이었다 — 보통 수준과 밀집 상권을 구별해야 한다."""
+    avail = {"academy", "food", "cafe"}
+    typical = _pts("academy", 150, 400) + _pts("food", 180, 200)
+    dense = _pts("academy", 600, 400) + _pts("food", 500, 200)
+    sparse = _pts("academy", 20, 400) + _pts("food", 25, 200)
+    s = {k: loc.score_point(v, avail)[1] for k, v in (("t", typical), ("d", dense), ("s", sparse))}
+    for cat in ("academy", "food"):
+        assert s["s"][cat]["score"] < 35 < s["t"][cat]["score"] < 95 < s["d"][cat]["score"]
+
+
+def test_count_distance_weight_and_dedupe():
+    near = _pts("convenience", 6, 100)
+    far = _pts("convenience", 6, 450, prefix="f")
+    _, a = loc.score_point(near, {"convenience"})
+    _, b = loc.score_point(far, {"convenience"})
+    da, db = a["shopping"]["details"][-1], b["shopping"]["details"][-1]
+    assert da["count"] == db["count"] == 6 and da["eff"] == 6 and db["eff"] < 2
+    # 같은 이름·같은 거리대(원천만 다른 중복)는 한 번만
+    dup = near + [{**p, "subcategory": "편의점"} for p in near]
+    _, c = loc.score_point(dup, {"convenience"})
+    assert c["shopping"]["details"][-1]["count"] == 6
+
+
+def test_supermarket_is_not_a_big_store():
+    sm = [{"category": "mart", "subcategory": "슈퍼마켓", "name": "동네슈퍼", "area_m2": None, "d": 100.0}]
+    _, s = loc.score_point(sm, {"mart"})
+    big, cnt = s["shopping"]["details"][0], s["shopping"]["details"][1]
+    assert big["name"] is None and big["score"] == 0 and cnt["count"] == 1
+    dept = [{"category": "mart", "subcategory": "백화점", "name": "백화점", "area_m2": None, "d": 400.0}]
+    _, s2 = loc.score_point(dept, {"mart"})
+    assert s2["shopping"]["details"][0]["score"] == 100
+
+
+def test_station_lines_and_transfer():
+    csv = [{"category": "subway", "subcategory": "2호선", "name": "잠실역", "source": "csv:subway", "source_id": "1", "area_m2": None, "d": 300.0},
+           {"category": "subway", "subcategory": "8호선", "name": "잠실", "source": "csv:subway", "source_id": "2", "area_m2": None, "d": 320.0},
+           {"category": "subway", "subcategory": "2호선", "name": "잠실새내", "source": "csv:subway", "source_id": "3", "area_m2": None, "d": 200.0}]
+    _, s = loc.score_point(csv, {"subway"})
+    lines = s["transit"]["details"][1]
+    assert lines["name"] == "잠실" and lines["n_lines"] == 2 and lines["lines"] == ["2호선", "8호선"] and lines["score"] == 80
+    # 노선 정보가 없는 OSM: 같은 이름의 역 노드가 여러 개면 환승역으로 추정
+    osm = [{"category": "subway", "subcategory": "subway", "name": "왕십리", "source": "osm", "source_id": f"node/{i}", "area_m2": None, "d": 500.0}
+           for i in range(3)]
+    _, s2 = loc.score_point(osm, {"subway"})
+    assert s2["transit"]["details"][1]["n_lines"] == 3 and s2["transit"]["details"][1]["guess"] is True
+    # 걸어갈 수 없는(1.2km 밖) 역은 노선 점수 0
+    _, s3 = loc.score_point([{**osm[0], "d": 1500.0}], {"subway"})
+    assert s3["transit"]["details"][1]["score"] == 0
+
+
+def test_job_access_orders_locations():
+    gongdeok = loc.job_access(126.9515, 37.5443)[0]   # 여의도·광화문 사이
+    jamsil = loc.job_access(127.1001, 37.5133)[0]
+    suji = loc.job_access(127.0980, 37.3220)[0]
+    yangpyeong = loc.job_access(127.4875, 37.4917)[0]
+    assert gongdeok > jamsil > suji > yangpyeong
+    assert gongdeok > 85 and yangpyeong < 15
+    total, s = loc.score_point([], set(), 127.1001, 37.5133)
+    assert s["jobs"]["details"][0]["name"] == "강남(GBD)" and s["jobs"]["score"] == round(jamsil, 1)
+    assert total is None  # 시설 자료가 없으면 직주근접만으로 총점을 내지 않는다
+
+
+def _calib_rows(n=80, seed=1):
+    import random
+
+    rnd = random.Random(seed)
+    rows = []
+    for i in range(n):
+        sc = {k: {"score": rnd.uniform(20, 100)} for k in loc.SPECS}
+        by = rnd.randint(1985, 2022)
+        # 가격은 교통 점수(점당 +0.8%)와 연식으로만 정해진다 + 잡음
+        lp = 7.0 + 0.008 * sc["transit"]["score"] - 0.01 * (2026 - by) + rnd.gauss(0, 0.03) + (0.5 if i % 2 else 0)
+        total = sum(sc[k]["score"] * w for k, (_, w, _) in loc.SPECS.items())
+        rows.append({"sgg_cd": "11710" if i % 2 else "41465", "ppm2": math.exp(lp), "build_year": by, "total": total, "scores": sc})
+    return rows
+
+
+def test_calibration_fit_recovers_the_price_driver():
+    from myrealty_etl.analytics import location_calibration as lc
+
+    r = lc.fit(_calib_rows())
+    assert r and r["n"] == 80 and r["sggs"] == 2
+    assert r["r2_categories"] > 0.8 and r["r2_categories"] > r["r2_total"]
+    assert 6 < r["effects"]["transit"]["per10_pct"] < 10  # +10점 ≈ +8.3%
+    assert max(r["effects"], key=lambda k: r["effects"][k]["weight_fit"]) == "transit"
+    # 표본이 적으면 권장 가중치는 현재 가중치 쪽으로 당겨진다
+    t = r["effects"]["transit"]
+    assert t["weight_now"] < t["weight_suggest"] < t["weight_fit"]
+    assert lc.fit(_calib_rows(10)) is None
+
+
+def test_calibrate_locations_db(conn):
+    from myrealty_etl.analytics import location_calibration as lc
+
+    rows = _calib_rows(40)
+    for i, r in enumerate(rows):
+        cid = conn.execute(
+            """insert into complexes (complex_key, property_type, name, name_norm, sgg_cd, build_year)
+               values (%s, 'apt', %s, %s, %s, %s) returning id""", (f"k{i}", f"단지{i}", f"단지{i}", r["sgg_cd"], r["build_year"]),
+        ).fetchone()["id"]
+        conn.execute("insert into location_scores (target_type, target_id, total, scores) values ('complex', %s, %s, %s)",
+                     (str(cid), r["total"], json.dumps(r["scores"])))
+        for j in range(3):
+            conn.execute(
+                """insert into transactions (src_hash, property_type, deal_kind, sgg_cd, complex_id, area_m2, deal_date, price)
+                   values (%s, 'apt', 'sale', %s, %s, 84, current_date - %s, %s)""",
+                (f"t{i}-{j}", r["sgg_cd"], cid, 30 * (j + 1), round(r["ppm2"] * 84)),
+            )
+    conn.commit()
+    out = lc.calibrate_locations(conn)
+    assert out["status"] == "ok" and out["complexes_with_price"] == 40
+    saved = conn.execute("select n, result from location_calibrations").fetchone()
+    assert saved["n"] == 40 and saved["result"]["spread"]["total"]["n"] == 40 and saved["result"]["r2_categories"] > 0.5
+
+
+def test_avm_location_effect_follows_calibration(conn):
+    from myrealty_etl.analytics import avm
+
+    assert avm.loc_price_per_point(conn) == avm.LOC_PER_POINT_DEFAULT
+    conn.execute("""insert into location_calibrations (n, result) values (50, '{"status": "ok", "total_per10_pct": 4.0}')""")
+    assert abs(avm.loc_price_per_point(conn) - math.log(1.04) / 10) < 1e-9
+    conn.execute("""insert into location_calibrations (n, result) values (50, '{"status": "ok", "total_per10_pct": 30.0}')""")
+    assert avm.loc_price_per_point(conn) == avm.LOC_PER_POINT_MAX

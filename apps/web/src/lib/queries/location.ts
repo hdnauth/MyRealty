@@ -2,9 +2,11 @@ import "server-only";
 import { sql } from "../db";
 
 export type LocDetail =
-  | { type: "near"; cats: string[]; subs: string[] | null; score: number; name: string | null; dist_m: number | null; area_m2?: number }
-  | { type: "count"; cats: string[]; subs: string[] | null; score: number; count: number; radius: number }
-  | { type: "area"; cats: string[]; score: number; area_m2: number; radius: number };
+  | { type: "near"; cats: string[]; subs: string[] | null; label?: string; score: number; name: string | null; dist_m: number | null; area_m2?: number }
+  | { type: "count"; cats: string[]; subs: string[] | null; label?: string; score: number; count: number; eff?: number; k?: number; radius: number }
+  | { type: "area"; cats: string[]; score: number; area_m2: number; radius: number }
+  | { type: "lines"; cats: string[]; score: number; walk: number; name: string | null; lines?: string[]; n_lines?: number; dist_m?: number; guess?: boolean }
+  | { type: "jobs"; score: number; name: string; dist_m: number; second?: { name: string; dist_m: number }; core?: { name: string; dist_m: number; score: number } };
 
 export type LocCategory = { label: string; score: number | null; weight?: number; status?: string; details?: LocDetail[] };
 
@@ -26,9 +28,9 @@ export type LocationScore = { total: number | null; scores: Record<string, LocCa
  * 모으므로(ETL analytics/location.py COVER_M) 멀리 있는 단지와 비교하면 순위가 부풀려진다.
  */
 export async function itemLocation(itemId: string) {
-  // 점수와 백분위를 한 쿼리로(왕복 1회)
-  const [row] = await sql<(LocationScore & { below: number | null; n: number | null })[]>`
-    select l.total, l.scores, l.development, l.computed_at::text, p.below, p.n
+  // 점수·백분위·내 관심 부동산 중 순위를 한 쿼리로(왕복 1회)
+  const [row] = await sql<(LocationScore & { below: number | null; n: number | null; my_rank: number | null; my_n: number | null })[]>`
+    select l.total, l.scores, l.development, l.computed_at::text, p.below, p.n, m.my_rank, m.my_n
     from location_scores l
     join watch_items w on w.id::text = l.target_id
     left join lateral (
@@ -38,11 +40,40 @@ export async function itemLocation(itemId: string) {
         and ST_DWithin(c.geom::geography, w.geom::geography, ${PEER_RADIUS_M})
         and (w.complex_id is null or c.id <> w.complex_id)
     ) p on l.total is not null
+    left join lateral (
+      select 1 + count(*) filter (where s.total > l.total)::int as my_rank, count(*)::int as my_n
+      from location_scores s join watch_items o on o.id::text = s.target_id
+      where s.target_type = 'item' and s.total is not null and o.user_id = w.user_id
+    ) m on l.total is not null
     where l.target_type = 'item' and l.target_id = ${itemId}`;
   if (!row) return null;
-  const { below, n, ...score } = row;
+  const { below, n, my_rank, my_n, ...score } = row;
   const percentile = below !== null && n !== null && n >= 3 ? below / n : null;
-  return { ...score, percentile, peers: n ?? 0 };
+  return { ...score, percentile, peers: n ?? 0, myRank: my_n && my_n >= 2 ? my_rank : null, myCount: my_n ?? 0 };
+}
+
+export type CalibrationEffect = { label: string; per10_pct: number; weight_now: number; weight_fit: number; weight_suggest: number };
+export type Spread = { n: number; p10: number; p50: number; p90: number; std: number } | null;
+export type LocationCalibration = {
+  computed_at: string;
+  status: "ok" | "insufficient";
+  complexes_with_price: number;
+  min_complexes: number;
+  n?: number;
+  sggs?: number;
+  r2_age_only?: number;
+  r2_total?: number;
+  r2_categories?: number;
+  total_per10_pct?: number;
+  effects?: Record<string, CalibrationEffect>;
+  spread: Record<string, Spread>;
+};
+
+/** 가장 최근 입지 점수 검증(ETL analytics/location_calibration.py) — 점수가 평당가 차이를 얼마나 설명하는지 */
+export async function locationCalibration(): Promise<LocationCalibration | null> {
+  const [row] = await sql<{ computed_at: string; result: Omit<LocationCalibration, "computed_at"> }[]>`
+    select computed_at::text, result from location_calibrations order by computed_at desc, id desc limit 1`.catch(() => []);
+  return row ? { computed_at: row.computed_at, ...row.result } : null;
 }
 
 /** 백분위 비교 반경(m) */

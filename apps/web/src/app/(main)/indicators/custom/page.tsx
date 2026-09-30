@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "커스텀 지표" };
 
 export default async function CustomIndicatorsPage() {
   const user = await requireUser();
-  const [catalog, saved, regions] = await Promise.all([listSeries(), listCustom(user.id), indicatorRegions(user.id)]);
+  const [catalog, saved, regions] = await Promise.all([listSeries(user.id), listCustom(user.id), indicatorRegions(user.id)]);
   const results = await Promise.all(saved.map((s) => evalExpression(s.expression)));
   return (
     <div className="space-y-4">

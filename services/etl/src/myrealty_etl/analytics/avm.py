@@ -114,6 +114,22 @@ def bucket_ratios(prices: list[float], floors: list[int | None], min_n: int = 3)
     return out
 
 
+LOC_PER_POINT_DEFAULT = 0.002  # 입지 점수 1점 차이 → 가격 0.2%(검증 결과가 없을 때)
+LOC_PER_POINT_MAX = 0.006
+
+
+def loc_price_per_point(conn) -> float:
+    """입지 점수 1점당 가격 효과(로그). 최근 점수 검증(location_calibrations)이 있으면 그 '총점 +10점 효과'를 쓰고
+    (0 ~ 0.6%/점으로 제한), 없으면 기본값. 점수 산식이 바뀌어 점수 폭이 달라져도 보정이 과하거나 모자라지 않게."""
+    row = conn.execute(
+        "select result from location_calibrations where result->>'status' = 'ok' order by computed_at desc, id desc limit 1"
+    ).fetchone()
+    pct = (row["result"] or {}).get("total_per10_pct") if row else None
+    if pct is None:
+        return LOC_PER_POINT_DEFAULT
+    return min(max(math.log1p(float(pct) / 100) / 10, 0.0), LOC_PER_POINT_MAX)
+
+
 def value_neighbors(conn, item: dict, today: date, idx: dict, area: float) -> dict | None:
     """인근 유사 단지(1.5km, 면적 ±15%, 연식 ±10년)의 평당가로 추정. 입지 점수 차이를 소폭 반영."""
     if item.get("lng") is None:
@@ -134,10 +150,11 @@ def value_neighbors(conn, item: dict, today: date, idx: dict, area: float) -> di
     if len(rows) < 5:
         return None
     my_loc = item.get("loc")
+    per_point = loc_price_per_point(conn)
     adj, weights, comps = [], [], []
     for r in rows:
         ppy = r["price"] / (float(r["area_m2"]) / PY) * time_factor(idx, r["deal_date"], today)
-        loc_adj = 1 + 0.003 * ((my_loc or 0) - (r["loc"] or 0)) if my_loc is not None and r["loc"] is not None else 1
+        loc_adj = math.exp(per_point * (my_loc - r["loc"])) if my_loc is not None and r["loc"] is not None else 1
         adj.append(ppy * loc_adj * area / PY)
         weights.append(math.exp(-((today - r["deal_date"]).days / 30.4) / 9))
         comps.append({"id": r["id"], "date": str(r["deal_date"]), "price": r["price"], "name": r["name"]})

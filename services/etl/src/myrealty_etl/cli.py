@@ -120,6 +120,9 @@ def _series_check(ns):
 _simple("indicators", "myrealty_etl.analytics.indicators:compute_indicators", "지역 지표·온도계 계산")
 _simple("pois", "myrealty_etl.jobs.pois_job:collect_pois", "주변 편의시설 수집 + 입지 점수")
 _simple("locations", "myrealty_etl.analytics.location:compute_locations", "입지 점수만 재계산")
+_simple("location-check", "myrealty_etl.analytics.location_calibration:calibrate_locations",
+        "입지 점수 검증(평당가 회귀: 설명력·항목별 효과·권장 가중치·점수 분포)",
+        lambda p: p.add_argument("--months", type=int))
 
 
 def _poi_args(p):
@@ -172,6 +175,7 @@ DAILY_STEPS: list[tuple[str, str]] = [
     ("classify", "myrealty_etl.ai.news_classifier:classify_pending"),
     ("indicators", "myrealty_etl.analytics.indicators:compute_indicators"),
     ("pois", "myrealty_etl.jobs.pois_job:collect_pois"),
+    ("location_check", "myrealty_etl.analytics.location_calibration:calibrate_locations"),
     ("avm", "myrealty_etl.analytics.avm:compute_valuations"),
     ("alerts", "myrealty_etl.alerts.rules:detect_alerts"),
     ("push", "myrealty_etl.alerts.notify:send_push"),

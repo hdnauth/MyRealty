@@ -120,7 +120,6 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
               className={`shrink-0 rounded-full border px-3 py-1 text-[13px] ${g.sgg === sgg ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted"}`}
             >
               {g.name.split(" ").at(-1)}
-              {g.mine ? " ★" : ""}
             </Link>
           ))}
         </div>

@@ -278,14 +278,14 @@ MyRealty/
 ├─ services/etl/src/myrealty_etl/
 │  ├─ collectors/                   # rtms, building, vworld, naver_news, applyhome, macro, pois, projects
 │  ├─ transforms/                   # complexes(단지 매칭·부동산 연결), geocode
-│  ├─ analytics/                    # indicators(자체 지수·온도계), location(생활편의), avm
+│  ├─ analytics/                    # indicators(자체 지수·온도계), location(생활편의)·location_calibration(점수 검증), avm
 │  ├─ ai/                           # client(사용량·예산), news_classifier(Batch/동기)
 │  ├─ alerts/                       # rules(알림 규칙), notify(웹푸시·다이제스트)
 │  ├─ jobs/                         # rtms_job, attrs_job, news_job, events_job, pois_job
 │  ├─ series_catalog.py             # ECOS·KOSIS·R-ONE 코드
 │  ├─ demo.py                       # 합성 데모 데이터
 │  └─ cli.py                        # myrealty <명령>
-├─ db/migrations/                   # 0001 초기, 0002 AI 배치·인덱스, 0003 POI·정비사업·인프라·입지 점수
+├─ db/migrations/                   # 0001 초기, 0002 AI 배치·인덱스, 0003 POI·정비사업·인프라·입지 점수, … 0009 입지 점수 검증
 └─ .github/workflows/               # ci.yml, etl-daily.yml, reports.yml
 ```
 

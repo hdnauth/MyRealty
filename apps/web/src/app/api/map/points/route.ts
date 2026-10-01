@@ -59,8 +59,8 @@ export async function GET(req: NextRequest) {
     ${f.chgMax !== null ? sql`and p.change_1y <= ${f.chgMax}` : sql``}
     ${f.locMin !== null ? sql`and p.loc_score >= ${f.locMin}` : sql``}`;
 
-  const points = COMPLEX_TYPES.has(type)
-    ? await sql<MapPoint[]>`
+  const query = COMPLEX_TYPES.has(type)
+    ? sql<MapPoint[]>`
         with c as (
           select c.id, c.name, c.geom, c.build_year, c.households from complexes c
           where c.property_type = ${type} and c.geom && ${envelope}
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
         ${post}
         order by p.n desc
         limit ${LIMIT}`
-    : await sql<MapPoint[]>`
+    : sql<MapPoint[]>`
         with r as (select lawd_cd, emd, center from regions where center && ${envelope}),
         t as (
           select t.lawd_cd, t.umd_nm, t.deal_kind, t.deal_date, t.price, coalesce(t.area_m2, t.land_area_m2) as area
@@ -104,5 +104,17 @@ export async function GET(req: NextRequest) {
         ${post}
         order by p.n desc
         limit ${LIMIT}`;
+  // 지도를 계속 옮기면 브라우저가 이전 요청을 끊는다 — DB 쿼리도 같이 취소해 커넥션을 비워 둔다
+  const cancel = () => void query.cancel();
+  req.signal.addEventListener("abort", cancel, { once: true });
+  let points: MapPoint[];
+  try {
+    points = await query;
+  } catch (e) {
+    if (req.signal.aborted) return new NextResponse(null, { status: 499 });
+    throw e;
+  } finally {
+    req.signal.removeEventListener("abort", cancel);
+  }
   return NextResponse.json({ points, truncated: points.length >= LIMIT });
 }

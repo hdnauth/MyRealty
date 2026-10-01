@@ -38,6 +38,7 @@ describe("지도 조건 검색 필터", () => {
     const f = { ...EMPTY_FILTERS, yearMin: 2015, priceMax: 50_000 };
     expect(activeFilterCount(f, "apt")).toBe(2);
     expect(activeFilterCount(f, "land")).toBe(1);
+    expect(activeFilterCount({ ...EMPTY_FILTERS, priceMin: 60_000, priceMax: 100_000 }, "apt")).toBe(1);
   });
   it("정렬은 값이 없는 곳을 뒤로 보낸다", () => {
     const ps = [pt("a", { jeonse_ratio: null, n: 9 }), pt("b", { jeonse_ratio: 0.6 }), pt("c", { jeonse_ratio: 0.8 })];

@@ -128,10 +128,22 @@ export function normalizeFilters(v: unknown): MapFilters {
   return out;
 }
 
-/** 켜진 필터 개수(유형에 해당 없는 필터는 세지 않는다) */
+/** 조건 단위(최소·최대는 한 조건) */
+const FILTER_GROUPS: (keyof MapFilters)[][] = [
+  ["priceMin", "priceMax"],
+  ["ppyMin", "ppyMax"],
+  ["areaMin", "areaMax"],
+  ["yearMin", "yearMax"],
+  ["hhMin"],
+  ["jrMin", "jrMax"],
+  ["chgMin", "chgMax"],
+  ["locMin"],
+];
+
+/** 켜진 조건 개수 — 가격 6~10억처럼 최소·최대를 함께 줘도 한 개. 유형에 해당 없는 조건은 세지 않는다 */
 export function activeFilterCount(f: MapFilters, type: string): number {
   const complex = COMPLEX_TYPES.has(type);
-  return (Object.keys(PARAM) as (keyof MapFilters)[]).filter((k) => f[k] !== null && (complex || !COMPLEX_ONLY_FILTERS.includes(k))).length;
+  return FILTER_GROUPS.filter((g) => g.some((k) => f[k] !== null && (complex || !COMPLEX_ONLY_FILTERS.includes(k)))).length;
 }
 
 export type SortKey = "n" | "price_asc" | "price_desc" | "ppy_asc" | "jr_desc" | "chg_desc" | "loc_desc" | "new";

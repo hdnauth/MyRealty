@@ -2,14 +2,17 @@
 
 import clsx from "clsx";
 import "leaflet/dist/leaflet.css";
-import { Crosshair, Layers, List, Maximize2, Minimize2, SlidersHorizontal, Star, X } from "lucide-react";
+import { ChevronLeft, Crosshair, Layers, List, Loader2, Maximize2, Minimize2, Star, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { type AreaUnit, formatDate, formatManwon, formatPct, fromPerPyeong, shortAddress, unitPriceLabel } from "@/lib/format";
 import { complexHref, type MyComplexes, registerComplexHref } from "@/lib/links";
+import type { MapSearchResult } from "@/app/api/map/search/route";
 import { activeFilterCount, COMPLEX_TYPES, EMPTY_FILTERS, type MapFilters, type MapPoint, normalizeFilters, SORTS, type SortKey, filtersToQuery, sortPoints } from "@/lib/map-filters";
 import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
-import { FilterPanel } from "./filter-panel";
+import { ComplexTrades, type Trade } from "./complex-trades";
+import { FilterBar, FilterPanel } from "./filter-panel";
+import { MapSearch } from "./map-search";
 import { type BaseMap, type BBox, clusterByDistance, createLeafletMap, distanceKm, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, declutter, pinLabel, satelliteSources, shortName, tileSources, vworldWmsUrl } from "./engines";
 
 export type MapWatchItem = {
@@ -86,9 +89,13 @@ const TYPE_OPTIONS = [
   { key: "land", label: "토지" },
   { key: "commercial", label: "상가" },
 ];
-const MONTHS = [3, 6, 12, 36];
-
-type Trade = { id: number; deal_kind: string; deal_date: string; price: number; monthly_rent: number | null; area_m2: number | null; floor: number | null; is_canceled: boolean };
+/*
+ * 목록 시트(모바일): 지도를 가리지 않게 평소엔 머리만(peek), 단지를 고르면 반(half), 끌어 올리면 전체(full).
+ * 데스크톱(lg)에서는 왼쪽 옆 패널(접기 가능).
+ */
+type SheetState = "peek" | "half" | "full";
+const SHEET_H: Record<SheetState, string> = { peek: "3.5rem", half: "45%", full: "calc(100% - 0.5rem)" };
+const SHEET_ORDER: SheetState[] = ["peek", "half", "full"];
 
 const txOf = (it: MapWatchItem | undefined) => (it && isPropertyType(it.property_type) ? PROPERTY_TYPES[it.property_type].tx : null);
 
@@ -123,6 +130,17 @@ function indicatorBits(p: MapPoint): string[] {
     p.change_1y !== null ? `1년 ${formatPct(p.change_1y, 1)}` : null,
     p.loc_score !== null ? `입지 ${Math.round(p.loc_score)}점` : null,
   ].filter((x): x is string => x !== null);
+}
+
+/** 아직 집계에 없는 단지(검색·링크로 고른 단지)를 선택 상태로 둘 때 — 집계가 오면 그 값으로 바뀐다 */
+function stubPoint(c: { id: number; name: string; lng: number; lat: number }): MapPoint {
+  return { key: `c${c.id}`, kind: "complex", complex_id: c.id, name: c.name, lng: c.lng, lat: c.lat, n: 0, median_price: 0, median_ppy: null, last_date: "", build_year: null, households: null, jeonse_ratio: null, change_1y: null, loc_score: null };
+}
+
+/** 라벨 앞 1년 변동 화살표(아실·호갱노노식 상승 빨강/하락 파랑). ±1% 미만은 표시하지 않는다 */
+function changeArrow(chg: number | null): string {
+  if (chg === null || Math.abs(chg) < 0.01) return "";
+  return chg > 0 ? `<span style="color:#e5383b">▲</span>` : `<span style="color:#2f6fdf">▼</span>`;
 }
 
 export function RealtyMap({
@@ -175,7 +193,10 @@ export function RealtyMap({
   const [notice, setNotice] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(focusItemId);
   const focus = items.find((i) => i.id === focusId) ?? null;
-  const [panel, setPanel] = useState<"trades" | "items">(focusItemId || focusComplex || atPoint || !items.length ? "trades" : "items");
+  const [sheet, setSheet] = useState<SheetState>(focusItemId || focusComplex || atPoint ? "half" : "peek");
+  // 데스크톱 옆 패널 펼침
+  const [sideOpen, setSideOpen] = useState(true);
+  const [mineOpen, setMineOpen] = useState(false);
   // 관심 부동산·단지를 골라 들어오면 그 유형의 거래를 보여 준다
   const [type, setType] = useState<string>(() => {
     const t = initialType === "forest" ? "land" : initialType;
@@ -186,9 +207,15 @@ export function RealtyMap({
   const [months, setMonths] = useState(6);
   const [points, setPoints] = useState<MapPoint[]>([]);
   const [truncated, setTruncated] = useState(false);
+  // 화면 이동·조건 변경마다 다시 조회한다. 진행·실패를 보여 줘야 이전 결과가 남아 있는 것과 구분된다
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
   // 후보 탐색 조건·정렬(이 기기에 기억)
   const [filters, setFilters] = useState<MapFilters>(EMPTY_FILTERS);
   const [sort, setSort] = useState<SortKey>("n");
+  // 라벨 큰 글씨: 단위가격(평당·㎡당) 또는 거래가(중위) — 단독·토지·상가는 늘 거래가
+  const [labelMode, setLabelMode] = useState<"unit" | "total">("unit");
   const [filterOpen, setFilterOpen] = useState(false);
   const filterCount = activeFilterCount(filters, type);
   // 유형을 바꿨는데 그 유형에 없는 정렬(입지·신축)이면 기본으로
@@ -200,26 +227,22 @@ export function RealtyMap({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- 저장된 조건은 마운트 뒤에만 읽을 수 있다
       setFilters(normalizeFilters(v.filters));
       if (SORTS.some((x) => x.key === v.sort)) setSort(v.sort);
+      if (v.labelMode === "total") setLabelMode("total");
     } catch {
       /* 저장소 사용 불가 */
     }
   }, []);
   useEffect(() => {
     try {
-      localStorage.setItem(FILTER_STORE, JSON.stringify({ filters, sort }));
+      localStorage.setItem(FILTER_STORE, JSON.stringify({ filters, sort, labelMode }));
     } catch {
       /* 저장소 사용 불가 */
     }
-  }, [filters, sort]);
+  }, [filters, sort, labelMode]);
   // 전체 화면: 브라우저 전체 화면(Fullscreen API), 안 되면(iPhone Safari 등) 화면을 덮는 고정 배치
   const [fullscreen, setFullscreen] = useState<"off" | "native" | "css">("off");
-  const [listOpen, setListOpen] = useState(true);
   const [bbox, setBbox] = useState<BBox | null>(null);
-  const [selected, setSelected] = useState<MapPoint | null>(() =>
-    focusComplex
-      ? { key: `c${focusComplex.id}`, kind: "complex", complex_id: focusComplex.id, name: focusComplex.name, lng: focusComplex.lng, lat: focusComplex.lat, n: 0, median_price: 0, median_ppy: null, last_date: "", build_year: null, households: null, jeonse_ratio: null, change_1y: null, loc_score: null }
-      : null,
-  );
+  const [selected, setSelected] = useState<MapPoint | null>(() => (focusComplex ? stubPoint(focusComplex) : null));
   const [detail, setDetail] = useState<{ complex: { name: string; build_year: number | null; households: number | null }; trades: Trade[] } | null>(null);
   const [layers, setLayers] = useState<Set<string>>(() => new Set(["projects", "subway", "school"]));
   const [pois, setPois] = useState<MapPoi[]>([]);
@@ -252,8 +275,8 @@ export function RealtyMap({
       setDetail(null);
       const it = items.find((i) => i.id === id);
       if (!it) return;
-      setPanel("trades");
-      setListOpen(true);
+      setSheet((v) => (v === "peek" ? "half" : v));
+      setSideOpen(true);
       const tx = txOf(it);
       if (tx && TYPE_OPTIONS.some((o) => o.key === tx)) setType(tx);
       if (it.complex_id) loadComplex(it.complex_id);
@@ -385,14 +408,30 @@ export function RealtyMap({
     return () => shapes.forEach((sh) => sh.remove());
   }, [boundaries, mapVersion]);
 
+  // 모바일은 아래 시트가 지도 아래쪽 절반쯤을 가린다 — 고른 곳을 화면 가운데가 아니라 보이는 위쪽 가운데로 옮긴다.
+  // zoomTo 를 주면 그 확대 단계로 바꾼 뒤의 화면 높이로 계산한다(검색으로 멀리 이동할 때)
+  const bboxRef = useRef<BBox | null>(null);
+  useEffect(() => {
+    bboxRef.current = bbox;
+  }, [bbox]);
+  const moveTo = useCallback((lng: number, lat: number, zoomTo?: number) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const b = bboxRef.current;
+    const z = zoomTo ?? map.zoom();
+    const shift = b && !window.matchMedia("(min-width: 1024px)").matches ? (b[3] - b[1]) * 0.22 * 2 ** (map.zoom() - z) : 0;
+    if (zoomTo === undefined) map.panTo(lng, lat - shift);
+    else map.setCenter(lng, lat - shift, zoomTo);
+  }, []);
+
   // 고른 관심 부동산: 탐색 반경을 그리고 그 위치로 이동, 단지가 있으면 그 단지 거래를 연다
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !focus) return;
     const c = map.addCircle({ lng: focus.lng, lat: focus.lat, radius: focus.radius_m, color: "#2563eb" });
-    map.panTo(focus.lng, focus.lat);
+    moveTo(focus.lng, focus.lat);
     return () => c.remove();
-  }, [focus, mapVersion]);
+  }, [focus, mapVersion, moveTo]);
   // /map?item= 으로 들어오면 그 단지 거래를 연다
   useEffect(() => {
     const it = items.find((i) => i.id === focusItemId);
@@ -406,32 +445,44 @@ export function RealtyMap({
     const ctl = new AbortController();
     const t = setTimeout(() => {
       const fq = filtersToQuery(filters);
+      setSearching(true);
+      setSearchError(null);
       fetch(`/api/map/points?bbox=${bbox.map((v) => v.toFixed(5)).join(",")}&type=${type}&kind=${kind}&months=${months}${fq ? `&${fq}` : ""}`, { signal: ctl.signal })
-        .then((r) => r.json())
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
         .then((d) => {
           setPoints(d.points ?? []);
           setTruncated(Boolean(d.truncated));
+          setSearching(false);
         })
-        .catch(() => {});
+        .catch((e) => {
+          if (ctl.signal.aborted) return; // 다음 조회로 넘어감
+          console.error("[map] points", e);
+          setSearching(false);
+          setSearchError("이 화면의 거래를 불러오지 못했습니다.");
+        });
     }, 250);
     return () => {
       clearTimeout(t);
       ctl.abort();
     };
-  }, [bbox, type, kind, months, filters]);
+  }, [bbox, type, kind, months, filters, retry]);
 
-  const select = useCallback((p: MapPoint) => {
+  const select = useCallback((p: MapPoint, pan = true) => {
     setSelected(p);
     setDetail(null);
-    setListOpen(true);
+    setSheet((v) => (v === "peek" ? "half" : v));
+    setSideOpen(true);
     if (p.complex_id) {
       fetch(`/api/map/complex/${p.complex_id}`)
         .then((r) => r.json())
         .then(setDetail)
         .catch(() => {});
     }
-    mapRef.current?.panTo(p.lng, p.lat);
-  }, []);
+    if (pan) moveTo(p.lng, p.lat);
+  }, [moveTo]);
 
   // 가격 라벨 마커
   useEffect(() => {
@@ -446,7 +497,7 @@ export function RealtyMap({
       { w: 96, h: 34, keep: (p) => selected?.key === p.key || (p.complex_id !== null && myComplexes.has(p.complex_id)) },
     );
     markersRef.current = shown.map((p) => {
-      const main = p.median_ppy && (type === "apt" || type === "officetel" || type === "rowhouse") ? `${formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}` : formatManwon(p.median_price, { short: true });
+      const main = labelMode === "unit" && p.median_ppy && COMPLEX_TYPES.has(type) ? `${formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}` : formatManwon(p.median_price, { short: true });
       const active = selected?.key === p.key;
       const mine = p.complex_id !== null && myComplexes.has(p.complex_id);
       const sub = metricText(p, sortKey) ?? `${p.n}건`;
@@ -455,10 +506,10 @@ export function RealtyMap({
         lat: p.lat,
         zIndex: active ? 900 : 100,
         onClick: () => select(p),
-        html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer">${mine ? "★ " : ""}${main}<span style="font-weight:400;opacity:.7">${escapeHtml(shortName(p.name))} · ${escapeHtml(sub)}</span></div>`,
+        html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer"><span>${mine ? "★ " : ""}${changeArrow(p.change_1y)}${main}</span><span style="font-weight:400;opacity:.7">${escapeHtml(shortName(p.name))} · ${escapeHtml(sub)}</span></div>`,
       });
     });
-  }, [points, selected, type, select, mapVersion, unit, myComplexes, bbox, sortKey]);
+  }, [points, selected, type, select, mapVersion, unit, myComplexes, bbox, sortKey, labelMode]);
 
   // POI 레이어 조회(수집된 시설 + 없으면 OpenStreetMap 에서 보충)
   useEffect(() => {
@@ -645,11 +696,12 @@ export function RealtyMap({
     if (fullscreen !== "off") {
       if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
       setFullscreen("off");
-      setListOpen(true);
+      setSideOpen(true);
       return;
     }
-    // 전체 화면에서는 지도를 넓게: 목록은 접어 두고 버튼으로 연다
-    setListOpen(false);
+    // 전체 화면에서는 지도를 넓게: 목록은 접어 두고 버튼(데스크톱)·시트(모바일)로 연다
+    setSideOpen(false);
+    setSheet("peek");
     const node = rootRef.current;
     if (node?.requestFullscreen && document.fullscreenEnabled) {
       try {
@@ -667,7 +719,7 @@ export function RealtyMap({
     const onChange = () => {
       if (!document.fullscreenElement) {
         setFullscreen((v) => (v === "native" ? "off" : v));
-        setListOpen(true);
+        setSideOpen(true);
       }
     };
     document.addEventListener("fullscreenchange", onChange);
@@ -678,7 +730,7 @@ export function RealtyMap({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setFullscreen("off");
-        setListOpen(true);
+        setSideOpen(true);
       }
     };
     const prev = document.body.style.overflow;
@@ -691,6 +743,68 @@ export function RealtyMap({
   }, [fullscreen]);
   const isFull = fullscreen !== "off";
 
+  // 검색·링크로 고른 단지는 집계가 오면 그 값(거래 수·중위·지표)으로 보여 준다
+  const sel = selected ? (points.find((p) => p.key === selected.key) ?? selected) : null;
+
+  // 검색 결과로 이동: 단지면 그 유형으로 바꾸고 단지를 연다, 동네·주소면 그 위치로
+  const onSearchPick = useCallback(
+    (r: MapSearchResult) => {
+      const map = mapRef.current;
+      if (r.kind === "place") {
+        map?.setCenter(r.lng, r.lat, 15);
+        return;
+      }
+      if (TYPE_OPTIONS.some((o) => o.key === r.property_type)) setType(r.property_type);
+      setFocusId(null);
+      if (map) moveTo(r.lng, r.lat, Math.max(map.zoom(), 16));
+      select(stubPoint(r), false);
+    },
+    [select, moveTo],
+  );
+
+  // 모바일 시트 끌기: 머리(손잡이·제목 줄)를 위아래로 끌면 높이가 따라오고, 놓으면 끈 방향의 다음 단계로. 그냥 누르면 접기/펴기
+  const areaRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ y: number; h: number; moved: boolean } | null>(null);
+  const [dragH, setDragH] = useState<number | null>(null);
+  const onSheetDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button,a,select,input") || window.matchMedia("(min-width: 1024px)").matches) return;
+    drag.current = { y: e.clientY, h: sheetRef.current?.offsetHeight ?? 0, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onSheetMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const dy = e.clientY - d.y;
+    if (!d.moved && Math.abs(dy) < 6) return;
+    d.moved = true;
+    setDragH(Math.min((areaRef.current?.clientHeight ?? 600) - 8, Math.max(48, d.h - dy)));
+  };
+  const onSheetUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    setDragH(null);
+    if (!d.moved) {
+      setSheet((v) => (v === "peek" ? "half" : v === "half" ? "peek" : "half"));
+      return;
+    }
+    const dy = e.clientY - d.y;
+    const max = areaRef.current?.clientHeight ?? 600;
+    const i = SHEET_ORDER.indexOf(sheet);
+    const step = Math.abs(dy) > max * 0.4 ? 2 : Math.abs(dy) > 40 ? 1 : 0;
+    setSheet(SHEET_ORDER[Math.max(0, Math.min(2, i + (dy < 0 ? step : -step)))]);
+  };
+  // 지도 위 패널(레이어·내 부동산)을 열면 시트는 내려 둔다
+  const openOverlay = (which: "layer" | "mine") => {
+    setLayerOpen((v) => (which === "layer" ? !v : false));
+    setMineOpen((v) => (which === "mine" ? !v : false));
+    setSheet("peek");
+  };
+  const clusterCount = itemClusters.length;
+  // 시트 바로 위에 붙는 지도 위 요소들(모바일). 데스크톱은 지도 아래 모서리 기준
+  const aboveSheet = "bottom-[calc(var(--sheet-h)+0.75rem)] lg:bottom-8";
+
   return (
     <div
       ref={rootRef}
@@ -699,287 +813,328 @@ export function RealtyMap({
         isFull ? "fixed inset-0 z-[1000] h-dvh w-screen bg-bg" : "-mx-4 -mt-4 h-[calc(100dvh-7.5rem)] lg:mx-0 lg:mt-0 lg:h-[calc(100dvh-4rem)]",
       )}
     >
-      <div className={clsx("flex gap-1.5 overflow-x-auto border-b border-border bg-surface px-4 py-2", !isFull && "lg:rounded-t-xl lg:border")}>
-        {TYPE_OPTIONS.map((o) => (
-          <Chip key={o.key} active={type === o.key} onClick={() => setType(o.key)}>
-            {o.label}
-          </Chip>
-        ))}
-        <span className="mx-1 w-px shrink-0 bg-border" />
-        {(["sale", "jeonse"] as const).map((k) => (
-          <Chip key={k} active={kind === k} onClick={() => setKind(k)}>
-            {DEAL_KIND_LABEL[k]}
-          </Chip>
-        ))}
-        <span className="mx-1 w-px shrink-0 bg-border" />
-        {MONTHS.map((m) => (
-          <Chip key={m} active={months === m} onClick={() => setMonths(m)}>
-            {m < 12 ? `${m}개월` : `${m / 12}년`}
-          </Chip>
-        ))}
-        <span className="mx-1 w-px shrink-0 bg-border" />
-        <Chip active={filterOpen || filterCount > 0} onClick={() => setFilterOpen((v) => !v)}>
-          <SlidersHorizontal size={13} className="-mt-0.5 mr-1 inline" />
-          조건 검색{filterCount ? ` ${filterCount}` : ""}
-        </Chip>
-        <Chip active={layerOpen} onClick={() => setLayerOpen((v) => !v)}>
-          <Layers size={13} className="-mt-0.5 mr-1 inline" />
-          레이어 {layers.size ? `${layers.size}` : ""}
-        </Chip>
-      </div>
-
-      <div className={clsx("relative flex min-h-0 flex-1 flex-col lg:flex-row lg:overflow-hidden", !isFull && "lg:rounded-b-xl lg:border lg:border-t-0 lg:border-border")}>
-        <div
-          className={clsx(
-            "order-2 max-h-[42%] min-h-0 overflow-y-auto border-t border-border bg-surface lg:order-1 lg:max-h-none lg:w-80 lg:border-r lg:border-t-0",
-            isFull && !listOpen && "hidden",
-          )}
-        >
-          <div className="sticky top-0 z-10 flex border-b border-border bg-surface text-sm">
-            {(
-              [
-                ["trades", `${filterCount ? "조건 결과" : "주변 거래"} ${sorted.length}${truncated ? "+" : ""}`],
-                ["items", `내 부동산 ${items.length + missingItems.length}`],
-              ] as const
-            ).map(([k, label]) => (
+      {/* 상단: 검색 · 유형 · 매매/전세, 아래 줄에 조건 칩 */}
+      <div className={clsx("relative z-[700] border-b border-border bg-surface", !isFull && "lg:rounded-t-xl lg:border")}>
+        <div className="flex items-center gap-1.5 px-3 py-2 lg:px-4">
+          <div className="min-w-0 flex-1 lg:max-w-sm">
+            <MapSearch onPick={onSearchPick} />
+          </div>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            aria-label="부동산 유형"
+            className="h-9 shrink-0 rounded-full border border-border bg-surface pl-3 pr-2 text-sm font-semibold"
+          >
+            {TYPE_OPTIONS.map((o) => (
+              <option key={o.key} value={o.key}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <div role="group" aria-label="거래 유형" className="flex h-9 shrink-0 rounded-full bg-surface-2 p-0.5 text-sm">
+            {(["sale", "jeonse"] as const).map((k) => (
               <button
                 key={k}
                 type="button"
-                onClick={() => setPanel(k)}
-                className={clsx("flex-1 py-2", panel === k ? "border-b-2 border-accent font-semibold text-accent" : "text-muted")}
+                aria-pressed={kind === k}
+                onClick={() => setKind(k)}
+                className={clsx("rounded-full px-3", kind === k ? "bg-surface font-semibold text-text shadow-sm" : "text-muted")}
               >
-                {label}
+                {DEAL_KIND_LABEL[k]}
               </button>
             ))}
           </div>
-          {panel === "items" ? (
-            <ul className="divide-y divide-border">
-              {items.length === 0 && missingItems.length === 0 ? (
-                <li className="p-4 text-sm text-muted">
-                  관심 부동산이 없습니다. <Link href="/items/new" className="text-accent">등록하기</Link>
-                </li>
-              ) : null}
-              {missingItems.map((it) => (
-                <li key={it.id} className="px-4 py-2.5 text-sm">
-                  <span className="block truncate font-medium text-muted">★ {shortAddress(it.label)}</span>
-                  <span className="text-xs text-warn">
-                    위치를 찾지 못해 지도에 표시하지 못했습니다 ·{" "}
-                    <Link href={`/items/${it.id}/edit`} className="text-accent">
-                      주소 다시 선택
-                    </Link>
-                  </span>
-                </li>
-              ))}
-              {items.map((it) => (
-                <li key={it.id}>
-                  <button
-                    type="button"
-                    onClick={() => focusOn(it.id)}
-                    className={clsx("flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-surface-2", focusId === it.id && "bg-accent-soft/60")}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">★ {shortAddress(it.label)}</span>
-                      <span className="text-xs text-muted">
-                        {isPropertyType(it.property_type) ? PROPERTY_TYPES[it.property_type].label : it.property_type}
-                        {it.group_tag in GROUP_TAGS ? ` · ${GROUP_TAGS[it.group_tag as keyof typeof GROUP_TAGS]}` : ""}
-                      </span>
-                    </span>
-                    <span className="tabular shrink-0 text-right text-sm font-semibold">
-                      {formatManwon(it.estimate ?? it.last_price, { short: true })}
-                      <span className="block text-[11px] font-normal text-muted">{it.estimate ? "추정 시세" : it.last_price ? "최근 매매" : "시세 없음"}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-          <>
-          {focus && !selected ? (
-            <div className="border-b border-border bg-accent-soft/40 p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="truncate font-semibold">★ {shortAddress(focus.label)}</h3>
-                  <p className="text-xs text-muted">
-                    {focus.estimate ? `추정 시세 ${formatManwon(focus.estimate, { short: true })}` : ""}
-                    {focus.estimate && focus.last_price ? " · " : ""}
-                    {focus.last_price ? `최근 매매 ${formatManwon(focus.last_price, { short: true })}${focus.last_date ? `(${formatDate(focus.last_date)})` : ""}` : ""}
-                    {!focus.estimate && !focus.last_price ? "아직 시세가 없습니다" : ""}
-                    {` · 반경 ${focus.radius_m.toLocaleString()}m`}
-                  </p>
-                </div>
-                <button type="button" className="shrink-0 text-xs text-muted" onClick={() => focusOn(null)} aria-label="선택 해제">
-                  ✕
-                </button>
-              </div>
-              <div className="mt-2 flex gap-3 text-sm">
-                <Link href={`/items/${focus.id}`} className="text-accent">상세</Link>
-                <Link href={`/items/${focus.id}?tab=nearby`} className="text-accent">비슷한 주변 거래</Link>
-                <Link href={`/items/${focus.id}?tab=location`} className="text-accent">입지</Link>
-              </div>
-              {focus.complex_id && detail ? (
-                <ul className="mt-2 divide-y divide-border text-[13px]">
-                  {detail.trades
-                    .filter((t) => !focus.area_m2 || !t.area_m2 || Math.abs(Number(t.area_m2) - focus.area_m2) <= 3)
-                    .slice(0, 6)
-                    .map((t) => (
-                      <li key={t.id} className={clsx("flex justify-between py-1 tabular", t.is_canceled && "text-muted line-through")}>
-                        <span className="text-muted">
-                          {formatDate(t.deal_date)} · {DEAL_KIND_LABEL[t.deal_kind]} {t.floor ? `· ${t.floor}층` : ""}
-                        </span>
-                        <span className="font-medium">
-                          {formatManwon(t.price, { short: true })}
-                          {t.monthly_rent ? `/${t.monthly_rent}` : ""}
-                        </span>
-                      </li>
-                    ))}
-                </ul>
-              ) : null}
-            </div>
-          ) : null}
-          {selected ? (
-            <div className="p-4">
-              <button type="button" className="mb-2 text-xs text-accent" onClick={() => setSelected(null)}>
-                ← 목록
-              </button>
-              <h3 className="font-semibold">{selected.name}</h3>
-              <p className="text-xs text-muted">
-                {detail?.complex?.build_year ? `${detail.complex.build_year}년 · ` : ""}
-                {detail?.complex?.households ? `${detail.complex.households.toLocaleString()}세대 · ` : ""}
-                {selected.n ? `최근 ${months}개월 ${selected.n}건 · 중위 ${formatManwon(selected.median_price)}` : "최근 거래"}
-              </p>
-              {indicatorBits(selected).length ? (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {indicatorBits(selected).map((b) => (
-                    <span key={b} className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">
-                      {b}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              {selected.complex_id ? (
-                <div className="mt-2 flex gap-3 text-sm">
-                  <Link href={complexHref(selected.complex_id, complexItems)} className="text-accent">
-                    {complexItems[selected.complex_id] ? "내 부동산 상세" : "단지 상세"}
-                  </Link>
-                  {!complexItems[selected.complex_id] ? (
-                    <Link href={registerComplexHref(selected.complex_id)} className="text-accent">
-                      관심 등록
-                    </Link>
-                  ) : null}
-                </div>
-              ) : null}
-              {detail ? (
-                <ul className="mt-3 divide-y divide-border text-sm">
-                  {detail.trades.map((t) => (
-                    <li key={t.id} className={clsx("flex justify-between py-1.5 tabular", t.is_canceled && "text-muted line-through")}>
-                      <span className="text-muted">
-                        {formatDate(t.deal_date)} · {DEAL_KIND_LABEL[t.deal_kind]} · {t.area_m2 ? `${Number(t.area_m2).toFixed(0)}㎡` : ""} {t.floor ? `${t.floor}층` : ""}
-                      </span>
-                      <span className="font-medium">
-                        {formatManwon(t.price)}
-                        {t.monthly_rent ? `/${t.monthly_rent}` : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : selected.complex_id ? (
-                <p className="mt-3 text-sm text-muted">불러오는 중…</p>
-              ) : null}
-            </div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {filterCount ? (
-                <li className="flex items-center justify-between gap-2 bg-accent-soft/40 px-4 py-2 text-xs">
-                  <span className="text-muted">
-                    조건 {filterCount}개 적용 · {SORTS.find((x) => x.key === sortKey)?.label}
-                  </span>
-                  <span className="flex shrink-0 gap-3">
-                    <button type="button" className="text-accent" onClick={() => setFilterOpen(true)}>
-                      수정
-                    </button>
-                    <button type="button" className="text-muted" onClick={() => setFilters(EMPTY_FILTERS)}>
-                      해제
-                    </button>
-                  </span>
-                </li>
-              ) : null}
-              {sorted.length === 0 ? (
-                <li className="p-4 text-sm text-muted">
-                  {filterCount ? "이 화면에는 조건에 맞는 곳이 없습니다. 지도를 옮기거나 축소하고, 조건을 넓혀 보세요." : "이 영역에 해당 기간 거래가 없습니다."}
-                </li>
-              ) : null}
-              {sorted.map((p) => (
-                <li key={p.key}>
-                  <button type="button" onClick={() => select(p)} className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-surface-2">
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{p.name}</span>
-                      <span className="text-xs text-muted">
-                        {p.n}건 · 최근 {formatDate(p.last_date)}
-                      </span>
-                      {indicatorBits(p).length ? <span className="block truncate text-[11px] text-muted">{indicatorBits(p).join(" · ")}</span> : null}
-                    </span>
-                    <span className="tabular shrink-0 text-right text-sm font-semibold">
-                      {formatManwon(p.median_price, { short: true })}
-                      {p.median_ppy ? <span className="block text-[11px] font-normal text-muted">{unitPriceLabel(unit)} {formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}</span> : null}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          </>
-          )}
         </div>
+        <FilterBar
+          filters={filters}
+          onChange={setFilters}
+          onSort={setSort}
+          type={type}
+          unit={unit}
+          kind={kind}
+          months={months}
+          onMonths={setMonths}
+          resultCount={sorted.length}
+          truncated={truncated}
+          onOpenAll={() => setFilterOpen(true)}
+        />
+      </div>
 
-        <div className="relative order-1 min-h-0 flex-1 lg:order-2">
+      <div
+        ref={areaRef}
+        style={{ "--sheet-h": dragH !== null ? `${dragH}px` : SHEET_H[sheet] } as React.CSSProperties}
+        className={clsx("relative min-h-0 flex-1 lg:flex lg:overflow-hidden", !isFull && "lg:rounded-b-xl lg:border lg:border-t-0 lg:border-border")}
+      >
+        {/* 목록: 모바일은 아래 시트, 데스크톱은 왼쪽 패널 */}
+        <aside
+          ref={sheetRef}
+          className={clsx(
+            "absolute inset-x-0 bottom-0 z-[600] flex h-[var(--sheet-h)] flex-col overflow-hidden rounded-t-2xl border-t border-border bg-surface shadow-[0_-4px_16px_rgb(0_0_0/0.12)]",
+            "lg:static lg:z-auto lg:h-auto lg:w-80 lg:shrink-0 lg:rounded-none lg:border-r lg:border-t-0 lg:shadow-none",
+            dragH === null && "transition-[height] duration-200",
+            !sideOpen && "lg:hidden",
+          )}
+        >
+          <div
+            onPointerDown={onSheetDown}
+            onPointerMove={onSheetMove}
+            onPointerUp={onSheetUp}
+            onPointerCancel={onSheetUp}
+            className="shrink-0 cursor-grab touch-none select-none border-b border-border lg:cursor-auto lg:touch-auto lg:select-auto"
+          >
+            <div className="mx-auto mt-1.5 h-1 w-10 rounded-full bg-border lg:hidden" />
+            <div className="flex h-11 items-center gap-2 px-4 text-sm lg:h-12">
+              {sel ? (
+                <>
+                  <button type="button" aria-label="목록으로" onClick={() => setSelected(null)} className="-ml-1.5 shrink-0 p-1 text-muted hover:text-text">
+                    <ChevronLeft size={18} />
+                  </button>
+                  <b className="min-w-0 flex-1 truncate">{sel.name}</b>
+                  {sel.n ? (
+                    <span className="tabular shrink-0 font-semibold">
+                      {formatManwon(sel.median_price, { short: true })}
+                      <span className="ml-1 text-xs font-normal text-muted">중위 · {sel.n}건</span>
+                    </span>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <span className="min-w-0 flex-1 truncate">
+                    <b>{filterCount ? "조건 결과" : "이 화면 거래"}</b>
+                    <span className="ml-1.5 tabular text-muted">
+                      {sorted.length.toLocaleString()}
+                      {truncated ? "+" : ""}곳
+                    </span>
+                    {searching ? <Loader2 size={13} className="ml-1.5 inline animate-spin text-muted" /> : null}
+                  </span>
+                  <select
+                    value={sortKey}
+                    onChange={(e) => setSort(e.target.value as SortKey)}
+                    aria-label="정렬"
+                    className="h-7 shrink-0 rounded-full border border-border bg-surface px-2 text-xs"
+                  >
+                    {SORTS.filter((x) => COMPLEX_TYPES.has(type) || !x.complexOnly).map((x) => (
+                      <option key={x.key} value={x.key}>
+                        {x.label}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </div>
+          </div>
+          <div className={clsx("min-h-0 flex-1 overflow-y-auto overscroll-contain", sheet === "peek" && dragH === null && "max-lg:hidden")}>
+            {focus && !sel ? (
+              <div className="border-b border-border bg-accent-soft/40 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-semibold">★ {shortAddress(focus.label)}</h3>
+                    <p className="text-xs text-muted">
+                      {focus.estimate ? `추정 시세 ${formatManwon(focus.estimate, { short: true })}` : ""}
+                      {focus.estimate && focus.last_price ? " · " : ""}
+                      {focus.last_price ? `최근 매매 ${formatManwon(focus.last_price, { short: true })}${focus.last_date ? `(${formatDate(focus.last_date)})` : ""}` : ""}
+                      {!focus.estimate && !focus.last_price ? "아직 시세가 없습니다" : ""}
+                      {` · 반경 ${focus.radius_m.toLocaleString()}m`}
+                    </p>
+                  </div>
+                  <button type="button" className="shrink-0 text-muted" onClick={() => focusOn(null)} aria-label="선택 해제">
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="mt-2 flex gap-3 text-sm">
+                  <Link href={`/items/${focus.id}`} className="text-accent">상세</Link>
+                  <Link href={`/items/${focus.id}?tab=nearby`} className="text-accent">비슷한 주변 거래</Link>
+                  <Link href={`/items/${focus.id}?tab=location`} className="text-accent">입지</Link>
+                </div>
+                {focus.complex_id && detail ? <ComplexTrades key={focus.id} trades={detail.trades} unit={unit} area={focus.area_m2} limit={6} /> : null}
+              </div>
+            ) : null}
+            {sel ? (
+              <div className="p-4 pt-3">
+                <p className="text-xs text-muted">
+                  {detail?.complex?.build_year ? `${detail.complex.build_year}년 준공 · ` : ""}
+                  {detail?.complex?.households ? `${detail.complex.households.toLocaleString()}세대 · ` : ""}
+                  {sel.n ? `최근 ${months < 12 ? `${months}개월` : `${months / 12}년`} ${DEAL_KIND_LABEL[kind]} ${sel.n}건 · 중위 ${formatManwon(sel.median_price)}` : "최근 거래"}
+                  {sel.median_ppy ? ` · ${unitPriceLabel(unit)} ${formatManwon(fromPerPyeong(sel.median_ppy, unit), { short: true })}` : ""}
+                </p>
+                {indicatorBits(sel).length ? (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {indicatorBits(sel).map((b) => (
+                      <span key={b} className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">
+                        {b}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {sel.complex_id ? (
+                  <div className="mt-2.5 flex gap-2 text-sm">
+                    <Link href={complexHref(sel.complex_id, complexItems)} className="rounded-full border border-border px-3 py-1 hover:bg-surface-2">
+                      {complexItems[sel.complex_id] ? "내 부동산 상세" : "단지 상세"}
+                    </Link>
+                    {!complexItems[sel.complex_id] ? (
+                      <Link href={registerComplexHref(sel.complex_id)} className="rounded-full bg-accent px-3 py-1 font-medium text-white">
+                        ★ 관심 등록
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : null}
+                {detail ? (
+                  <ComplexTrades key={sel.key} trades={detail.trades} unit={unit} />
+                ) : sel.complex_id ? (
+                  <p className="mt-3 text-sm text-muted">불러오는 중…</p>
+                ) : null}
+              </div>
+            ) : (
+              <ul className={clsx("divide-y divide-border transition-opacity", searching && "opacity-50")} aria-busy={searching}>
+                {filterCount ? (
+                  <li className="flex items-center justify-between gap-2 bg-accent-soft/40 px-4 py-2 text-xs">
+                    <span className="text-muted">
+                      조건 {filterCount}개 적용 · {SORTS.find((x) => x.key === sortKey)?.label}
+                    </span>
+                    <span className="flex shrink-0 gap-3">
+                      <button type="button" className="text-accent" onClick={() => setFilterOpen(true)}>
+                        수정
+                      </button>
+                      <button type="button" className="text-muted" onClick={() => setFilters(EMPTY_FILTERS)}>
+                        해제
+                      </button>
+                    </span>
+                  </li>
+                ) : null}
+                {sorted.length === 0 ? (
+                  <li className="p-4 text-sm text-muted">
+                    {filterCount ? "이 화면에는 조건에 맞는 곳이 없습니다. 지도를 옮기거나 축소하고, 조건을 넓혀 보세요." : "이 영역에 해당 기간 거래가 없습니다."}
+                  </li>
+                ) : null}
+                {sorted.map((p) => (
+                  <li key={p.key}>
+                    <button type="button" onClick={() => select(p)} className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-surface-2">
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {p.complex_id !== null && myComplexes.has(p.complex_id) ? <span className="text-accent">★ </span> : null}
+                          {p.name}
+                        </span>
+                        <span className="text-xs text-muted">
+                          {p.n}건 · 최근 {formatDate(p.last_date)}
+                        </span>
+                        {indicatorBits(p).length ? <span className="block truncate text-[11px] text-muted">{indicatorBits(p).join(" · ")}</span> : null}
+                      </span>
+                      <span className="tabular shrink-0 text-right text-sm font-semibold">
+                        {formatManwon(p.median_price, { short: true })}
+                        {p.median_ppy ? <span className="block text-[11px] font-normal text-muted">{unitPriceLabel(unit)} {formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}</span> : null}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </aside>
+
+        <div className="absolute inset-0 lg:relative lg:min-w-0 lg:flex-1">
           {/* 네이버 지도는 컨테이너에 position:relative 를 인라인으로 넣어 absolute inset-0 을 덮어쓴다(높이 0 → 빈 화면).
               위치는 바깥 div 가 잡고, 지도는 크기만 채우는 안쪽 div 에 그린다. */}
           <div className="absolute inset-0 z-0">
             <div ref={el} className="map-canvas h-full w-full bg-surface-2" />
           </div>
           {engine === "leaflet" && !keyId && !notice ? (
-            <div className="pointer-events-none absolute bottom-6 left-2 z-[500] rounded-md bg-surface/90 px-2 py-1 text-[11px] text-muted shadow">
+            <div className={clsx("pointer-events-none absolute left-2 z-[500] rounded-md bg-surface/90 px-2 py-1 text-[11px] text-muted shadow", aboveSheet)}>
               대체 지도 · NCP_MAPS_KEY_ID 를 설정하면 네이버 지도로 표시됩니다
             </div>
           ) : null}
-          <div className="absolute bottom-6 right-2 z-[500] flex flex-col gap-2 lg:bottom-8">
+          <div className={clsx("absolute right-2 z-[500] flex flex-col gap-2", aboveSheet, dragH === null && "transition-[bottom] duration-200", sheet === "full" && "max-lg:hidden")}>
             <MapButton label={isFull ? "전체 화면 닫기" : "전체 화면"} onClick={() => void toggleFullscreen()} active={isFull}>
               {isFull ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </MapButton>
-            {isFull ? (
-              <MapButton label={listOpen ? "목록 닫기" : "목록 보기"} onClick={() => setListOpen((v) => !v)} active={listOpen}>
-                <List size={18} />
-              </MapButton>
-            ) : null}
+            <MapButton label={sideOpen ? "목록 접기" : "목록 펴기"} onClick={() => setSideOpen((v) => !v)} active={sideOpen} className="max-lg:hidden">
+              <List size={18} />
+            </MapButton>
             <MapButton label="현재 위치" onClick={locate} busy={locating}>
               <Crosshair size={18} />
             </MapButton>
-            {items.length ? (
-              <MapButton label={itemClusters.length > 1 ? `내 부동산 지역별로 보기(${itemClusters.length}곳, 누를 때마다 다음 지역)` : "내 부동산 모두 보기"} onClick={fitItems}>
-                <Star size={18} />
-              </MapButton>
-            ) : null}
-            <MapButton label="레이어·배경 지도" onClick={() => setLayerOpen((v) => !v)} active={layerOpen}>
+            <MapButton label="내 부동산" onClick={() => openOverlay("mine")} active={mineOpen}>
+              <Star size={18} />
+            </MapButton>
+            <MapButton label="레이어·지도 설정" onClick={() => openOverlay("layer")} active={layerOpen} badge={layers.size || null}>
               <Layers size={18} />
             </MapButton>
           </div>
           {filterOpen ? (
-            <div className="absolute inset-x-2 top-2 bottom-2 z-[650] flex flex-col lg:right-auto lg:w-96">
+            <div className="absolute inset-2 z-[650] flex flex-col lg:right-auto lg:w-96">
               <FilterPanel
                 filters={filters}
                 onChange={setFilters}
-                sort={sortKey}
                 onSort={setSort}
                 type={type}
                 unit={unit}
+                kind={kind}
                 resultCount={sorted.length}
                 truncated={truncated}
                 onClose={() => setFilterOpen(false)}
               />
             </div>
           ) : null}
+          {mineOpen ? (
+            <div className={clsx("absolute right-14 z-[600] flex max-h-[calc(100%-var(--sheet-h)-1.5rem)] w-72 flex-col overflow-hidden rounded-xl border border-border bg-surface text-sm shadow-lg lg:max-h-[80%]", aboveSheet)}>
+              <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+                <b>내 부동산 {items.length + missingItems.length}</b>
+                <span className="flex items-center gap-3">
+                  {clusterCount ? (
+                    <button type="button" className="text-xs text-accent" onClick={fitItems} title="가까운 것끼리 묶어 한 지역씩 보여 줍니다">
+                      {clusterCount > 1 ? `지역별 보기(${clusterCount}곳)` : "모두 보기"}
+                    </button>
+                  ) : null}
+                  <button type="button" aria-label="닫기" onClick={() => setMineOpen(false)} className="text-muted">
+                    <X size={16} />
+                  </button>
+                </span>
+              </div>
+              <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
+                {items.length === 0 && missingItems.length === 0 ? (
+                  <li className="p-3 text-muted">
+                    관심 부동산이 없습니다. <Link href="/items/new" className="text-accent">등록하기</Link>
+                  </li>
+                ) : null}
+                {items.map((it) => (
+                  <li key={it.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        focusOn(it.id);
+                        setMineOpen(false);
+                      }}
+                      className={clsx("flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-surface-2", focusId === it.id && "bg-accent-soft/60")}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{shortAddress(it.label)}</span>
+                        <span className="text-xs text-muted">
+                          {isPropertyType(it.property_type) ? PROPERTY_TYPES[it.property_type].label : it.property_type}
+                          {it.group_tag in GROUP_TAGS ? ` · ${GROUP_TAGS[it.group_tag as keyof typeof GROUP_TAGS]}` : ""}
+                        </span>
+                      </span>
+                      <span className="tabular shrink-0 text-right font-semibold">
+                        {formatManwon(it.estimate ?? it.last_price, { short: true })}
+                        <span className="block text-[11px] font-normal text-muted">{it.estimate ? "추정 시세" : it.last_price ? "최근 매매" : "시세 없음"}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+                {missingItems.map((it) => (
+                  <li key={it.id} className="px-3 py-2">
+                    <span className="block truncate font-medium text-muted">{shortAddress(it.label)}</span>
+                    <span className="text-xs text-warn">
+                      위치를 찾지 못했습니다 ·{" "}
+                      <Link href={`/items/${it.id}/edit`} className="text-accent">
+                        주소 다시 선택
+                      </Link>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {layerOpen ? (
-            <div className="absolute bottom-6 right-14 z-[600] max-h-[80%] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-3 text-sm shadow-lg lg:bottom-8">
+            <div className={clsx("absolute right-14 z-[600] max-h-[calc(100%-var(--sheet-h)-1.5rem)] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-3 text-sm shadow-lg lg:max-h-[80%]", aboveSheet)}>
               <div className="mb-2 flex items-center justify-between">
                 <b>지도 설정</b>
                 <button type="button" aria-label="닫기" onClick={() => setLayerOpen(false)} className="text-muted">
@@ -1003,6 +1158,28 @@ export function RealtyMap({
                   </button>
                 ))}
               </div>
+              {COMPLEX_TYPES.has(type) ? (
+                <>
+                  <p className="mb-1 text-xs font-medium text-muted">가격 라벨</p>
+                  <div className="mb-3 grid grid-cols-2 gap-1">
+                    {(
+                      [
+                        ["unit", `${unitPriceLabel(unit)} 가격`],
+                        ["total", "거래가(중위)"],
+                      ] as const
+                    ).map(([k, label]) => (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setLabelMode(k)}
+                        className={clsx("rounded-md border px-1 py-1 text-xs", labelMode === k ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted")}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : null}
               {LAYER_GROUPS.map((g) => (
                 <div key={g.title} className="mb-2">
                   <p className="mb-1 text-xs font-medium text-muted">{g.title}</p>
@@ -1019,11 +1196,12 @@ export function RealtyMap({
                   ))}
                 </div>
               ))}
+              <p className="mt-2 text-[11px] text-muted">라벨의 <span className="text-up">▲</span>/<span className="text-down">▼</span> 는 1년 가격 변동(±1% 이상)입니다.</p>
               {poiNote ? <p className="mt-1 text-[11px] text-muted">{poiNote}</p> : null}
             </div>
           ) : null}
           {poiInfo ? (
-            <div className="absolute bottom-6 left-2 z-[550] max-w-[70%] rounded-lg border border-border bg-surface px-3 py-2 text-sm shadow lg:bottom-8">
+            <div className={clsx("absolute left-2 z-[550] max-w-[70%] rounded-lg border border-border bg-surface px-3 py-2 text-sm shadow", aboveSheet)}>
               <div className="flex items-start gap-2">
                 <span className="min-w-0">
                   <b className="block truncate">{poiInfo.name}</b>
@@ -1033,6 +1211,22 @@ export function RealtyMap({
                   <X size={14} />
                 </button>
               </div>
+            </div>
+          ) : null}
+          {searching || searchError ? (
+            <div className="pointer-events-none absolute inset-x-0 top-3 z-[520] flex justify-center">
+              {searchError ? (
+                <div role="alert" className="pointer-events-auto flex items-center gap-2 rounded-full bg-surface px-3 py-1.5 text-sm shadow-md">
+                  <span className="text-up">{searchError}</span>
+                  <button type="button" className="font-semibold text-accent" onClick={() => setRetry((n) => n + 1)}>
+                    현재 화면에서 다시 검색
+                  </button>
+                </div>
+              ) : (
+                <div role="status" className="flex items-center gap-1.5 rounded-full bg-surface/95 px-3 py-1.5 text-sm text-muted shadow-md">
+                  <Loader2 size={14} className="animate-spin" /> 이 화면 {filterCount ? "조건 검색" : "거래 조회"} 중…
+                </div>
+              )}
             </div>
           ) : null}
           {notice ? (
@@ -1049,7 +1243,23 @@ export function RealtyMap({
   );
 }
 
-function MapButton({ label, onClick, busy = false, active = false, children }: { label: string; onClick: () => void; busy?: boolean; active?: boolean; children: React.ReactNode }) {
+function MapButton({
+  label,
+  onClick,
+  busy = false,
+  active = false,
+  badge = null,
+  className,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  busy?: boolean;
+  active?: boolean;
+  badge?: number | null;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
@@ -1057,27 +1267,14 @@ function MapButton({ label, onClick, busy = false, active = false, children }: {
       title={label}
       onClick={onClick}
       className={clsx(
-        "flex h-10 w-10 items-center justify-center rounded-full border border-border shadow-md",
+        "relative flex h-10 w-10 items-center justify-center rounded-full border border-border shadow-md",
         active ? "bg-accent text-white" : "bg-surface text-text hover:bg-surface-2",
         busy && "animate-pulse",
+        className,
       )}
     >
       {children}
-    </button>
-  );
-}
-
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={clsx(
-        "shrink-0 rounded-full border px-3 py-1 text-[13px]",
-        active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text",
-      )}
-    >
-      {children}
+      {badge ? <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-text px-1 text-[10px] font-bold leading-4 text-surface">{badge}</span> : null}
     </button>
   );
 }

@@ -9,7 +9,7 @@ import { eventsNear, itemArticles, listNotifications, regionWordsOf } from "@/li
 import type { WatchItem } from "@/lib/queries/items";
 import { sql } from "@/lib/db";
 import { errorNote } from "@/lib/collect-steps";
-import { aiEnabled } from "@/lib/ai/client";
+import { serverAiEnabled } from "@/lib/ai/client";
 
 const EVENT_LABEL: Record<string, string> = { subscription: "청약", move_in: "입주", development: "개발", regulation: "규제" };
 
@@ -33,7 +33,7 @@ export async function NewsTab({ item }: { item: WatchItem }) {
       <Card className="lg:col-span-2">
         <CardHeader
           title="관련 뉴스"
-          sub={`키워드: ${item.keywords.join(", ") || "없음"} · ${aiEnabled() ? "AI 관련도 0.5 이상" : "AI 분류 꺼짐 — 구체적인 키워드·본문 언급 순"}`}
+          sub={`키워드: ${item.keywords.join(", ") || "없음"} · ${serverAiEnabled() ? "AI 관련도 0.5 이상" : "AI 분류 꺼짐 — 구체적인 키워드·본문 언급 순"}`}
         />
         {articles.length ? (
           <ul className="divide-y divide-border">

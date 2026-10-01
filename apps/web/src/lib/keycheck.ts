@@ -171,7 +171,7 @@ const checks: Checker[] = [
   },
   async (live) => {
     const key = env.anthropicApiKey;
-    if (!key) return { key: "ANTHROPIC_API_KEY", label: "Claude API", status: "optional", detail: "AI 질문·분석·리포트가 꺼집니다.", fix: "console.anthropic.com 에서 API 키 발급" };
+    if (!key) return { key: "ANTHROPIC_API_KEY", label: "Claude API", status: "optional", detail: "서버 기본 AI 가 꺼집니다(사용자가 설정 › AI 모델에서 본인 키를 등록하면 그 사용자는 쓸 수 있음).", fix: "console.anthropic.com 에서 API 키 발급" };
     if (!live) return { key: "ANTHROPIC_API_KEY", label: "Claude API", status: "unchecked", detail: `모델 ${env.anthropicModel}`, fp: fingerprint(key) };
     try {
       const r = await get(`https://api.anthropic.com/v1/models/${encodeURIComponent(env.anthropicModel)}`, { headers: { "x-api-key": key, "anthropic-version": "2023-06-01" } });

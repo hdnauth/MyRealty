@@ -1,11 +1,11 @@
 import "server-only";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { sql } from "../db";
 import { groupChange, similarComplexes } from "../queries/comps";
 import { itemAttrs, itemTransactions, summarize, type WatchItem } from "../queries/items";
-import { anthropic, aiQuotaError, effortConfig, fallbackParams, MODEL, recordUsage } from "./client";
-import { ANALYSIS_SYSTEM, todayLine } from "./prompts";
+import { requireAi } from "./client";
+import { generateObject } from "./engine";
+import { ANALYSIS_SYSTEM } from "./prompts";
 
 export const AnalysisCard = z.object({
   one_liner: z.string().describe("부동산 현황 한 문장 요약"),
@@ -74,25 +74,20 @@ export async function itemSnapshot(item: WatchItem) {
 }
 
 export async function generateAnalysis(userId: string, item: WatchItem) {
-  const quota = await aiQuotaError(userId);
-  if (quota) throw new Error(quota);
+  const cfg = await requireAi(userId);
   const snap = await itemSnapshot(item);
-  const msg = await anthropic().beta.messages.parse({
-    model: MODEL,
-    max_tokens: 8000,
-    system: [
-      { type: "text", text: ANALYSIS_SYSTEM, cache_control: { type: "ephemeral" } },
-      { type: "text", text: todayLine() },
-    ],
-    messages: [{ role: "user", content: `다음 부동산의 분석 카드를 작성하세요.\n\n${JSON.stringify(snap)}` }],
-    output_config: { format: betaZodOutputFormat(AnalysisCard), ...effortConfig("high") },
-    ...fallbackParams(),
+  const { data: card, model } = await generateObject({
+    cfg,
+    userId,
+    purpose: "item_analysis",
+    system: ANALYSIS_SYSTEM,
+    prompt: `다음 부동산의 분석 카드를 작성하세요.\n\n${JSON.stringify(snap)}`,
+    schema: AnalysisCard,
+    schemaName: "analysis_card",
+    effort: "high",
   });
-  await recordUsage("item_analysis", msg.model, msg.usage, userId);
-  if (msg.stop_reason === "refusal" || !msg.parsed_output) throw new Error("분석을 생성하지 못했습니다.");
-  const card = msg.parsed_output;
   await sql`insert into ai_reports (user_id, scope, target_ids, title, content_md, data, model)
-            values (${userId}, 'item', ${[item.id]}, ${card.one_liner}, '', ${sql.json({ card } as never)}, ${msg.model})`;
+            values (${userId}, 'item', ${[item.id]}, ${card.one_liner}, '', ${sql.json({ card } as never)}, ${model})`;
   return card;
 }
 

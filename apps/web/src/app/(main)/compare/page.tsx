@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, CardHeader, EmptyState, Notice, PageHeader } from "@/components/ui";
-import { aiEnabled } from "@/lib/ai/client";
+import { AiSetupNotice } from "@/components/ai/setup-notice";
+import { aiStatus } from "@/lib/ai/client";
 import { latestCompare } from "@/lib/ai/compare";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
@@ -82,7 +83,8 @@ export default async function ComparePage(props: PageProps<"/compare">) {
   const absRows = charted.filter((r) => family(r.it.property_type) === mainFamily);
   const leftOut = rows.filter((r) => !charted.includes(r)).map((r) => r.it.label);
   const otherFamily = charted.filter((r) => !absRows.includes(r)).map((r) => r.it.label);
-  const enabled = aiEnabled();
+  const aiState = await aiStatus(uid);
+  const enabled = aiState.enabled;
 
   type Row = (typeof rows)[number];
   const lastOfficial = (r: Row, types: string[]) => r.attrs.prices.filter((p) => types.includes(p.target_type)).at(-1) ?? null;
@@ -217,7 +219,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
           </div>
           <Card>
             <CardHeader title="AI 비교" sub={ai ? `생성 ${ai.created_at.slice(0, 16).replace("T", " ")}` : "데이터 근거로 장단점과 조건별 적합도를 정리"} action={<CompareButton ids={ids} enabled={enabled} />} />
-            {!enabled ? <div className="px-4 pb-4"><Notice tone="warn">ANTHROPIC_API_KEY 를 설정하면 사용할 수 있습니다.</Notice></div> : null}
+            {!enabled ? <div className="px-4 pb-4"><AiSetupNotice problem={aiState.problem} /></div> : null}
             {ai ? (
               <div className="space-y-4 px-4 pb-4 text-sm">
                 <p className="text-[15px] font-medium">{ai.data.result.summary}</p>

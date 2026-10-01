@@ -1,8 +1,8 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { anthropic, aiQuotaError, effortConfig, fallbackParams, MODEL, recordUsage } from "@/lib/ai/client";
-import { CHAT_SYSTEM, todayLine } from "@/lib/ai/prompts";
+import { AI_DISABLED_MESSAGE, aiQuotaError, resolveAi } from "@/lib/ai/client";
+import { type ChatTurn, runChat } from "@/lib/ai/engine";
+import { CHAT_SYSTEM } from "@/lib/ai/prompts";
 import { buildTools } from "@/lib/ai/tools";
 import { getUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
@@ -16,8 +16,9 @@ type Stored = { text: string; tools?: { name: string; input: unknown }[] };
 export async function POST(req: NextRequest) {
   const user = await getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "ANTHROPIC_API_KEY 가 설정되지 않았습니다." }, { status: 503 });
-  const quota = await aiQuotaError(user.id);
+  const { cfg, problem } = await resolveAi(user.id);
+  if (!cfg) return NextResponse.json({ error: problem ?? AI_DISABLED_MESSAGE }, { status: 503 });
+  const quota = await aiQuotaError(user.id, cfg);
   if (quota) return NextResponse.json({ error: quota }, { status: 429 });
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid body" }, { status: 400 });
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
   // 이전 대화는 최종 텍스트만 재전송(도구 결과·사고 블록은 다시 조회하게 한다)
   const history = await sql<{ role: "user" | "assistant"; content: Stored }[]>`
     select role, content from ai_messages where conversation_id = ${convId} order by id desc limit 20`;
-  const messages: Anthropic.Beta.BetaMessageParam[] = history
+  const messages: ChatTurn[] = history
     .reverse()
     .filter((m) => m.content.text)
     .map((m) => ({ role: m.role, content: m.content.text }));
@@ -50,52 +51,31 @@ export async function POST(req: NextRequest) {
       const send = (event: string, data: unknown) =>
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       send("meta", { conversationId: convId });
+      // 중간에 실패해도 받은 데까지는 남기도록 스트림 조각을 따로 모은다
       let text = "";
-      const toolLog: { name: string; input: unknown }[] = [];
+      let streamed = "";
+      let toolLog: { name: string; input: unknown }[] = [];
       try {
-        const runner = anthropic().beta.messages.toolRunner({
-          model: MODEL,
-          max_tokens: 16000,
-          max_iterations: 8,
-          system: [
-            { type: "text", text: CHAT_SYSTEM, cache_control: { type: "ephemeral" } },
-            { type: "text", text: todayLine() },
-          ],
-          tools,
+        ({ text, toolLog } = await runChat({
+          cfg,
+          userId: user.id,
+          system: CHAT_SYSTEM,
           messages,
-          output_config: effortConfig("medium"),
-          ...fallbackParams(),
-          stream: true,
-        });
-        for await (const ms of runner) {
-          let iterText = "";
-          for await (const ev of ms) {
-            if (ev.type === "content_block_start" && ev.content_block.type === "tool_use") {
-              send("tool", { name: ev.content_block.name });
-            } else if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
-              iterText += ev.delta.text;
-              send("text", { delta: ev.delta.text });
-            }
-          }
-          const msg = await ms.finalMessage();
-          await recordUsage("chat", msg.model, msg.usage, user.id);
-          for (const b of msg.content) if (b.type === "tool_use") toolLog.push({ name: b.name, input: b.input });
-          if (iterText) {
-            text += (text ? "\n\n" : "") + iterText;
-            send("text", { delta: "\n\n" });
-          }
-          if (msg.stop_reason === "refusal") {
-            send("error", { message: "이 요청은 처리할 수 없습니다." });
-            break;
-          }
-          if (msg.stop_reason === "max_tokens" && msg.content.some((b) => b.type === "tool_use")) {
-            send("error", { message: "응답이 너무 길어 중단되었습니다. 질문을 나눠 주세요." });
-            break;
-          }
-        }
+          tools,
+          on: {
+            text: (delta) => {
+              streamed += delta;
+              send("text", { delta });
+            },
+            tool: (name) => send("tool", { name }),
+            error: (message) => send("error", { message }),
+          },
+        }));
       } catch (e) {
         console.error("[ai/chat]", e);
-        send("error", { message: "AI 응답 중 오류가 발생했습니다." });
+        text = streamed;
+        // 본인 키 설정 오류(인증·모델명 등)는 고칠 수 있게 그대로 보여 준다
+        send("error", { message: cfg.ownKey && e instanceof Error ? e.message : "AI 응답 중 오류가 발생했습니다." });
       }
       await sql`insert into ai_messages (conversation_id, role, content)
                 values (${convId}, 'assistant', ${sql.json({ text: text.trim(), tools: toolLog } as never)})`;

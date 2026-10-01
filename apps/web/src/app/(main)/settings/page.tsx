@@ -12,23 +12,32 @@ import { logoutAction, revokeSessionAction, setAreaUnitAction, updateNotificatio
 import { DeleteAccount } from "./delete-account";
 import { PushManager } from "./push-manager";
 import { ThemePicker } from "@/components/shell/theme-picker";
+import { MODEL, serverAiEnabled, userAiRow } from "@/lib/ai/client";
+import { isAiProvider, PROVIDER_INFO } from "@/lib/ai/providers";
+import { AiSettings } from "./ai-settings";
 
 export const metadata: Metadata = { title: "설정" };
 
 export default async function SettingsPage() {
   const uid = await sessionUserId();
-  const [user, sessions, current, [ai], site, unit] = await Promise.all([
+  const [user, sessions, current, [ai], site, unit, aiRow] = await Promise.all([
     requireUser(),
     sql<{ id: string; user_agent: string | null; created_at: string; last_seen_at: string | null; remember: boolean }[]>`
       select id, user_agent, created_at::text, last_seen_at::text, remember from sessions
       where user_id = ${uid} and revoked_at is null and expires_at > now() order by coalesce(last_seen_at, created_at) desc`,
     cookies().then((c) => readToken(c.get(SESSION_COOKIE)?.value)),
-    sql<{ cost: number; calls: number }[]>`
-      select coalesce(sum(cost_usd), 0)::float8 as cost, count(*)::int as calls from ai_usage
-      where user_id = ${uid} and created_at >= date_trunc('month', now())`,
+    sql<{ cost: number; calls: number; own_calls: number }[]>`
+      select coalesce(sum(cost_usd), 0)::float8 as cost, count(*) filter (where not own_key)::int as calls,
+        count(*) filter (where own_key)::int as own_calls
+      from ai_usage where user_id = ${uid} and created_at >= date_trunc('month', now())`.catch(() => [{ cost: 0, calls: 0, own_calls: 0 }]),
     getSiteSettings(),
     getAreaUnit(),
+    userAiRow(uid),
   ]);
+  const savedAi =
+    aiRow && isAiProvider(aiRow.provider)
+      ? { provider: aiRow.provider, model: aiRow.model, baseUrl: aiRow.base_url, keyHint: aiRow.key_hint, updatedAt: aiRow.updated_at }
+      : null;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -130,12 +139,26 @@ export default async function SettingsPage() {
         </ul>
       </Card>
 
-      <Card>
-        <CardHeader title="이번 달 AI 사용" sub="AI 질문·분석·비교·리포트 사용량입니다." />
-        <p className="px-4 pb-4 text-sm">
-          {ai.calls}회 · 약 ${ai.cost.toFixed(2)}
-          {site.aiUserMonthlyLimitUsd !== null ? <span className="text-muted"> / 개인 한도 ${site.aiUserMonthlyLimitUsd}</span> : null}
-        </p>
+      <Card id="ai" className="scroll-mt-20">
+        <CardHeader
+          title="AI 모델"
+          sub={
+            savedAi
+              ? `사용 중: ${PROVIDER_INFO[savedAi.provider].label} · ${savedAi.model} (내 키)`
+              : serverAiEnabled()
+                ? `사용 중: 서버 기본 (Claude · ${MODEL})`
+                : "AI 질문·분석·비교·리포트에 쓸 제공자와 모델을 고르세요."
+          }
+        />
+        <AiSettings key={savedAi?.updatedAt ?? "none"} saved={savedAi} serverDefault={serverAiEnabled() ? `Claude · ${MODEL}` : null} />
+        <div className="border-t border-border px-4 py-3 text-sm">
+          <span className="font-medium">이번 달 사용</span>{" "}
+          <span className="text-muted">
+            서버 기본 {ai.calls}회 · 약 ${ai.cost.toFixed(2)}
+            {site.aiUserMonthlyLimitUsd !== null ? ` / 개인 한도 $${site.aiUserMonthlyLimitUsd}` : ""}
+            {ai.own_calls ? ` · 내 키 ${ai.own_calls}회(비용은 제공자 계정으로 청구)` : ""}
+          </span>
+        </div>
       </Card>
 
       <Card className="border-up/30">

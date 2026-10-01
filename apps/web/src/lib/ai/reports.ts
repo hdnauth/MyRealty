@@ -5,8 +5,9 @@ import { formatManwon } from "../format";
 import { insightBalance, marketInsights } from "../insights";
 import { insightInputs } from "../queries/indicators";
 import { sendMail } from "../mail";
-import { anthropic, aiQuotaError, effortConfig, fallbackParams, MODEL, recordUsage, textOf } from "./client";
-import { REPORT_SYSTEM, todayLine } from "./prompts";
+import { requireAi } from "./client";
+import { generateText } from "./engine";
+import { REPORT_SYSTEM } from "./prompts";
 
 export type ReportKind = "weekly" | "monthly";
 
@@ -101,27 +102,20 @@ export async function buildSnapshot(userId: string, kind: ReportKind) {
 }
 
 export async function generateReport(userId: string, kind: ReportKind) {
-  const quota = await aiQuotaError(userId);
-  if (quota) throw new Error(quota);
+  const cfg = await requireAi(userId);
   const snap = await buildSnapshot(userId, kind);
-  const msg = await anthropic().beta.messages.create({
-    model: MODEL,
-    max_tokens: 8000,
-    system: [
-      { type: "text", text: REPORT_SYSTEM, cache_control: { type: "ephemeral" } },
-      { type: "text", text: todayLine() },
-    ],
-    messages: [{ role: "user", content: `${kind === "weekly" ? "주간" : "월간"} 리포트를 작성하세요.\n\n${JSON.stringify(snap)}` }],
-    output_config: effortConfig("medium"),
-    ...fallbackParams(),
+  const { text: md, model } = await generateText({
+    cfg,
+    userId,
+    purpose: `report_${kind}`,
+    system: REPORT_SYSTEM,
+    prompt: `${kind === "weekly" ? "주간" : "월간"} 리포트를 작성하세요.\n\n${JSON.stringify(snap)}`,
+    effort: "medium",
   });
-  await recordUsage(`report_${kind}`, msg.model, msg.usage, userId);
-  if (msg.stop_reason === "refusal") throw new Error("리포트를 생성할 수 없습니다.");
-  const md = textOf(msg.content).trim();
   const title = `${kind === "weekly" ? "주간" : "월간"} 리포트 · ${new Date().toISOString().slice(0, 10)}`;
   const [row] = await sql<{ id: number }[]>`
     insert into ai_reports (user_id, scope, title, content_md, data, model)
-    values (${userId}, ${kind}, ${title}, ${md}, ${sql.json(JSON.parse(JSON.stringify(snap)))}, ${msg.model}) returning id`;
+    values (${userId}, ${kind}, ${title}, ${md}, ${sql.json(JSON.parse(JSON.stringify(snap)))}, ${model}) returning id`;
   return { id: row.id, title, md, snap };
 }
 

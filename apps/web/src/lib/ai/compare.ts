@@ -1,11 +1,10 @@
 import "server-only";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { sql } from "../db";
 import type { WatchItem } from "../queries/items";
 import { itemSnapshot } from "./analysis";
-import { anthropic, aiQuotaError, effortConfig, fallbackParams, MODEL, recordUsage } from "./client";
-import { todayLine } from "./prompts";
+import { requireAi } from "./client";
+import { generateObject } from "./engine";
 
 export const CompareResult = z.object({
   summary: z.string().describe("비교 핵심 2~3문장"),
@@ -21,26 +20,22 @@ const SYSTEM = `당신은 한국 부동산 비교 분석가입니다. 여러 관
 - 금액은 만원 입력을 억/만으로 표기합니다. 데모(합성) 데이터면 summary 에 밝힙니다.`;
 
 export async function generateCompare(userId: string, items: WatchItem[]) {
-  const quota = await aiQuotaError(userId);
-  if (quota) throw new Error(quota);
+  const cfg = await requireAi(userId);
   const snaps = await Promise.all(items.map((i) => itemSnapshot(i)));
-  const msg = await anthropic().beta.messages.parse({
-    model: MODEL,
-    max_tokens: 8000,
-    system: [
-      { type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } },
-      { type: "text", text: todayLine() },
-    ],
-    messages: [{ role: "user", content: `다음 부동산들을 비교하세요.\n\n${JSON.stringify(snaps)}` }],
-    output_config: { format: betaZodOutputFormat(CompareResult), ...effortConfig("high") },
-    ...fallbackParams(),
+  const { data: result } = await generateObject({
+    cfg,
+    userId,
+    purpose: "compare",
+    system: SYSTEM,
+    prompt: `다음 부동산들을 비교하세요.\n\n${JSON.stringify(snaps)}`,
+    schema: CompareResult,
+    schemaName: "compare_result",
+    effort: "high",
   });
-  await recordUsage("compare", msg.model, msg.usage, userId);
-  if (msg.stop_reason === "refusal" || !msg.parsed_output) throw new Error("비교 분석을 생성하지 못했습니다.");
   const ids = items.map((i) => i.id).sort();
   await sql`insert into ai_reports (user_id, scope, target_ids, title, content_md, data, model)
-            values (${userId}, 'compare', ${ids}, ${msg.parsed_output.summary.slice(0, 120)}, '', ${sql.json({ result: msg.parsed_output } as never)}, ${msg.model})`;
-  return msg.parsed_output;
+            values (${userId}, 'compare', ${ids}, ${result.summary.slice(0, 120)}, '', ${sql.json({ result } as never)}, ${cfg.model})`;
+  return result;
 }
 
 export async function latestCompare(userId: string, ids: string[]) {

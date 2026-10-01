@@ -1,11 +1,11 @@
 import "server-only";
-import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { sql } from "../db";
 import { scenario } from "../finance";
 import { groupChange, regionChange, similarComplexes } from "../queries/comps";
 import { getItem, itemAttrs, itemTransactions, summarize, median } from "../queries/items";
 import { PROPERTY_TYPES } from "../property";
+import { defineTool, type ToolDef } from "./engine";
 
 // 모든 도구는 로그인 사용자 범위로만 조회하고, 결과는 작게(행 수 제한) JSON 으로 돌려준다.
 const json = (v: unknown) => JSON.stringify(v, (_, x) => (typeof x === "number" ? Math.round(x * 1000) / 1000 : x));
@@ -27,7 +27,7 @@ const INDICATOR_KEYS = {
 } as const;
 const MACRO = ["ecos.base_rate", "ecos.mortgage_rate", "ecos.bond_3y", "ecos.cpi", "ecos.m2"] as const;
 
-export function buildTools(userId: string) {
+export function buildTools(userId: string): ToolDef[] {
   const ownItem = async (id: string) => {
     const it = await getItem(userId, id);
     if (!it) throw new Error("해당 ID 의 관심 부동산이 없습니다. list_watch_items 로 확인하세요.");
@@ -35,7 +35,7 @@ export function buildTools(userId: string) {
   };
 
   return [
-    betaZodTool({
+    defineTool({
       name: "list_watch_items",
       description: "사용자가 등록한 관심 부동산 목록(ID, 이름, 유형, 그룹, 주소, 면적, 단지, 최근 추정 시세, 매입가, 시군구코드).",
       inputSchema: z.object({}),
@@ -51,7 +51,7 @@ export function buildTools(userId: string) {
         return json({ unit: "금액 만원, 면적 ㎡", items: rows });
       },
     }),
-    betaZodTool({
+    defineTool({
       name: "get_item_detail",
       description: "관심 부동산 1건의 상세: 요약 통계(최근 매매, 6개월 중위, 1년 변화, 전세가율), 추정 시세 구간, 공시가격, 대출·임대, 건축물·토지 정보.",
       inputSchema: z.object({ item_id: z.string().describe("watch item UUID") }),
@@ -74,7 +74,7 @@ export function buildTools(userId: string) {
         });
       },
     }),
-    betaZodTool({
+    defineTool({
       name: "query_transactions",
       description:
         "실거래 조회. item_id 를 주면 그 부동산 기준(단지·면적 또는 같은 읍면동 유사 면적), 아니면 sgg_cd(시군구 5자리)+유형으로 조회. 최대 50건과 요약 통계를 돌려준다.",
@@ -116,7 +116,7 @@ export function buildTools(userId: string) {
         });
       },
     }),
-    betaZodTool({
+    defineTool({
       name: "similar_complexes",
       description: "단지형 부동산의 유사 단지(유사도 점수, 거리, 준공, 평당가, 1년 변화)와 상대 성과(내 단지 vs 유사 단지 vs 시군구).",
       inputSchema: z.object({ item_id: z.string() }),
@@ -127,7 +127,7 @@ export function buildTools(userId: string) {
         return json({ unit: "평당가 만원, 변화율은 비율(0.05=5%)", self: sim.self, comps: sim.comps, comps_median_change: groupChange(sim.comps), region_change: sgg });
       },
     }),
-    betaZodTool({
+    defineTool({
       name: "get_indicators",
       description:
         "지역·거시 지표 시계열. sgg_cd 가 있으면 지역 지표(price_index 자체 가격지수, burden 월부담지수(%), pir, temperature 시장 온도계 0~100, jeonse_ratio, volume 등), macro=true 면 금리·CPI·M2. 월별 최근 N개월.",
@@ -155,7 +155,7 @@ export function buildTools(userId: string) {
         return json({ note: "source=demo 는 합성 데이터", series: out });
       },
     }),
-    betaZodTool({
+    defineTool({
       name: "search_news",
       description: "관심 부동산에 연결된 뉴스(AI 관련도·카테고리·호재/악재·요약). item_id 없으면 전체 부동산.",
       inputSchema: z.object({ item_id: z.string().optional(), days: z.number().int().min(1).max(180).default(60), min_relevance: z.number().min(0).max(1).default(0.6) }),
@@ -170,7 +170,7 @@ export function buildTools(userId: string) {
         return json({ impact_scale: "-2 강한 악재 ~ +2 강한 호재", articles: rows });
       },
     }),
-    betaZodTool({
+    defineTool({
       name: "list_events",
       description: "일정·이벤트: 주변 청약(subscription), 입주 예정(move_in), 공시가격 발표, 세금, 금리 결정. item_id 를 주면 반경 5km.",
       inputSchema: z.object({ item_id: z.string().optional(), days_ahead: z.number().int().min(1).max(1500).default(365), kinds: z.array(z.string()).optional() }),
@@ -187,7 +187,7 @@ export function buildTools(userId: string) {
         return json({ events: rows });
       },
     }),
-    betaZodTool({
+    defineTool({
       name: "get_location",
       description: "부동산의 생활편의 점수(0~100, 교통·학교·쇼핑·공원·학원·의료·음식)와 개발 요인(주변 정비구역, 신설역, 재건축 연한, 용적률 여유).",
       inputSchema: z.object({ item_id: z.string() }),
@@ -197,7 +197,7 @@ export function buildTools(userId: string) {
         return json(row ?? { note: "입지 점수가 아직 계산되지 않았습니다." });
       },
     }),
-    betaZodTool({
+    defineTool({
       name: "simulate_loan",
       description: "대출 시나리오 계산(원리금균등): 대출금, 월 상환액, DSR, 월부담(%). 금액 만원.",
       inputSchema: z.object({

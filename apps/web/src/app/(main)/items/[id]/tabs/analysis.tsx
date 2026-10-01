@@ -1,8 +1,9 @@
 import { Check, CircleAlert, ListChecks, Minus, TrendingDown, TrendingUp } from "lucide-react";
 import Link from "next/link";
-import { Card, CardHeader, EmptyState, Notice, Stat } from "@/components/ui";
+import { Card, CardHeader, EmptyState, Stat } from "@/components/ui";
 import { latestAnalysis } from "@/lib/ai/analysis";
-import { aiEnabled } from "@/lib/ai/client";
+import { AiSetupNotice } from "@/components/ai/setup-notice";
+import { aiStatus } from "@/lib/ai/client";
 import { sql } from "@/lib/db";
 import { formatDate, formatManwon, formatPct } from "@/lib/format";
 import type { WatchItem } from "@/lib/queries/items";
@@ -32,10 +33,11 @@ export async function AnalysisTab({ item }: { item: WatchItem }) {
       select estimate from valuations where watch_item_id = ${item.id} and as_of <= current_date - 80 order by as_of desc limit 1`,
     latestAnalysis(item.user_id, item.id),
   ]);
+  const ai = await aiStatus(item.user_id);
   const v = vals[0];
   const prev = prevs[0];
   const card = a?.data.card;
-  const enabled = aiEnabled();
+  const enabled = ai.enabled;
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -67,7 +69,7 @@ export async function AnalysisTab({ item }: { item: WatchItem }) {
           action={<AnalyzeButton itemId={item.id} enabled={enabled} hasCard={Boolean(card)} />}
         />
         {!enabled ? (
-          <div className="px-4 pb-4"><Notice tone="warn">ANTHROPIC_API_KEY 를 설정하면 분석 카드를 만들 수 있습니다.</Notice></div>
+          <div className="px-4 pb-4"><AiSetupNotice problem={ai.problem} /></div>
         ) : null}
         {card ? (
           <div className="space-y-4 px-4 pb-4 text-sm">

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { resolveAi } from "@/lib/ai/client";
 import { emailReport, generateReport, type ReportKind } from "@/lib/ai/reports";
 import { sql } from "@/lib/db";
 
@@ -15,12 +16,16 @@ export async function GET(req: NextRequest) {
   }
   // 키 점검(myrealty doctor): GitHub 의 CRON_SECRET 이 웹과 같은지만 확인하고 리포트는 만들지 않는다
   if (req.nextUrl.searchParams.get("kind") === "check") return NextResponse.json({ ok: true });
-  if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ skipped: "ANTHROPIC_API_KEY 미설정" });
   const kind: ReportKind = req.nextUrl.searchParams.get("kind") === "monthly" ? "monthly" : "weekly";
   const users = await sql<{ id: string; email: string; settings: { emailDigest?: boolean } }[]>`
     select distinct u.id, u.email, u.settings from users u join watch_items w on w.user_id = u.id where u.status = 'active'`;
   const results = [];
   for (const u of users) {
+    // 사용자별 AI 설정(본인 키) → 없으면 서버 기본(ANTHROPIC_API_KEY). 둘 다 없으면 건너뛴다
+    if (!(await resolveAi(u.id)).cfg) {
+      results.push({ user: u.id, skipped: "AI 설정 없음" });
+      continue;
+    }
     try {
       const r = await generateReport(u.id, kind);
       if (u.settings?.emailDigest !== false) await emailReport(u.email, r.title, r.md, r.snap.portfolio.value);

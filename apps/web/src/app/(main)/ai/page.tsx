@@ -2,8 +2,9 @@ import { FileText, MessageSquarePlus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Chat, type ChatMsg } from "@/components/ai/chat";
-import { Card, Notice, Tabs } from "@/components/ui";
-import { aiEnabled } from "@/lib/ai/client";
+import { Card, Tabs } from "@/components/ui";
+import { AiSetupNotice } from "@/components/ai/setup-notice";
+import { aiStatus } from "@/lib/ai/client";
 import { requireUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatDate } from "@/lib/format";
@@ -28,7 +29,8 @@ export default async function AiPage(props: PageProps<"/ai">) {
   ]);
   const cid = wanted && convs.some((c) => c.id === wanted) ? wanted : null;
   const initial: ChatMsg[] = (cid ? rows : []).map((r) => ({ role: r.role, text: r.content.text, tools: r.content.tools?.map((t) => t.name) }));
-  const enabled = aiEnabled();
+  const ai = await aiStatus(user.id);
+  const enabled = ai.enabled;
 
   return (
     <div>
@@ -41,8 +43,21 @@ export default async function AiPage(props: PageProps<"/ai">) {
       />
       {!enabled ? (
         <div className="mb-3">
-          <Notice tone="warn">ANTHROPIC_API_KEY 가 설정되지 않아 AI 기능이 비활성 상태입니다. .env 에 키를 넣고 다시 시작하세요.</Notice>
+          <AiSetupNotice problem={ai.problem} />
         </div>
+      ) : ai.problem ? (
+        <div className="mb-3">
+          <AiSetupNotice problem={`${ai.problem} 지금은 서버 기본 모델을 씁니다.`} />
+        </div>
+      ) : null}
+      {enabled ? (
+        <p className="mb-2 text-xs text-muted">
+          사용 모델: {ai.label}
+          {ai.ownKey ? " (내 키)" : " (서버 기본)"} ·{" "}
+          <Link href="/settings#ai" className="text-accent">
+            변경
+          </Link>
+        </p>
       ) : null}
       {view === "reports" ? (
         <ReportsPanel userId={user.id} enabled={enabled} />

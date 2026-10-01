@@ -153,3 +153,11 @@ body {
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* 가로로 미는 칩 줄: 스크롤바 숨김(밀기는 그대로) */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

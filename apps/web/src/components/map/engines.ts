@@ -245,7 +245,8 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
   const map = new naver.maps.Map(el, {
     center: new naver.maps.LatLng(center[1], center[0]),
     zoom,
-    zoomControl: true,
+    // 모바일은 두 손가락 확대가 익숙하고 버튼이 라벨을 가린다 — 넓은 화면에서만
+    zoomControl: window.matchMedia("(min-width: 1024px)").matches,
     zoomControlOptions: { position: naver.maps.Position.TOP_RIGHT },
     mapDataControl: false,
     scaleControl: false,

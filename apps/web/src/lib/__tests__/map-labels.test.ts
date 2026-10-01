@@ -36,3 +36,22 @@ describe("declutter", () => {
     expect(declutter(pts, bbox, size, { keep: (p) => p.id === "b" }).map((p) => p.id)).toEqual(["b"]);
   });
 });
+
+import { clusterByDistance, distanceKm } from "../../components/map/engines";
+
+describe("내 부동산 지역 묶기", () => {
+  const seoul = { lng: 126.978, lat: 37.5665 };
+  const suwon = { lng: 127.0286, lat: 37.2636 };
+  const busan = { lng: 129.0756, lat: 35.1796 };
+  const busan2 = { lng: 129.16, lat: 35.16 };
+  it("거리는 km 로 계산한다", () => {
+    expect(distanceKm(seoul, busan)).toBeGreaterThan(300);
+    expect(distanceKm(seoul, busan)).toBeLessThan(350);
+  });
+  it("30km 안에 이어지는 점끼리 묶고 큰 묶음을 앞에 둔다", () => {
+    const g = clusterByDistance([busan, seoul, busan2, suwon], 40);
+    expect(g.map((x) => x.length)).toEqual([2, 2]);
+    expect(clusterByDistance([seoul, busan, busan2], 30)).toEqual([[busan, busan2], [seoul]]);
+    expect(clusterByDistance([], 30)).toEqual([]);
+  });
+});

@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { complexHref, type MyComplexes } from "@/lib/links";
-import type { MapPoint } from "@/app/api/map/points/route";
+import type { MapPoint } from "@/lib/map-filters";
 import { type AreaUnit, formatManwon, fromPerPyeong } from "@/lib/format";
 import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, declutter, pinLabel, polygonBBox, type Removable, shortName, tileSources } from "./engines";
 

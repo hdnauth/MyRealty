@@ -2,14 +2,15 @@
 
 import clsx from "clsx";
 import "leaflet/dist/leaflet.css";
-import { Crosshair, Layers, Maximize2, X } from "lucide-react";
+import { Crosshair, Layers, List, Maximize2, Minimize2, SlidersHorizontal, Star, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import type { MapPoint } from "@/app/api/map/points/route";
-import { type AreaUnit, formatDate, formatManwon, fromPerPyeong, shortAddress, unitPriceLabel } from "@/lib/format";
+import { type AreaUnit, formatDate, formatManwon, formatPct, fromPerPyeong, shortAddress, unitPriceLabel } from "@/lib/format";
 import { complexHref, type MyComplexes, registerComplexHref } from "@/lib/links";
+import { activeFilterCount, COMPLEX_TYPES, EMPTY_FILTERS, type MapFilters, type MapPoint, normalizeFilters, SORTS, type SortKey, filtersToQuery, sortPoints } from "@/lib/map-filters";
 import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
-import { type BaseMap, type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, declutter, pinLabel, satelliteSources, shortName, tileSources, vworldWmsUrl } from "./engines";
+import { FilterPanel } from "./filter-panel";
+import { type BaseMap, type BBox, clusterByDistance, createLeafletMap, distanceKm, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, declutter, pinLabel, satelliteSources, shortName, tileSources, vworldWmsUrl } from "./engines";
 
 export type MapWatchItem = {
   id: string;
@@ -95,6 +96,35 @@ function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
+const FILTER_STORE = "map-filters-v1";
+
+/** 라벨·목록 보조 지표: 정렬 기준에 맞춰 보여 준다 */
+function metricText(p: MapPoint, sort: SortKey): string | null {
+  switch (sort) {
+    case "jr_desc":
+      return p.jeonse_ratio !== null ? `전세가율 ${Math.round(p.jeonse_ratio * 100)}%` : null;
+    case "chg_desc":
+      return p.change_1y !== null ? `1년 ${formatPct(p.change_1y, 1)}` : null;
+    case "loc_desc":
+      return p.loc_score !== null ? `입지 ${Math.round(p.loc_score)}점` : null;
+    case "new":
+      return p.build_year ? `${p.build_year}년` : null;
+    default:
+      return null;
+  }
+}
+
+/** 단지 지표 요약(목록·선택 카드) */
+function indicatorBits(p: MapPoint): string[] {
+  return [
+    p.build_year ? `${p.build_year}년` : null,
+    p.households ? `${p.households.toLocaleString()}세대` : null,
+    p.jeonse_ratio !== null ? `전세가율 ${Math.round(p.jeonse_ratio * 100)}%` : null,
+    p.change_1y !== null ? `1년 ${formatPct(p.change_1y, 1)}` : null,
+    p.loc_score !== null ? `입지 ${Math.round(p.loc_score)}점` : null,
+  ].filter((x): x is string => x !== null);
+}
+
 export function RealtyMap({
   keyId,
   vworldKey = null,
@@ -135,6 +165,7 @@ export function RealtyMap({
   initialCenter: [number, number];
 }) {
   const el = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapHandle | null>(null);
   const markersRef = useRef<Removable[]>([]);
   const layerMarkersRef = useRef<Removable[]>([]);
@@ -154,10 +185,39 @@ export function RealtyMap({
   const [kind, setKind] = useState<"sale" | "jeonse">("sale");
   const [months, setMonths] = useState(6);
   const [points, setPoints] = useState<MapPoint[]>([]);
+  const [truncated, setTruncated] = useState(false);
+  // 후보 탐색 조건·정렬(이 기기에 기억)
+  const [filters, setFilters] = useState<MapFilters>(EMPTY_FILTERS);
+  const [sort, setSort] = useState<SortKey>("n");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterCount = activeFilterCount(filters, type);
+  // 유형을 바꿨는데 그 유형에 없는 정렬(입지·신축)이면 기본으로
+  const sortKey: SortKey = COMPLEX_TYPES.has(type) || !SORTS.find((x) => x.key === sort)?.complexOnly ? sort : "n";
+  useEffect(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(FILTER_STORE) ?? "null");
+      if (!v) return;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 저장된 조건은 마운트 뒤에만 읽을 수 있다
+      setFilters(normalizeFilters(v.filters));
+      if (SORTS.some((x) => x.key === v.sort)) setSort(v.sort);
+    } catch {
+      /* 저장소 사용 불가 */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTER_STORE, JSON.stringify({ filters, sort }));
+    } catch {
+      /* 저장소 사용 불가 */
+    }
+  }, [filters, sort]);
+  // 전체 화면: 브라우저 전체 화면(Fullscreen API), 안 되면(iPhone Safari 등) 화면을 덮는 고정 배치
+  const [fullscreen, setFullscreen] = useState<"off" | "native" | "css">("off");
+  const [listOpen, setListOpen] = useState(true);
   const [bbox, setBbox] = useState<BBox | null>(null);
   const [selected, setSelected] = useState<MapPoint | null>(() =>
     focusComplex
-      ? { key: `c${focusComplex.id}`, kind: "complex", complex_id: focusComplex.id, name: focusComplex.name, lng: focusComplex.lng, lat: focusComplex.lat, n: 0, median_price: 0, median_ppy: null, last_date: "" }
+      ? { key: `c${focusComplex.id}`, kind: "complex", complex_id: focusComplex.id, name: focusComplex.name, lng: focusComplex.lng, lat: focusComplex.lat, n: 0, median_price: 0, median_ppy: null, last_date: "", build_year: null, households: null, jeonse_ratio: null, change_1y: null, loc_score: null }
       : null,
   );
   const [detail, setDetail] = useState<{ complex: { name: string; build_year: number | null; households: number | null }; trades: Trade[] } | null>(null);
@@ -193,6 +253,7 @@ export function RealtyMap({
       const it = items.find((i) => i.id === id);
       if (!it) return;
       setPanel("trades");
+      setListOpen(true);
       const tx = txOf(it);
       if (tx && TYPE_OPTIONS.some((o) => o.key === tx)) setType(tx);
       if (it.complex_id) loadComplex(it.complex_id);
@@ -344,20 +405,25 @@ export function RealtyMap({
     if (!bbox) return;
     const ctl = new AbortController();
     const t = setTimeout(() => {
-      fetch(`/api/map/points?bbox=${bbox.map((v) => v.toFixed(5)).join(",")}&type=${type}&kind=${kind}&months=${months}`, { signal: ctl.signal })
+      const fq = filtersToQuery(filters);
+      fetch(`/api/map/points?bbox=${bbox.map((v) => v.toFixed(5)).join(",")}&type=${type}&kind=${kind}&months=${months}${fq ? `&${fq}` : ""}`, { signal: ctl.signal })
         .then((r) => r.json())
-        .then((d) => setPoints(d.points ?? []))
+        .then((d) => {
+          setPoints(d.points ?? []);
+          setTruncated(Boolean(d.truncated));
+        })
         .catch(() => {});
     }, 250);
     return () => {
       clearTimeout(t);
       ctl.abort();
     };
-  }, [bbox, type, kind, months]);
+  }, [bbox, type, kind, months, filters]);
 
   const select = useCallback((p: MapPoint) => {
     setSelected(p);
     setDetail(null);
+    setListOpen(true);
     if (p.complex_id) {
       fetch(`/api/map/complex/${p.complex_id}`)
         .then((r) => r.json())
@@ -374,7 +440,7 @@ export function RealtyMap({
     for (const m of markersRef.current) m.remove();
     // 거래 많은 단지부터 놓고 겹치는 라벨은 뺀다(목록에는 모두 남는다). 내 단지·선택한 단지는 항상 보인다
     const shown = declutter(
-      [...points].sort((a, b) => b.n - a.n),
+      sortPoints(points, sortKey),
       bbox,
       map.size(),
       { w: 96, h: 34, keep: (p) => selected?.key === p.key || (p.complex_id !== null && myComplexes.has(p.complex_id)) },
@@ -383,15 +449,16 @@ export function RealtyMap({
       const main = p.median_ppy && (type === "apt" || type === "officetel" || type === "rowhouse") ? `${formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}` : formatManwon(p.median_price, { short: true });
       const active = selected?.key === p.key;
       const mine = p.complex_id !== null && myComplexes.has(p.complex_id);
+      const sub = metricText(p, sortKey) ?? `${p.n}건`;
       return map.addHtmlMarker({
         lng: p.lng,
         lat: p.lat,
         zIndex: active ? 900 : 100,
         onClick: () => select(p),
-        html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer">${mine ? "★ " : ""}${main}<span style="font-weight:400;opacity:.7">${escapeHtml(shortName(p.name))} · ${p.n}건</span></div>`,
+        html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer">${mine ? "★ " : ""}${main}<span style="font-weight:400;opacity:.7">${escapeHtml(shortName(p.name))} · ${escapeHtml(sub)}</span></div>`,
       });
     });
-  }, [points, selected, type, select, mapVersion, unit, myComplexes, bbox]);
+  }, [points, selected, type, select, mapVersion, unit, myComplexes, bbox, sortKey]);
 
   // POI 레이어 조회(수집된 시설 + 없으면 OpenStreetMap 에서 보충)
   useEffect(() => {
@@ -460,18 +527,29 @@ export function RealtyMap({
     );
   }, []);
 
-  // 내 부동산이 모두 보이게
+  // 내 부동산 보기: 가까운 것끼리(40km, 서울↔수원 정도) 묶어 한 묶음씩 맞춘다 — 멀리 떨어진 부동산까지 한 화면에 넣으면 전국 지도가 된다.
+  // 처음에는 지금 화면에서 가장 가까운 묶음, 다시 누르면 다음 지역으로
+  const itemClusters = useMemo(() => clusterByDistance(items, 40), [items]);
+  const clusterIdx = useRef(-1);
   const fitItems = useCallback(() => {
     const map = mapRef.current;
-    if (!map || !items.length) return;
-    if (items.length === 1) {
-      map.setCenter(items[0].lng, items[0].lat, 15);
+    if (!map || !itemClusters.length) return;
+    let i = (clusterIdx.current + 1) % itemClusters.length;
+    if (clusterIdx.current < 0 && bbox) {
+      const c = { lng: (bbox[0] + bbox[2]) / 2, lat: (bbox[1] + bbox[3]) / 2 };
+      const near = (g: MapWatchItem[]) => Math.min(...g.map((it) => distanceKm(it, c)));
+      i = itemClusters.reduce((best, g, k) => (near(g) < near(itemClusters[best]) ? k : best), 0);
+    }
+    clusterIdx.current = i;
+    const g = itemClusters[i];
+    if (g.length === 1) {
+      map.setCenter(g[0].lng, g[0].lat, 15);
       return;
     }
-    const xs = items.map((i) => i.lng);
-    const ys = items.map((i) => i.lat);
+    const xs = g.map((it) => it.lng);
+    const ys = g.map((it) => it.lat);
     map.fitBounds([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
-  }, [items]);
+  }, [itemClusters, bbox]);
 
   // 개발사업·POI 마커
   useEffect(() => {
@@ -561,11 +639,67 @@ export function RealtyMap({
     if (!layers.has("cadastral")) mapRef.current?.setCadastral(false);
   }, [layers]);
 
-  const sorted = useMemo(() => [...points].sort((a, b) => b.n - a.n), [points]);
+  const sorted = useMemo(() => sortPoints(points, sortKey), [points, sortKey]);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (fullscreen !== "off") {
+      if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+      setFullscreen("off");
+      setListOpen(true);
+      return;
+    }
+    // 전체 화면에서는 지도를 넓게: 목록은 접어 두고 버튼으로 연다
+    setListOpen(false);
+    const node = rootRef.current;
+    if (node?.requestFullscreen && document.fullscreenEnabled) {
+      try {
+        await node.requestFullscreen();
+        setFullscreen("native");
+        return;
+      } catch {
+        /* 거부되면 고정 배치로 */
+      }
+    }
+    setFullscreen("css");
+  }, [fullscreen]);
+  // Esc·브라우저 버튼으로 전체 화면이 풀리면 상태도 맞춘다
+  useEffect(() => {
+    const onChange = () => {
+      if (!document.fullscreenElement) {
+        setFullscreen((v) => (v === "native" ? "off" : v));
+        setListOpen(true);
+      }
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  useEffect(() => {
+    if (fullscreen !== "css") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setFullscreen("off");
+        setListOpen(true);
+      }
+    };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [fullscreen]);
+  const isFull = fullscreen !== "off";
 
   return (
-    <div className="-mx-4 -mt-4 flex h-[calc(100dvh-7.5rem)] flex-col lg:mx-0 lg:mt-0 lg:h-[calc(100dvh-4rem)]">
-      <div className="flex gap-1.5 overflow-x-auto border-b border-border bg-surface px-4 py-2 lg:rounded-t-xl lg:border">
+    <div
+      ref={rootRef}
+      className={clsx(
+        "flex flex-col",
+        isFull ? "fixed inset-0 z-[1000] h-dvh w-screen bg-bg" : "-mx-4 -mt-4 h-[calc(100dvh-7.5rem)] lg:mx-0 lg:mt-0 lg:h-[calc(100dvh-4rem)]",
+      )}
+    >
+      <div className={clsx("flex gap-1.5 overflow-x-auto border-b border-border bg-surface px-4 py-2", !isFull && "lg:rounded-t-xl lg:border")}>
         {TYPE_OPTIONS.map((o) => (
           <Chip key={o.key} active={type === o.key} onClick={() => setType(o.key)}>
             {o.label}
@@ -584,18 +718,27 @@ export function RealtyMap({
           </Chip>
         ))}
         <span className="mx-1 w-px shrink-0 bg-border" />
+        <Chip active={filterOpen || filterCount > 0} onClick={() => setFilterOpen((v) => !v)}>
+          <SlidersHorizontal size={13} className="-mt-0.5 mr-1 inline" />
+          조건 검색{filterCount ? ` ${filterCount}` : ""}
+        </Chip>
         <Chip active={layerOpen} onClick={() => setLayerOpen((v) => !v)}>
           <Layers size={13} className="-mt-0.5 mr-1 inline" />
           레이어 {layers.size ? `${layers.size}` : ""}
         </Chip>
       </div>
 
-      <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row lg:overflow-hidden lg:rounded-b-xl lg:border lg:border-t-0 lg:border-border">
-        <div className="order-2 max-h-[42%] min-h-0 overflow-y-auto border-t border-border bg-surface lg:order-1 lg:max-h-none lg:w-80 lg:border-r lg:border-t-0">
+      <div className={clsx("relative flex min-h-0 flex-1 flex-col lg:flex-row lg:overflow-hidden", !isFull && "lg:rounded-b-xl lg:border lg:border-t-0 lg:border-border")}>
+        <div
+          className={clsx(
+            "order-2 max-h-[42%] min-h-0 overflow-y-auto border-t border-border bg-surface lg:order-1 lg:max-h-none lg:w-80 lg:border-r lg:border-t-0",
+            isFull && !listOpen && "hidden",
+          )}
+        >
           <div className="sticky top-0 z-10 flex border-b border-border bg-surface text-sm">
             {(
               [
-                ["trades", `주변 거래 ${sorted.length}`],
+                ["trades", `${filterCount ? "조건 결과" : "주변 거래"} ${sorted.length}${truncated ? "+" : ""}`],
                 ["items", `내 부동산 ${items.length + missingItems.length}`],
               ] as const
             ).map(([k, label]) => (
@@ -704,6 +847,15 @@ export function RealtyMap({
                 {detail?.complex?.households ? `${detail.complex.households.toLocaleString()}세대 · ` : ""}
                 {selected.n ? `최근 ${months}개월 ${selected.n}건 · 중위 ${formatManwon(selected.median_price)}` : "최근 거래"}
               </p>
+              {indicatorBits(selected).length ? (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {indicatorBits(selected).map((b) => (
+                    <span key={b} className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">
+                      {b}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               {selected.complex_id ? (
                 <div className="mt-2 flex gap-3 text-sm">
                   <Link href={complexHref(selected.complex_id, complexItems)} className="text-accent">
@@ -736,7 +888,26 @@ export function RealtyMap({
             </div>
           ) : (
             <ul className="divide-y divide-border">
-              {sorted.length === 0 ? <li className="p-4 text-sm text-muted">이 영역에 해당 기간 거래가 없습니다.</li> : null}
+              {filterCount ? (
+                <li className="flex items-center justify-between gap-2 bg-accent-soft/40 px-4 py-2 text-xs">
+                  <span className="text-muted">
+                    조건 {filterCount}개 적용 · {SORTS.find((x) => x.key === sortKey)?.label}
+                  </span>
+                  <span className="flex shrink-0 gap-3">
+                    <button type="button" className="text-accent" onClick={() => setFilterOpen(true)}>
+                      수정
+                    </button>
+                    <button type="button" className="text-muted" onClick={() => setFilters(EMPTY_FILTERS)}>
+                      해제
+                    </button>
+                  </span>
+                </li>
+              ) : null}
+              {sorted.length === 0 ? (
+                <li className="p-4 text-sm text-muted">
+                  {filterCount ? "이 화면에는 조건에 맞는 곳이 없습니다. 지도를 옮기거나 축소하고, 조건을 넓혀 보세요." : "이 영역에 해당 기간 거래가 없습니다."}
+                </li>
+              ) : null}
               {sorted.map((p) => (
                 <li key={p.key}>
                   <button type="button" onClick={() => select(p)} className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-surface-2">
@@ -745,6 +916,7 @@ export function RealtyMap({
                       <span className="text-xs text-muted">
                         {p.n}건 · 최근 {formatDate(p.last_date)}
                       </span>
+                      {indicatorBits(p).length ? <span className="block truncate text-[11px] text-muted">{indicatorBits(p).join(" · ")}</span> : null}
                     </span>
                     <span className="tabular shrink-0 text-right text-sm font-semibold">
                       {formatManwon(p.median_price, { short: true })}
@@ -771,18 +943,41 @@ export function RealtyMap({
             </div>
           ) : null}
           <div className="absolute bottom-6 right-2 z-[500] flex flex-col gap-2 lg:bottom-8">
+            <MapButton label={isFull ? "전체 화면 닫기" : "전체 화면"} onClick={() => void toggleFullscreen()} active={isFull}>
+              {isFull ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </MapButton>
+            {isFull ? (
+              <MapButton label={listOpen ? "목록 닫기" : "목록 보기"} onClick={() => setListOpen((v) => !v)} active={listOpen}>
+                <List size={18} />
+              </MapButton>
+            ) : null}
             <MapButton label="현재 위치" onClick={locate} busy={locating}>
               <Crosshair size={18} />
             </MapButton>
             {items.length ? (
-              <MapButton label="내 부동산 모두 보기" onClick={fitItems}>
-                <Maximize2 size={18} />
+              <MapButton label={itemClusters.length > 1 ? `내 부동산 지역별로 보기(${itemClusters.length}곳, 누를 때마다 다음 지역)` : "내 부동산 모두 보기"} onClick={fitItems}>
+                <Star size={18} />
               </MapButton>
             ) : null}
             <MapButton label="레이어·배경 지도" onClick={() => setLayerOpen((v) => !v)} active={layerOpen}>
               <Layers size={18} />
             </MapButton>
           </div>
+          {filterOpen ? (
+            <div className="absolute inset-x-2 top-2 bottom-2 z-[650] flex flex-col lg:right-auto lg:w-96">
+              <FilterPanel
+                filters={filters}
+                onChange={setFilters}
+                sort={sortKey}
+                onSort={setSort}
+                type={type}
+                unit={unit}
+                resultCount={sorted.length}
+                truncated={truncated}
+                onClose={() => setFilterOpen(false)}
+              />
+            </div>
+          ) : null}
           {layerOpen ? (
             <div className="absolute bottom-6 right-14 z-[600] max-h-[80%] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-3 text-sm shadow-lg lg:bottom-8">
               <div className="mb-2 flex items-center justify-between">

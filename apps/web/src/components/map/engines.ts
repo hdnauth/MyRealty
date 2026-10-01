@@ -66,6 +66,33 @@ export function declutter<T extends { lng: number; lat: number }>(
   return out;
 }
 
+/** 두 좌표 사이 거리(km, 구면 근사) */
+export function distanceKm(a: { lng: number; lat: number }, b: { lng: number; lat: number }): number {
+  const r = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * r;
+  const dLng = (b.lng - a.lng) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * 가까운 점끼리 묶기(서로 km 안에 이어지는 점은 한 묶음). 서울·부산처럼 멀리 떨어진 부동산을 한 화면에 맞추면
+ * 전국 지도가 되므로 지역별로 나눠 차례로 보여 줄 때 쓴다. 큰 묶음이 앞에 온다.
+ */
+export function clusterByDistance<T extends { lng: number; lat: number }>(points: T[], km: number): T[][] {
+  const parent = points.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < points.length; i++)
+    for (let j = i + 1; j < points.length; j++) if (distanceKm(points[i], points[j]) <= km) parent[find(i)] = find(j);
+  const groups = new Map<number, T[]>();
+  points.forEach((p, i) => {
+    const g = groups.get(find(i)) ?? [];
+    g.push(p);
+    groups.set(find(i), g);
+  });
+  return [...groups.values()].sort((a, b) => b.length - a.length);
+}
+
 export type BBox = [number, number, number, number];
 export type BaseMap = "normal" | "satellite" | "hybrid" | "terrain";
 export type Removable = { remove(): void };

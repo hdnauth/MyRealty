@@ -4,7 +4,9 @@ import { Badge, Card, CardHeader, Stat } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { timeAgo } from "@/lib/format";
+import { AI_REPORT_REASONS, AI_SURFACE_LABEL, type AiSurface } from "@/lib/ai/feedback";
 import { REPORT_REASONS } from "@/lib/community/rules";
+import { resolveAiFeedbackAction } from "../../ai/feedback-actions";
 import { dismissReportsAction, moderateAction, muteUserAction } from "../../community/moderate-actions";
 
 export const metadata: Metadata = { title: "관리 · 커뮤니티" };
@@ -28,7 +30,7 @@ type QueueRow = {
 
 export default async function AdminCommunityPage() {
   await requireAdmin();
-  const [[stats], queue, muted] = await Promise.all([
+  const [[stats], queue, muted, aiFeedback] = await Promise.all([
     sql<{ posts: number; comments: number; open: number; held: number; hidden: number; users: number; ai_cost: number }[]>`
       select (select count(*)::int from community_posts where created_at > now() - interval '7 days' and kind = 'user') as posts,
              (select count(*)::int from community_comments where created_at > now() - interval '7 days' and kind = 'user') as comments,
@@ -58,6 +60,10 @@ export default async function AdminCommunityPage() {
       order by reports desc, t.created_at desc limit 100`,
     sql<{ id: string; nickname: string | null; email: string; until: string }[]>`
       select id, nickname, email, community_muted_until::text as until from users where community_muted_until > now() order by community_muted_until desc`,
+    sql<{ id: number; surface: AiSurface; ref: string | null; excerpt: string; reason: string; detail: string | null; email: string | null; created_at: string }[]>`
+      select f.id, f.surface, f.ref, left(f.excerpt, 600) as excerpt, f.reason, f.detail, u.email, f.created_at::text
+      from ai_feedback f left join users u on u.id = f.user_id
+      where f.status = 'open' order by f.created_at desc limit 50`,
   ]);
 
   return (
@@ -109,6 +115,28 @@ export default async function AdminCommunityPage() {
           </ul>
         ) : (
           <p className="px-4 pb-4 text-sm text-muted">처리할 항목이 없습니다.</p>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader title="AI 답변 신고" sub="질문하기·리포트·분석 카드·동네 이야기 AI 답변·요약에 대한 신고. 프롬프트나 모델 설정을 고칠 근거로 쓰고, 확인하면 처리로 닫습니다." />
+        {aiFeedback.length ? (
+          <ul className="divide-y divide-border">
+            {aiFeedback.map((f) => (
+              <li key={f.id} className="space-y-1.5 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                  <Badge>{AI_SURFACE_LABEL[f.surface] ?? f.surface}</Badge>
+                  <Badge tone="up">{AI_REPORT_REASONS[f.reason as keyof typeof AI_REPORT_REASONS] ?? f.reason}</Badge>
+                  <span>· {f.email ?? "탈퇴"} · {timeAgo(f.created_at)}{f.ref ? ` · ${f.ref}` : ""}</span>
+                </div>
+                {f.detail ? <p className="text-sm">{f.detail}</p> : null}
+                <p className="line-clamp-4 whitespace-pre-wrap text-sm text-muted">{f.excerpt}</p>
+                <Act action={resolveAiFeedbackAction.bind(null, f.id)} tone="ok">처리</Act>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-4 pb-4 text-sm text-muted">없습니다.</p>
         )}
       </Card>
 

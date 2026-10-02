@@ -1,4 +1,5 @@
 import { Markdown } from "@/components/ai/markdown";
+import { AiReportButton } from "@/components/ai/report-button";
 import { Card, CardHeader, EmptyState } from "@/components/ui";
 import { sql } from "@/lib/db";
 import { formatDate } from "@/lib/format";
@@ -14,7 +15,12 @@ export async function ReportsPanel({ userId, enabled }: { userId: string; enable
       <Card>
         <CardHeader title={latest?.title ?? "리포트"} sub={latest ? `${formatDate(latest.created_at, "long")} · ${latest.model ?? ""}` : "매주 월요일·매월 1일 자동 생성(스케줄 설정 시)"} action={<GenerateButtons enabled={enabled} />} />
         <div className="px-4 pb-4">
-          {latest ? <Markdown>{latest.content_md}</Markdown> : <EmptyState title="아직 리포트가 없습니다" desc="‘주간 리포트 생성’을 누르면 관심 부동산·지표·뉴스·일정을 요약합니다." />}
+          {latest ? (
+            <>
+              <Markdown>{latest.content_md}</Markdown>
+              <div className="mt-2"><AiReportButton surface="report" refId={String(latest.id)} excerpt={latest.content_md} /></div>
+            </>
+          ) : <EmptyState title="아직 리포트가 없습니다" desc="‘주간 리포트 생성’을 누르면 관심 부동산·지표·뉴스·일정을 요약합니다." />}
         </div>
       </Card>
       <Card className="h-fit">
@@ -25,6 +31,7 @@ export async function ReportsPanel({ userId, enabled }: { userId: string; enable
               <details>
                 <summary className="cursor-pointer">{r.title}</summary>
                 <div className="mt-2"><Markdown>{r.content_md}</Markdown></div>
+                <AiReportButton surface="report" refId={String(r.id)} excerpt={r.content_md} />
               </details>
             </li>
           ))}

@@ -225,6 +225,10 @@ export async function createCommentAction(postId: number, parentId: number | nul
     const targets = new Set<string>();
     if (post.user_id && post.user_id !== user.id) targets.add(post.user_id);
     if (parentAuthor && parentAuthor !== user.id) targets.add(parentAuthor);
+    // 나를 차단한 사람에게는 알리지 않는다
+    const blockers = await sql<{ user_id: string }[]>`
+      select user_id from community_blocks where blocked_id = ${user.id} and user_id = any(${[...targets]}::uuid[])`;
+    for (const b of blockers) targets.delete(b.user_id);
     for (const uid of targets) {
       await notifyCommunity({
         userId: uid,
@@ -373,4 +377,20 @@ export async function summaryAction(scope: "complex_faq" | "sgg_week", id: strin
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** 사용자 차단·해제. 차단한 사용자의 글은 목록에서 빠지고 댓글은 가려지며, 그 사용자의 댓글 알림도 오지 않는다 */
+export async function blockUserAction(targetId: string, block: boolean): Promise<FormState> {
+  const user = await requireUser();
+  if (!/^[0-9a-f-]{36}$/i.test(targetId)) return { error: "잘못된 요청" };
+  if (targetId === user.id) return { error: "나를 차단할 수 없습니다." };
+  if (block) {
+    const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from community_blocks where user_id = ${user.id}`;
+    if (n >= LIMITS.blocksMax) return { error: `차단은 ${LIMITS.blocksMax}명까지 할 수 있습니다.` };
+    await sql`insert into community_blocks (user_id, blocked_id) select ${user.id}, id from users where id = ${targetId} on conflict do nothing`;
+  } else {
+    await sql`delete from community_blocks where user_id = ${user.id} and blocked_id = ${targetId}`;
+  }
+  refresh();
+  return { ok: block ? "차단했습니다. 이 사용자의 글과 댓글이 보이지 않습니다." : "차단을 풀었습니다." };
 }

@@ -166,6 +166,12 @@ export default async function SettingsPage() {
         <CardHeader title="회원 탈퇴" sub="관심 부동산·메모·알림·AI 기록이 모두 삭제되며 되돌릴 수 없습니다. 동네 이야기에 쓴 글·댓글은 '탈퇴한 사용자'로 남으니, 지우려면 탈퇴 전에 직접 삭제하세요." />
         <DeleteAccount email={user.email} disabled={user.isEnvAdmin} />
       </Card>
+      <nav className="flex flex-wrap gap-4 px-1 text-xs text-muted">
+        <Link href="/legal/terms" className="hover:text-accent">이용약관</Link>
+        <Link href="/legal/privacy" className="hover:text-accent">개인정보처리방침</Link>
+        <Link href="/legal/account-deletion" className="hover:text-accent">계정 삭제 안내</Link>
+        <Link href="/community/rules" className="hover:text-accent">동네 이야기 운영 원칙</Link>
+      </nav>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, CardHeader, EmptyState, Notice, PageHeader } from "@/components/ui";
+import { AiReportButton } from "@/components/ai/report-button";
 import { AiSetupNotice } from "@/components/ai/setup-notice";
 import { aiStatus } from "@/lib/ai/client";
 import { latestCompare } from "@/lib/ai/compare";
@@ -245,6 +246,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
                   </table>
                 ) : null}
                 {ai.data.result.watch_points.length ? <p className="text-xs text-muted">확인할 점: {ai.data.result.watch_points.join(" · ")}</p> : null}
+                <AiReportButton surface="report" refId={`compare:${ids.join(",")}`} excerpt={JSON.stringify(ai.data.result)} />
               </div>
             ) : null}
           </Card>

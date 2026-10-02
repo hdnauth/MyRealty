@@ -43,6 +43,7 @@ export const LIMITS = {
   postsPerDay: { fresh: 3, normal: 20 },
   commentsPerDay: { fresh: 20, normal: 200 },
   reportsPerDay: 30,
+  blocksMax: 500,
   imagesPerDay: 20,
   postGapSec: 30,
   commentGapSec: 5,

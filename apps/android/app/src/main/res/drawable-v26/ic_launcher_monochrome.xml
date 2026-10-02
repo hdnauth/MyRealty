@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 테마 아이콘(Android 13+) 단색 레이어: 적응형 아이콘 안전 영역에 맞게 여백 -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_notification_icon"
+    android:inset="30%" />

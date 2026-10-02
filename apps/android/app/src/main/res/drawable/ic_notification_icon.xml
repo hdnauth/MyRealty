@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 상태 표시줄 알림 아이콘(단색). 웹 icon.svg 의 집 모양에서 차트 선을 뺀 실루엣 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="384"
+    android:viewportHeight="384">
+    <group
+        android:translateX="-64"
+        android:translateY="-88">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M112,272 L256,152 L400,272 L400,392 A16,16 0 0 1 384,408 L128,408 A16,16 0 0 1 112,392 Z" />
+    </group>
+</vector>

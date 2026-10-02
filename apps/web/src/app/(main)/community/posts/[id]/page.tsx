@@ -4,8 +4,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { after } from "next/server";
+import { AiReportButton } from "@/components/ai/report-button";
 import { AttachmentCards } from "@/components/community/attachments";
-import { CommentForm, LikeButton, PollCard, ReplyToggle, ReportButton } from "@/components/community/interactive";
+import { BlockButton, CommentForm, LikeButton, PollCard, ReplyToggle, ReportButton } from "@/components/community/interactive";
 import { AuthorLine, CategoryBadge, PostList, PostText } from "@/components/community/parts";
 import { Badge, Card, CardHeader, Notice } from "@/components/ui";
 import { getAreaUnit } from "@/lib/area-unit";
@@ -69,11 +70,20 @@ export default async function PostPage(props: PageProps<"/community/posts/[id]">
         <AuthorLine author={post.author} at={post.created_at} edited={post.edited_at} className="mt-1.5" />
         {post.kind === "system" ? <p className="mt-1 text-[11px] text-muted">실거래·청약 데이터로 자동 작성된 글입니다. 이 소식에 대한 생각을 댓글로 나눠 보세요.</p> : null}
 
-        {post.body ? <PostText text={post.body} className="mt-4" /> : null}
-        <div className="mt-4 space-y-3">
-          <AttachmentCards attachments={post.attachments} unit={unit} />
-          {poll ? <PollCard postId={post.id} poll={poll} /> : null}
-        </div>
+        {post.blocked ? (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <p className="text-sm text-muted">차단한 사용자의 글입니다.</p>
+            {post.author.id ? <BlockButton userId={post.author.id} nickname={post.author.nickname} blocked /> : null}
+          </div>
+        ) : (
+          <>
+            {post.body ? <PostText text={post.body} className="mt-4" /> : null}
+            <div className="mt-4 space-y-3">
+              <AttachmentCards attachments={post.attachments} unit={unit} />
+              {poll ? <PollCard postId={post.id} poll={poll} /> : null}
+            </div>
+          </>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-3">
           <LikeButton target="post" id={post.id} liked={post.liked} count={post.like_count} disabled={post.status !== "visible"} />
@@ -88,6 +98,7 @@ export default async function PostPage(props: PageProps<"/community/posts/[id]">
               </form>
             ) : null}
             {!post.mine && post.kind === "user" ? <ReportButton target="post" id={post.id} reported={post.reported} /> : null}
+            {!post.mine && post.kind === "user" && post.author.id && !post.blocked ? <BlockButton userId={post.author.id} nickname={post.author.nickname} /> : null}
           </span>
         </div>
 
@@ -143,6 +154,7 @@ export default async function PostPage(props: PageProps<"/community/posts/[id]">
 
 function Comment({ c, postId, canReply, isAdmin }: { c: CommentRow; postId: number; canReply: boolean; isAdmin: boolean }) {
   if (c.status === "deleted") return <p id={`c${c.id}`} className="text-sm text-muted">삭제된 댓글입니다.</p>;
+  if (c.blocked) return <p id={`c${c.id}`} className="text-sm text-muted">차단한 사용자의 댓글입니다.</p>;
   return (
     <div id={`c${c.id}`} className={clsx(c.kind === "ai" && "rounded-lg bg-accent-soft/40 p-3")}>
       <AuthorLine author={c.author} at={c.created_at} />
@@ -160,6 +172,8 @@ function Comment({ c, postId, canReply, isAdmin }: { c: CommentRow; postId: numb
             <form action={deleteCommentAction.bind(null, c.id)}><button className="text-xs text-muted hover:text-up">삭제</button></form>
           ) : null}
           {!c.mine && c.kind === "user" ? <ReportButton target="comment" id={c.id} reported={c.reported} /> : null}
+          {!c.mine && c.kind === "user" && c.author.id ? <BlockButton userId={c.author.id} nickname={c.author.nickname} /> : null}
+          {c.kind === "ai" ? <AiReportButton surface="community_answer" refId={String(c.id)} excerpt={c.body} /> : null}
           {isAdmin && c.status !== "visible" ? <AdminBtn target="comment" id={c.id} op="restore">공개</AdminBtn> : null}
           {isAdmin && c.status === "visible" ? <AdminBtn target="comment" id={c.id} op="hide">가리기</AdminBtn> : null}
         </span>

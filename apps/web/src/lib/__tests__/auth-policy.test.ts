@@ -106,13 +106,21 @@ describe("DB 풀러 감지", () => {
 
 describe("사이트 설정 정규화", () => {
   it("잘못된 값은 기본값으로", () => {
-    expect(normalizeSiteSettings({})).toEqual({ signupMode: "open", aiUserMonthlyLimitUsd: null, notice: "" });
+    const community = { communityEnabled: true, communityAiModeration: true, communityAiAnswer: true, communityAutoHideReports: 3 };
+    expect(normalizeSiteSettings({})).toEqual({ signupMode: "open", aiUserMonthlyLimitUsd: null, notice: "", ...community });
     expect(normalizeSiteSettings({ signupMode: "closed", aiUserMonthlyLimitUsd: 5, notice: "점검" })).toEqual({
       signupMode: "closed",
       aiUserMonthlyLimitUsd: 5,
       notice: "점검",
+      ...community,
     });
     expect(normalizeSiteSettings({ aiUserMonthlyLimitUsd: -1 }).aiUserMonthlyLimitUsd).toBeNull();
     expect(normalizeSiteSettings({ aiUserMonthlyLimitUsd: "abc" }).aiUserMonthlyLimitUsd).toBeNull();
+  });
+  it("커뮤니티 설정", () => {
+    const s = normalizeSiteSettings({ communityEnabled: false, communityAiAnswer: "yes", communityAutoHideReports: 99 });
+    expect(s.communityEnabled).toBe(false);
+    expect(s.communityAiAnswer).toBe(true); // 불리언이 아니면 기본값
+    expect(s.communityAutoHideReports).toBe(20);
   });
 });

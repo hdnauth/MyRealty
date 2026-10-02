@@ -4,6 +4,8 @@ import { env } from "../env";
 import { formatManwon } from "../format";
 import { insightBalance, marketInsights } from "../insights";
 import { insightInputs } from "../queries/indicators";
+import { communityHighlights } from "../community/ai";
+import { outlookSentiment } from "../community/queries";
 import { sendMail } from "../mail";
 import { requireAi } from "./client";
 import { generateText } from "./engine";
@@ -81,6 +83,11 @@ export async function buildSnapshot(userId: string, kind: ReportKind) {
       };
     }),
   );
+  // 동네 이야기: 내 지역 게시판 인기 글과 가격 전망 투표(최근 달)
+  const community = await communityHighlights(sggs, days).catch(() => []);
+  const communitySentiment = (
+    await Promise.all(sggs.map(async (g) => ({ sgg: g, last: (await outlookSentiment(g).catch(() => [])).at(-1) ?? null })))
+  ).filter((x) => x.last);
   const owned = out.filter((o) => o.group === "owned");
   const isDemo = items.some((i) => i.label.startsWith("[데모]")) || macro.some((m) => m.source === "demo");
   return {
@@ -98,6 +105,8 @@ export async function buildSnapshot(userId: string, kind: ReportKind) {
     region_indicators: region,
     macro,
     upcoming_events: events,
+    community,
+    community_sentiment: communitySentiment,
   };
 }
 

@@ -237,6 +237,7 @@ create table allowed_emails (email text primary key);
 create table push_subscriptions (user_id uuid, endpoint text primary key, keys jsonb);
 ```
 
+- **커뮤니티(0012)**: `community_posts`(sgg_cd 필수 + complex_id) · `community_comments` · `community_reactions` · `community_reports` · `community_polls`/`community_poll_votes` · `community_follows` · `community_images` · `community_residences` · `community_summaries`, `users.nickname` 등 — [11. 동네 이야기](11-community.md). 게시판은 로그인 사용자 모두가 함께 보는 공유 데이터이고, 작성자 이메일·관심 부동산 상세는 노출하지 않는다.
 - **접근 제어(구현)**: DB 는 서버(Next.js 서버 컴포넌트·Route Handler·Server Action, ETL)에서만 접근한다. 사용자 데이터(`watch_items`, `notifications`, `ai_reports`, `notes`, `push_subscriptions`, `ai_conversations`)는 모든 쿼리에 `user_id` 조건을 걸고, AI 도구도 로그인 사용자 범위로만 조회한다.
 - 대출·임대 등 민감 정보는 사용자별로 격리(`user_id`)하고 백업 시 암호화한다. 모든 사용자가 함께 보는 개발사업(정비구역·철도) 데이터는 관리자만 등록·삭제한다.
 

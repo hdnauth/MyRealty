@@ -243,7 +243,7 @@ export function RealtyMap({
   const [fullscreen, setFullscreen] = useState<"off" | "native" | "css">("off");
   const [bbox, setBbox] = useState<BBox | null>(null);
   const [selected, setSelected] = useState<MapPoint | null>(() => (focusComplex ? stubPoint(focusComplex) : null));
-  const [detail, setDetail] = useState<{ complex: { name: string; build_year: number | null; households: number | null }; trades: Trade[] } | null>(null);
+  const [detail, setDetail] = useState<{ complex: { name: string; build_year: number | null; households: number | null }; trades: Trade[]; talk?: { total: number; recent: number } } | null>(null);
   const [layers, setLayers] = useState<Set<string>>(() => new Set(["projects", "subway", "school"]));
   const [pois, setPois] = useState<MapPoi[]>([]);
   const [poiNote, setPoiNote] = useState<string | null>(null);
@@ -506,7 +506,7 @@ export function RealtyMap({
         lat: p.lat,
         zIndex: active ? 900 : 100,
         onClick: () => select(p),
-        html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer"><span>${mine ? "★ " : ""}${changeArrow(p.change_1y)}${main}</span><span style="font-weight:400;opacity:.7">${escapeHtml(shortName(p.name))} · ${escapeHtml(sub)}</span></div>`,
+        html: `<div style="position:relative;transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer"><span>${mine ? "★ " : ""}${changeArrow(p.change_1y)}${main}</span><span style="font-weight:400;opacity:.7">${escapeHtml(shortName(p.name))} · ${escapeHtml(sub)}</span>${p.talk ? `<span title="최근 7일 동네 이야기 새 글" style="position:absolute;top:-7px;right:-7px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#f97316;color:#fff;font-size:10px;line-height:16px;text-align:center;font-weight:700">${p.talk > 9 ? "9+" : p.talk}</span>` : ""}</div>`,
       });
     });
   }, [points, selected, type, select, mapVersion, unit, myComplexes, bbox, sortKey, labelMode]);
@@ -970,6 +970,10 @@ export function RealtyMap({
                   <div className="mt-2.5 flex gap-2 text-sm">
                     <Link href={complexHref(sel.complex_id, complexItems)} className="rounded-full border border-border px-3 py-1 hover:bg-surface-2">
                       {complexItems[sel.complex_id] ? "내 부동산 상세" : "단지 상세"}
+                    </Link>
+                    <Link href={`/community?complex=${sel.complex_id}`} className="rounded-full border border-border px-3 py-1 hover:bg-surface-2">
+                      이야기{detail?.talk?.total ? ` ${detail.talk.total}` : ""}
+                      {detail?.talk?.recent ? <span className="ml-1 rounded-full bg-orange-500 px-1.5 text-[10px] font-bold text-white">N</span> : null}
                     </Link>
                     {!complexItems[sel.complex_id] ? (
                       <Link href={registerComplexHref(sel.complex_id)} className="rounded-full bg-accent px-3 py-1 font-medium text-white">

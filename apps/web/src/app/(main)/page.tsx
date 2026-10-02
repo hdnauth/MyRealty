@@ -1,5 +1,6 @@
 import { ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
+import { NeighborhoodFeed } from "@/components/community/board-teaser";
 import { NotificationRow } from "@/components/feed/notification-row";
 import { ItemCard } from "@/components/items/item-card";
 import { Card, CardHeader, Change, EmptyState, LinkButton, Stat } from "@/components/ui";
@@ -145,6 +146,8 @@ export default async function HomePage() {
               </div>
             </Link>
           ) : null}
+
+          <NeighborhoodFeed uid={uid} />
 
           <Card className="overflow-hidden">
             <CardHeader title="최근 소식" action={<Link href="/notifications" className="flex items-center text-accent">전체<ChevronRight size={16} /></Link>} />

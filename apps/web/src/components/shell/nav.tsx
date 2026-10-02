@@ -12,6 +12,7 @@ import {
   LineChart,
   Map as MapIcon,
   Menu,
+  MessagesSquare,
   Settings,
   ShieldCheck,
   Wallet,
@@ -28,6 +29,7 @@ const PRIMARY = [
   { href: "/ai", label: "AI", icon: Bot },
 ];
 const SECONDARY = [
+  { href: "/community", label: "동네 이야기", icon: MessagesSquare },
   { href: "/portfolio", label: "포트폴리오", icon: Wallet },
   { href: "/compare", label: "비교", icon: Columns3 },
   { href: "/calendar", label: "캘린더", icon: CalendarDays },
@@ -133,6 +135,9 @@ export function MobileTopBar({ unread }: { unread: number }) {
       </Link>
       <div className="flex items-center gap-1">
         <ThemeToggle />
+        <Link href="/community" aria-label="동네 이야기" className="rounded-lg p-2 text-muted hover:bg-surface-2">
+          <MessagesSquare size={20} />
+        </Link>
         <Link href="/calendar" aria-label="캘린더" className="rounded-lg p-2 text-muted hover:bg-surface-2">
           <CalendarDays size={20} />
         </Link>

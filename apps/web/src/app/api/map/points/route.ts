@@ -78,7 +78,9 @@ export async function GET(req: NextRequest) {
         select * from (
           select 'c' || c.id as key, 'complex' as kind, c.id as complex_id, c.name,
             ST_X(c.geom) as lng, ST_Y(c.geom) as lat, a.n, a.median_price, a.median_ppy, a.last_date,
-            c.build_year::int as build_year, c.households, ${indicators}, ls.total::float8 as loc_score
+            c.build_year::int as build_year, c.households, ${indicators}, ls.total::float8 as loc_score,
+            (select count(*)::int from community_posts cp where cp.complex_id = c.id and cp.status = 'visible'
+               and cp.created_at > now() - interval '7 days') as talk
           from a join c on c.id = a.complex_id
           left join location_scores ls on ls.target_type = 'complex' and ls.target_id = c.id::text
         ) p
@@ -98,7 +100,7 @@ export async function GET(req: NextRequest) {
         select * from (
           select 'r' || r.lawd_cd as key, 'region' as kind, null::bigint as complex_id, coalesce(r.emd, a.umd_nm) as name,
             ST_X(r.center) as lng, ST_Y(r.center) as lat, a.n, a.median_price, a.median_ppy, a.last_date,
-            null::int as build_year, null::int as households, ${indicators}, null::float8 as loc_score
+            null::int as build_year, null::int as households, ${indicators}, null::float8 as loc_score, null::int as talk
           from a join r on r.lawd_cd = a.lawd_cd
         ) p
         ${post}

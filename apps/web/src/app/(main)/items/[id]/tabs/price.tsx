@@ -55,6 +55,7 @@ export async function PriceTab({ item, all = false }: { item: WatchItem; all?: b
         <TxTable
           rows={[...points].reverse()}
           showName={!item.complex_id}
+          discuss
           limit={all ? 5000 : 30}
           moreHref={`/items/${item.id}?tab=price&all=1`}
         />

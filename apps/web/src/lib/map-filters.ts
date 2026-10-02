@@ -20,6 +20,8 @@ export type MapPoint = {
   change_1y: number | null;
   /** 생활편의(입지) 점수 0~100 */
   loc_score: number | null;
+  /** 최근 7일 동네 이야기 새 글 수(단지) */
+  talk?: number | null;
 };
 
 export type MapFilters = {

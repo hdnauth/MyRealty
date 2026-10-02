@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PriceHistoryChart } from "@/components/charts/price-history";
 import { LineSeriesChart } from "@/components/charts/series-chart";
+import { BoardTeaser } from "@/components/community/board-teaser";
 import { TypeIcon } from "@/components/items/item-card";
 import { TxTable } from "@/components/items/tx-table";
 import { MiniMap } from "@/components/map/mini-map";
@@ -225,8 +226,12 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
 
         <Card className="lg:col-span-3">
           <CardHeader title="거래 내역" sub={`${points.length}건${pick ? ` · 전용 ${formatArea(pick.area, unit).split(" ")[0]}` : ""} · 해제(취소) 거래 포함`} />
-          <TxTable rows={[...points].reverse()} limit={all ? 5000 : 30} moreHref={`/complexes/${id}?${pick ? `area=${pick.area.toFixed(2)}&` : ""}all=1`} />
+          <TxTable rows={[...points].reverse()} discuss limit={all ? 5000 : 30} moreHref={`/complexes/${id}?${pick ? `area=${pick.area.toFixed(2)}&` : ""}all=1`} />
         </Card>
+
+        <div className="lg:col-span-3">
+          <BoardTeaser uid={uid} sgg={c.sgg_cd} complexId={c.id} complexName={c.name} />
+        </div>
       </div>
     </div>
   );

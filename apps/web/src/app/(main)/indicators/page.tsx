@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LineSeriesChart, Sparkline } from "@/components/charts/series-chart";
+import { SentimentCard } from "@/components/community/sentiment-card";
 import { ContribBars } from "@/components/indicators/contrib-bars";
 import { type JeonseItemOption, JeonseCheck } from "@/components/indicators/jeonse-check";
 import { BacktestCard, InsightCard } from "@/components/indicators/insight-card";
@@ -177,6 +178,12 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
           ) : null}
 
           {view === "summary" && bt ? <BacktestCard bt={bt} /> : null}
+          {view === "summary" ? (
+            <div>
+              <SentimentCard sgg={sgg} region={regionName} />
+              <p className="mt-2 text-right text-xs"><Link href={`/community?sgg=${sgg}`} className="text-accent">{regionName ?? "이 지역"} 동네 이야기 →</Link></p>
+            </div>
+          ) : null}
 
           {view === "price" ? (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

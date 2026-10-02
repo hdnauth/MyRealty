@@ -55,6 +55,7 @@ def send_push(conn, min_priority: int = 2) -> dict:
 KIND_LABEL = {
     "record_high": "신고가", "record_low": "저가", "new_trade": "실거래", "canceled": "해제", "news": "뉴스",
     "subscription": "청약", "lease_expiry": "만기", "calendar": "일정", "indicator": "지표", "rate": "금리", "policy": "정책",
+    "community_reply": "댓글", "community_hot": "동네 이야기", "community_mod": "운영",
 }
 
 

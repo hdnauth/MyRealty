@@ -45,6 +45,7 @@ export default async function SettingsPage() {
       <Card className="lg:hidden">
         <div className="grid grid-cols-3 gap-1 p-2 text-center text-sm">
           {[
+            ["/community", "동네 이야기"],
             ["/portfolio", "포트폴리오"],
             ["/compare", "비교"],
             ["/calendar", "캘린더"],
@@ -162,7 +163,7 @@ export default async function SettingsPage() {
       </Card>
 
       <Card className="border-up/30">
-        <CardHeader title="회원 탈퇴" sub="관심 부동산·메모·알림·AI 기록이 모두 삭제되며 되돌릴 수 없습니다." />
+        <CardHeader title="회원 탈퇴" sub="관심 부동산·메모·알림·AI 기록이 모두 삭제되며 되돌릴 수 없습니다. 동네 이야기에 쓴 글·댓글은 '탈퇴한 사용자'로 남으니, 지우려면 탈퇴 전에 직접 삭제하세요." />
         <DeleteAccount email={user.email} disabled={user.isEnvAdmin} />
       </Card>
     </div>

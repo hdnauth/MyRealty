@@ -20,6 +20,7 @@ import { AnalysisTab } from "./tabs/analysis";
 import { LocationTab } from "./tabs/location";
 import { NewsTab } from "./tabs/news";
 import { NotesTab } from "./tabs/notes";
+import { TalkTab } from "./tabs/talk";
 import { OverviewTab } from "./tabs/overview";
 import { PriceTab } from "./tabs/price";
 
@@ -35,6 +36,7 @@ const TABS = [
   { key: "nearby", label: "주변" },
   { key: "location", label: "입지" },
   { key: "news", label: "소식" },
+  { key: "talk", label: "이야기" },
   { key: "analysis", label: "분석" },
   { key: "notes", label: "메모" },
 ] as const;
@@ -121,6 +123,7 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
       {tab === "news" ? <NewsTab item={item} /> : null}
       {tab === "analysis" ? <AnalysisTab item={item} /> : null}
       {tab === "notes" ? <NotesTab item={item} /> : null}
+      {tab === "talk" ? <TalkTab item={item} /> : null}
     </div>
   );
 }

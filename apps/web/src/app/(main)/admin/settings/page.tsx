@@ -47,6 +47,27 @@ export default async function AdminSettings() {
             <Textarea name="notice" defaultValue={site.notice} rows={2} maxLength={300} placeholder="예) 9/30 02:00~03:00 점검 예정" />
           </label>
 
+          <fieldset className="space-y-2">
+            <legend className="mb-1 text-[13px] font-medium text-muted">동네 이야기(커뮤니티)</legend>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" name="communityEnabled" defaultChecked={site.communityEnabled} className="mt-1" />
+              <span>글·댓글 작성 허용 <span className="block text-xs text-muted">끄면 읽기만 가능(관리자는 계속 쓸 수 있음)</span></span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" name="communityAiModeration" defaultChecked={site.communityAiModeration} className="mt-1" />
+              <span>AI 자동 검토 <span className="block text-xs text-muted">새 글·댓글을 서버 AI(ANTHROPIC_API_KEY)로 점검: 명백한 위반은 가리고, 애매하면 보류, 규칙에 걸렸어도 문제없으면 공개</span></span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" name="communityAiAnswer" defaultChecked={site.communityAiAnswer} className="mt-1" />
+              <span>질문에 AI 첫 답변 <span className="block text-xs text-muted">질문 글에 실거래·지표 기반 답을 서버 AI 비용으로 단다(서버 월 예산 안에서)</span></span>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              신고
+              <Input name="communityAutoHideReports" type="number" min={1} max={20} defaultValue={site.communityAutoHideReports} className="h-9 w-20" />
+              건이 모이면 자동으로 가리기
+            </label>
+          </fieldset>
+
           <Button type="submit">저장</Button>
         </ActionForm>
       </Card>

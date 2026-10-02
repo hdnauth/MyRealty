@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { AlertTriangle, Bell, CalendarDays, Megaphone, Newspaper, Receipt, TrendingDown, TrendingUp, XCircle } from "lucide-react";
+import { AlertTriangle, Bell, CalendarDays, Megaphone, MessageCircle, MessagesSquare, Newspaper, Receipt, ShieldAlert, TrendingDown, TrendingUp, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { safeHref, timeAgo } from "@/lib/format";
 import { NotificationLink } from "./notification-link";
@@ -17,6 +17,9 @@ const KIND: Record<string, { label: string; icon: typeof Bell; tone: "up" | "dow
   indicator: { label: "지표", icon: TrendingUp, tone: "accent" },
   rate: { label: "금리", icon: TrendingUp, tone: "warn" },
   policy: { label: "정책", icon: Megaphone, tone: "warn" },
+  community_reply: { label: "댓글", icon: MessageCircle, tone: "accent" },
+  community_hot: { label: "동네 이야기", icon: MessagesSquare, tone: "accent" },
+  community_mod: { label: "운영", icon: ShieldAlert, tone: "warn" },
 };
 
 export function NotificationRow({ n, showItem = true }: { n: Notification; showItem?: boolean }) {

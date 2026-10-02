@@ -1,3 +1,4 @@
+import { MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { formatDate, formatManwon } from "@/lib/format";
@@ -13,7 +14,10 @@ export function TxTable({
   moreHref,
   myComplexes = null,
   mapType = null,
+  discuss = false,
 }: {
+  /** 단지 거래 행에 "이 거래 이야기하기"(동네 이야기 글쓰기, 거래 첨부) */
+  discuss?: boolean;
   rows: (TxPoint & { dist_m?: number; lng?: number | null; lat?: number | null })[];
   /** 위치 칸 링크: 단지는 내 관심 부동산/단지 상세로, 단지 없는 거래는 지도 위치로 */
   myComplexes?: MyComplexes | null;
@@ -65,6 +69,11 @@ export function TxTable({
               <td className="px-4 py-2 text-right">
                 {extra === "dist" && r.dist_m !== undefined ? `${r.dist_m.toLocaleString()}m` : null}
                 <TxBadges r={r} />
+                {discuss && r.complex_id && !r.is_canceled ? (
+                  <Link href={`/community/new?complex=${r.complex_id}&trade=${r.id}`} title="이 거래 이야기하기" aria-label="이 거래 이야기하기" className="ml-1 inline-flex align-middle text-muted hover:text-accent">
+                    <MessageCircle size={14} />
+                  </Link>
+                ) : null}
               </td>
             </tr>
           ))}

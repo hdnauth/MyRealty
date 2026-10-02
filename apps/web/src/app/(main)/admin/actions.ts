@@ -112,6 +112,10 @@ export async function saveSiteSettingsAction(_: AdminActionState, form: FormData
     signupMode: parseSignupMode(form.get("signupMode")),
     aiUserMonthlyLimitUsd: limit,
     notice: String(form.get("notice") ?? "").trim().slice(0, 300),
+    communityEnabled: form.get("communityEnabled") === "on",
+    communityAiModeration: form.get("communityAiModeration") === "on",
+    communityAiAnswer: form.get("communityAiAnswer") === "on",
+    communityAutoHideReports: Math.min(20, Math.max(1, Math.round(Number(form.get("communityAutoHideReports")) || 3))),
   };
   await saveSiteSettings(patch, admin.id);
   await audit(admin, "site.settings", null, patch);

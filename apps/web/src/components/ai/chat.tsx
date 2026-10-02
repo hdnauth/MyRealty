@@ -4,6 +4,7 @@ import { ArrowUp, Loader2, Wrench } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Markdown } from "./markdown";
+import { AiReportButton } from "./report-button";
 
 export type ChatMsg = { role: "user" | "assistant"; text: string; tools?: string[] };
 
@@ -118,6 +119,11 @@ export function Chat({ conversationId, initial, enabled }: { conversationId: str
               <div className="card px-4 py-3">
                 {m.text ? <Markdown>{m.text.trim()}</Markdown> : <span className="inline-flex items-center gap-2 text-sm text-muted"><Loader2 size={14} className="animate-spin" /> 데이터를 조회하며 생각하는 중…</span>}
               </div>
+              {m.text && !(busy && i === msgs.length - 1) ? (
+                <div className="mt-1 px-1">
+                  <AiReportButton surface="chat" refId={convRef.current} excerpt={m.text} />
+                </div>
+              ) : null}
             </div>
           ),
         )}

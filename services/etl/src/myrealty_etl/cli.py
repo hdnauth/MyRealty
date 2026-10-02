@@ -160,6 +160,7 @@ _simple("alerts", "myrealty_etl.alerts.rules:detect_alerts", "알림 규칙 평�
 _simple("push", "myrealty_etl.alerts.notify:send_push", "중요 알림 웹푸시 발송")
 _simple("community", "myrealty_etl.community:run_community", "동네 이야기: 신고가·청약 시스템 글, 인기글 알림, 사진 정리")
 _simple("digest", "myrealty_etl.alerts.notify:send_digest", "이메일 다이제스트 발송")
+_simple("cleanup", "myrealty_etl.jobs.cleanup_job:cleanup_auth", "보관 기간이 지난 로그인 코드 기록·세션 삭제")
 
 
 # 매일 파이프라인: 각 단계는 키가 없으면 건너뛰고, 실패해도 다음 단계를 계속한다.
@@ -182,6 +183,7 @@ DAILY_STEPS: list[tuple[str, str]] = [
     ("alerts", "myrealty_etl.alerts.rules:detect_alerts"),
     ("push", "myrealty_etl.alerts.notify:send_push"),
     ("digest", "myrealty_etl.alerts.notify:send_digest"),
+    ("cleanup", "myrealty_etl.jobs.cleanup_job:cleanup_auth"),
 ]
 
 

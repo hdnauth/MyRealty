@@ -2,6 +2,7 @@ import { Building2, LineChart, PenSquare, Search } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Markdown } from "@/components/ai/markdown";
+import { AiReportButton } from "@/components/ai/report-button";
 import { FollowButton, SummaryButton } from "@/components/community/interactive";
 import { PostList } from "@/components/community/parts";
 import { Card, CardHeader, Input, LinkButton, Notice, PageHeader } from "@/components/ui";
@@ -124,7 +125,10 @@ export default async function CommunityPage(props: PageProps<"/community">) {
             {summary ? (
               <>
                 <Markdown>{summary.content_md}</Markdown>
-                <p className="mt-1 text-[11px] text-muted">글 {summary.post_count}개 기준 · {timeAgo(summary.updated_at)} · AI 요약</p>
+                <div className="mt-1 flex flex-wrap items-center gap-3">
+                  <p className="text-[11px] text-muted">글 {summary.post_count}개 기준 · {timeAgo(summary.updated_at)} · AI 요약</p>
+                  <AiReportButton surface="community_summary" refId={`${complexId ? "complex_faq" : "sgg_week"}:${complexId ?? sgg}`} excerpt={summary.content_md} />
+                </div>
               </>
             ) : (
               <p className="text-xs text-muted">{complexId ? "이야기 글이 3개 이상 모이면 자주 나온 주제를 FAQ로 정리할 수 있습니다." : "지난 7일 글의 주요 주제와 의견 흐름을 AI가 요약합니다."}</p>

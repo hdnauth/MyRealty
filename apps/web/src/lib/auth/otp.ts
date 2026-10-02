@@ -5,7 +5,7 @@ import { env } from "../env";
 import { AppConfigError, MailError } from "../errors";
 import { sendMail } from "../mail";
 import { getSiteSettings } from "../site-settings";
-import { decideLogin, type LoginDecision } from "./policy";
+import { decideLogin, type LoginDecision, reviewCode } from "./policy";
 
 const CODE_TTL_MIN = 10;
 const MAX_ATTEMPTS = 5;
@@ -80,17 +80,22 @@ export async function requestOtp(rawEmail: string, ip: string | null): Promise<R
     return { ok: true };
   }
 
-  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const fixed = reviewCode(email, env.reviewLogin, env.adminEmails);
+  const code = fixed ?? String(randomInt(0, 1_000_000)).padStart(6, "0");
   const [row] = await sql<{ id: number }[]>`
     insert into otp_codes (email, code_hash, expires_at, ip)
     values (${email}, ${hashCode(email, code)}, now() + ${`${CODE_TTL_MIN} minutes`}::interval, ${ip})
     returning id`;
+  if (fixed) {
+    console.warn(`[auth] 심사용 계정 로그인 코드 요청: ${email}`);
+    return { ok: true };
+  }
   try {
     await sendMail(
       email,
-      `[MyRealty] 로그인 코드 ${code}`,
-      `MyRealty 로그인 코드: ${code}\n\n${CODE_TTL_MIN}분 안에 입력하세요. 요청하지 않았다면 이 메일을 무시하세요.`,
-      `<p>MyRealty 로그인 코드</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>${CODE_TTL_MIN}분 안에 입력하세요.</p>`,
+      `[마이리얼티] 로그인 코드 ${code}`,
+      `마이리얼티 로그인 코드: ${code}\n\n${CODE_TTL_MIN}분 안에 입력하세요. 요청하지 않았다면 이 메일을 무시하세요.`,
+      `<p>마이리얼티 로그인 코드</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>${CODE_TTL_MIN}분 안에 입력하세요.</p>`,
     );
   } catch (e) {
     // 보내지 못한 코드는 무효화(1분 제한에는 걸리지 않도록 기록 삭제)

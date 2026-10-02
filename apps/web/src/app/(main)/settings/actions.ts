@@ -22,7 +22,7 @@ export async function revokeSessionAction(form: FormData) {
 export async function sendTestPushAction(): Promise<{ message: string }> {
   const user = await requireUser();
   const { sendPushToUser } = await import("@/lib/push");
-  const r = await sendPushToUser(user.id, { title: "MyRealty 테스트 알림", body: "푸시 알림이 정상적으로 동작합니다.", url: "/notifications" });
+  const r = await sendPushToUser(user.id, { title: "마이리얼티 테스트 알림", body: "푸시 알림이 정상적으로 동작합니다.", url: "/notifications" });
   return { message: r.sent ? `${r.sent}개 기기로 발송했습니다.` : `발송 실패${"reason" in r ? `: ${r.reason}` : ""}` };
 }
 

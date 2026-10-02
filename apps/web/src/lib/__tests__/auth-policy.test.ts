@@ -5,6 +5,7 @@ import {
   parseSignupMode,
   REMEMBER_DAYS,
   RENEW_AFTER_SEC,
+  reviewCode,
   safeNext,
   sessionExpiry,
   SHORT_SESSION_HOURS,
@@ -122,5 +123,20 @@ describe("사이트 설정 정규화", () => {
     expect(s.communityEnabled).toBe(false);
     expect(s.communityAiAnswer).toBe(true); // 불리언이 아니면 기본값
     expect(s.communityAutoHideReports).toBe(20);
+  });
+});
+
+describe("reviewCode (앱 마켓 심사용 계정)", () => {
+  const review = { email: "review@example.com", code: "246810" };
+  it("지정한 이메일에만 고정 코드", () => {
+    expect(reviewCode("review@example.com", review, [])).toBe("246810");
+    expect(reviewCode("other@example.com", review, [])).toBeNull();
+  });
+  it("이메일·코드 중 하나라도 없으면 꺼짐", () => {
+    expect(reviewCode("review@example.com", { email: "review@example.com" }, [])).toBeNull();
+    expect(reviewCode("review@example.com", { code: "246810" }, [])).toBeNull();
+  });
+  it("관리자 이메일에는 쓰지 않는다", () => {
+    expect(reviewCode("review@example.com", review, ["review@example.com"])).toBeNull();
   });
 });

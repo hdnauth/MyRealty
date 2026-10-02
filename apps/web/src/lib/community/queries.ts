@@ -141,7 +141,7 @@ type RawPost = Omit<PostRow, "author" | "excerpt" | "sgg_name"> & {
 };
 
 function toAuthor(r: { user_id: string | null; nickname: string | null; points: number | null; resident: boolean; owner: boolean; watcher: boolean }, kind: string): Author {
-  if (kind === "system") return { id: null, nickname: "MyRealty 데이터", level: "", badges: [] };
+  if (kind === "system") return { id: null, nickname: "마이리얼티 데이터", level: "", badges: [] };
   if (!r.user_id) return { id: null, nickname: "탈퇴한 사용자", level: "", badges: [] };
   const badges: Badge[] = [];
   if (r.resident) badges.push("resident");
@@ -180,6 +180,7 @@ export async function listPosts(o: ListOpts): Promise<PostRow[]> {
       and (${o.category ?? null}::text is null or p.category = ${o.category ?? null})
       and (${o.userId ?? null}::uuid is null or p.user_id = ${o.userId ?? null})
       and (${q}::text is null or (p.title || ' ' || p.body) ilike '%' || ${q} || '%')
+      and not exists (select 1 from community_blocks b where b.user_id = ${o.uid} and b.blocked_id = p.user_id)
     order by ${
       o.sort === "hot"
         ? // 인기: 최근 14일 안에서 좋아요·댓글 가중, 오래될수록 감쇠
@@ -241,10 +242,12 @@ export type PostDetail = PostRow & {
   moderation: { flags?: { code: string; label: string }[]; ai?: { verdict: string; reason?: string } };
   report_count: number;
   reported: boolean;
+  /** 내가 차단한 사용자의 글(본문을 가린다) */
+  blocked: boolean;
 };
 
 export async function getPost(id: number, uid: string, isAdmin = false): Promise<PostDetail | null> {
-  const [r] = await sql<(RawPost & { attachments: Attachment[]; moderation: PostDetail["moderation"]; report_count: number; reported: boolean })[]>`
+  const [r] = await sql<(RawPost & { attachments: Attachment[]; moderation: PostDetail["moderation"]; report_count: number; reported: boolean; blocked: boolean })[]>`
     select p.id, p.title, p.body, p.category, p.kind, p.status, p.sgg_cd, p.complex_id, c.name as complex_name,
            p.like_count, p.comment_count, p.view_count, p.created_at::text, p.edited_at::text, p.attachments, p.moderation, p.report_count,
            p.user_id, u.nickname, u.community_points as points,
@@ -252,6 +255,7 @@ export async function getPost(id: number, uid: string, isAdmin = false): Promise
            0 as image_count, jsonb_array_length(p.attachments) as attach_count,
            exists (select 1 from community_reactions r where r.target_type = 'post' and r.target_id = p.id and r.user_id = ${uid}) as liked,
            exists (select 1 from community_reports r where r.target_type = 'post' and r.target_id = p.id and r.reporter_id = ${uid}) as reported,
+           exists (select 1 from community_blocks b where b.user_id = ${uid} and b.blocked_id = p.user_id) as blocked,
            (p.user_id = ${uid}) as mine,
            ${badgeSql()}
     from community_posts p
@@ -288,6 +292,7 @@ export async function getPost(id: number, uid: string, isAdmin = false): Promise
     moderation: r.moderation,
     report_count: r.report_count,
     reported: r.reported,
+    blocked: r.blocked,
   };
 }
 
@@ -303,6 +308,8 @@ export type CommentRow = {
   liked: boolean;
   mine: boolean;
   reported: boolean;
+  /** 내가 차단한 사용자의 댓글(본문을 비운다) */
+  blocked: boolean;
 };
 
 export async function listComments(postId: number, uid: string, isAdmin = false): Promise<CommentRow[]> {
@@ -311,6 +318,7 @@ export async function listComments(postId: number, uid: string, isAdmin = false)
            m.user_id, u.nickname, u.community_points as points,
            exists (select 1 from community_reactions r where r.target_type = 'comment' and r.target_id = m.id and r.user_id = ${uid}) as liked,
            exists (select 1 from community_reports r where r.target_type = 'comment' and r.target_id = m.id and r.reporter_id = ${uid}) as reported,
+           exists (select 1 from community_blocks b where b.user_id = ${uid} and b.blocked_id = m.user_id) as blocked,
            (m.user_id = ${uid}) as mine,
            ${sql`
              coalesce(p.complex_id is not null and exists (
@@ -330,7 +338,7 @@ export async function listComments(postId: number, uid: string, isAdmin = false)
   return rows.map((r) => ({
     id: r.id,
     parent_id: r.parent_id,
-    body: r.status === "deleted" ? "" : r.body,
+    body: r.status === "deleted" || r.blocked ? "" : r.body,
     kind: r.kind,
     status: r.status,
     like_count: r.like_count,
@@ -339,7 +347,15 @@ export async function listComments(postId: number, uid: string, isAdmin = false)
     liked: r.liked,
     mine: r.mine,
     reported: r.reported,
+    blocked: r.blocked,
   }));
+}
+
+/** 내가 차단한 사용자 */
+export async function listBlocks(uid: string) {
+  return sql<{ id: string; nickname: string | null; created_at: string }[]>`
+    select u.id, u.nickname, b.created_at::text from community_blocks b join users u on u.id = b.blocked_id
+    where b.user_id = ${uid} order by b.created_at desc`;
 }
 
 // ───────── 첨부 데이터 ─────────

@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BlockButton } from "@/components/community/interactive";
 import { PostList } from "@/components/community/parts";
 import { ProfileForm, ResidenceCheck } from "@/components/community/profile-form";
 import { Card, CardHeader, PageHeader, Stat } from "@/components/ui";
 import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
-import { communityMe, listPosts } from "@/lib/community/queries";
+import { communityMe, listBlocks, listPosts } from "@/lib/community/queries";
 import { levelOf, RESIDENCE } from "@/lib/community/rules";
 
 export const metadata: Metadata = { title: "내 활동·설정" };
@@ -13,7 +14,7 @@ export const metadata: Metadata = { title: "내 활동·설정" };
 export default async function CommunityProfilePage(props: PageProps<"/community/profile">) {
   const [user, sp] = await Promise.all([requireUser(), props.searchParams]);
   const next = typeof sp.next === "string" && sp.next.startsWith("/community") ? sp.next : null;
-  const [me, mine, counts, residences, settings] = await Promise.all([
+  const [me, mine, counts, residences, settings, blocks] = await Promise.all([
     communityMe(user.id, user.isAdmin),
     listPosts({ uid: user.id, userId: user.id, limit: 20 }),
     sql<{ posts: number; comments: number; likes: number }[]>`
@@ -28,6 +29,7 @@ export default async function CommunityProfilePage(props: PageProps<"/community/
       left join community_residences r on r.user_id = w.user_id and r.complex_id = c.id
       where w.user_id = ${user.id} and c.geom is not null order by c.id`,
     sql<{ settings: { communityPush?: boolean } }[]>`select settings from users where id = ${user.id}`,
+    listBlocks(user.id),
   ]);
   const level = levelOf(me.points);
   return (
@@ -60,6 +62,19 @@ export default async function CommunityProfilePage(props: PageProps<"/community/
             <PostList posts={mine} empty={<Link href="/community" className="text-accent underline">동네 이야기 보러 가기</Link>} />
           </Card>
         </>
+      ) : null}
+      {blocks.length ? (
+        <Card>
+          <CardHeader title="차단한 사용자" sub="차단한 사용자의 글은 목록에서 빠지고 댓글은 가려집니다. 상대에게는 알리지 않습니다." />
+          <ul className="divide-y divide-border px-4 pb-2 text-sm">
+            {blocks.map((b) => (
+              <li key={b.id} className="flex items-center justify-between gap-2 py-2">
+                <span>{b.nickname ?? "이름 없음"} <span className="text-xs text-muted">· {b.created_at.slice(0, 10)}</span></span>
+                <BlockButton userId={b.id} nickname={b.nickname ?? "이름 없음"} blocked />
+              </li>
+            ))}
+          </ul>
+        </Card>
       ) : null}
     </div>
   );

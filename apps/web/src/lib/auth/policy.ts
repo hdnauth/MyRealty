@@ -71,3 +71,13 @@ export function safeNext(v: unknown): string {
   if (!s.startsWith("/") || s.startsWith("//") || s.startsWith("/\\")) return "/";
   return /^\/login(\/|\?|$)/.test(s) ? "/" : s; // 로그인 화면으로 되돌아가는 루프 방지
 }
+
+/**
+ * 앱 마켓 심사용 계정이면 고정 코드(메일 발송 안 함), 아니면 null.
+ * 관리자 이메일에는 절대 쓰지 않는다(고정 코드가 새면 관리 권한까지 넘어가므로).
+ */
+export function reviewCode(email: string, review: { email?: string; code?: string }, adminEmails: string[]): string | null {
+  if (!review.email || !review.code || email !== review.email) return null;
+  if (adminEmails.includes(email)) return null;
+  return review.code;
+}

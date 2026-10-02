@@ -2,6 +2,7 @@ import { Check, CircleAlert, ListChecks, Minus, TrendingDown, TrendingUp } from 
 import Link from "next/link";
 import { Card, CardHeader, EmptyState, Stat } from "@/components/ui";
 import { latestAnalysis } from "@/lib/ai/analysis";
+import { AiReportButton } from "@/components/ai/report-button";
 import { AiSetupNotice } from "@/components/ai/setup-notice";
 import { aiStatus } from "@/lib/ai/client";
 import { sql } from "@/lib/db";
@@ -93,7 +94,10 @@ export async function AnalysisTab({ item }: { item: WatchItem }) {
             ) : null}
             <List title="직접 확인할 것" icon={<ListChecks size={14} className="text-accent" />} items={card.checklist} />
             {card.data_gaps.length ? <p className="text-xs text-muted">부족한 데이터: {card.data_gaps.join(", ")}</p> : null}
-            <p className="text-xs text-muted">투자 권유가 아닌 데이터 요약입니다. <Link href="/ai" className="text-accent">AI에게 더 묻기 →</Link></p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-xs text-muted">투자 권유가 아닌 데이터 요약입니다. <Link href="/ai" className="text-accent">AI에게 더 묻기 →</Link></p>
+              <AiReportButton surface="report" refId={`item:${item.id}`} excerpt={JSON.stringify(card)} />
+            </div>
           </div>
         ) : enabled ? (
           <EmptyState title="아직 분석 카드가 없습니다" desc="‘분석 생성’을 누르면 이 부동산의 데이터로 강점·리스크·체크리스트를 정리합니다." />

@@ -130,5 +130,5 @@ export async function generateReport(userId: string, kind: ReportKind) {
 
 export async function emailReport(email: string, title: string, md: string, value: number) {
   const text = `${md}\n\n보유 자산 추정 ${formatManwon(value)}\n앱에서 보기: ${env.appUrl}/ai?view=reports`;
-  await sendMail(email, `[MyRealty] ${title}`, text);
+  await sendMail(email, `[마이리얼티] ${title}`, text);
 }

@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth/session";
 import { AdminTabs } from "./admin-tabs";
 
-export const metadata: Metadata = { title: { default: "관리", template: "%s · 관리 · MyRealty" } };
+export const metadata: Metadata = { title: { default: "관리", template: "%s · 관리 · 마이리얼티" } };
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const admin = await requireAdmin();

@@ -60,7 +60,7 @@ KIND_LABEL = {
 
 
 def render_digest(user_email: str, rows: list[dict]) -> tuple[str, str, str]:
-    subject = f"[MyRealty] 오늘의 부동산 소식 {len(rows)}건"
+    subject = f"[마이리얼티] 오늘의 부동산 소식 {len(rows)}건"
     groups: dict[str, list[dict]] = {}
     for r in rows:
         groups.setdefault(r["item_label"] or "공통", []).append(r)

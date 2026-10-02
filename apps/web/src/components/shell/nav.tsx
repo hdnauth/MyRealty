@@ -49,7 +49,7 @@ export function Sidebar({ unread, email, isAdmin = false }: { unread: number; em
       <Link href="/" className="mb-6 flex items-center gap-2 px-2">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icons/icon.svg" alt="" className="h-8 w-8" />
-        <span className="text-lg font-bold tracking-tight">MyRealty</span>
+        <span className="text-lg font-bold tracking-tight">마이리얼티</span>
       </Link>
       <nav className="flex flex-col gap-0.5">
         {PRIMARY.map((n) => (
@@ -131,7 +131,7 @@ export function MobileTopBar({ unread }: { unread: number }) {
       <Link href="/" className="flex items-center gap-2">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icons/icon.svg" alt="" className="h-6 w-6" />
-        <span className="font-bold tracking-tight">MyRealty</span>
+        <span className="font-bold tracking-tight">마이리얼티</span>
       </Link>
       <div className="flex items-center gap-1">
         <ThemeToggle />

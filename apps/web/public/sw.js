@@ -27,10 +27,10 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {
-    data = { title: "MyRealty", body: event.data && event.data.text() };
+    data = { title: "마이리얼티", body: event.data && event.data.text() };
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || "MyRealty", {
+    self.registration.showNotification(data.title || "마이리얼티", {
       body: data.body || "",
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",

@@ -5,7 +5,7 @@ export default function GlobalError({ error, retry }: { error: Error & { digest?
   return (
     <html lang="ko">
       <body style={{ fontFamily: "system-ui, sans-serif", display: "grid", placeItems: "center", minHeight: "100dvh", margin: 0, padding: 16 }}>
-        <title>오류 · MyRealty</title>
+        <title>오류 · 마이리얼티</title>
         <div style={{ maxWidth: 380, textAlign: "center" }}>
           <h1 style={{ fontSize: 18 }}>페이지를 불러오지 못했습니다</h1>
           <p style={{ fontSize: 14, color: "#6b7280" }}>

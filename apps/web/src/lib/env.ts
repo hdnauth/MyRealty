@@ -57,6 +57,21 @@ export const env = {
   vapidSubject: opt("VAPID_SUBJECT") ?? "mailto:admin@example.com",
   appUrl: opt("APP_URL") ?? "http://localhost:3000",
   /**
+   * 앱 마켓 심사용 계정: 이 이메일은 메일을 보내지 않고 고정 6자리 코드로 로그인한다(심사자가 메일을 받을 수 없어서).
+   * 둘 다 있어야 켜진다. 관리자가 아닌 전용 계정을 쓰고, 심사가 끝나면 비운다.
+   */
+  reviewLogin: {
+    email: opt("REVIEW_LOGIN_EMAIL")?.trim().toLowerCase(),
+    code: /^\d{6}$/.test(opt("REVIEW_LOGIN_CODE") ?? "") ? opt("REVIEW_LOGIN_CODE") : undefined,
+  },
+  /** Android 앱(TWA) Digital Asset Links: 패키지명, 서명 인증서 SHA-256(쉼표 구분 — 업로드 키·Play 앱 서명 키) */
+  androidPackage: opt("ANDROID_PACKAGE_NAME") ?? "com.yarch.myrealty",
+  androidCertFingerprints: (opt("ANDROID_CERT_SHA256") ?? "").split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean),
+  /** 개인정보처리방침·탈퇴 안내에 표시할 문의 이메일(없으면 ADMIN_EMAILS 첫 번째) */
+  supportEmail: opt("SUPPORT_EMAIL") ?? emailList("ADMIN_EMAILS")[0],
+  /** 개인정보처리방침의 운영자(개인정보 보호책임자) 이름. 스토어 등록 개발자 이름과 맞춘다 */
+  operatorName: opt("OPERATOR_NAME") ?? "마이리얼티 운영자",
+  /**
    * 관심 부동산 개별 수집(등록 직후 바로 채우기). GitHub Actions 의 etl-item.yml 을 workflow_dispatch 로 실행한다.
    * 토큰: 이 리포 한정 fine-grained PAT, 권한 Actions: Read and write
    */

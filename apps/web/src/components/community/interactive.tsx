@@ -1,9 +1,10 @@
 "use client";
 
 import clsx from "clsx";
-import { Bell, BellOff, Flag, Heart, Sparkles } from "lucide-react";
+import { Ban, Bell, BellOff, Flag, Heart, Sparkles } from "lucide-react";
 import { useActionState, useOptimistic, useState, useTransition } from "react";
 import {
+  blockUserAction,
   createCommentAction,
   followAction,
   type FormState,
@@ -73,6 +74,31 @@ export function ReportButton({ target, id, reported }: { target: "post" | "comme
         </form>
       ) : null}
     </span>
+  );
+}
+
+/** 사용자 차단·해제. 차단하면 그 사용자의 글·댓글이 보이지 않는다(상대에게 알리지 않음) */
+export function BlockButton({ userId, nickname, blocked = false }: { userId: string; nickname: string; blocked?: boolean }) {
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      title={msg ?? undefined}
+      onClick={() => {
+        if (!blocked && !window.confirm(`${nickname}님을 차단할까요? 이 사용자의 글과 댓글이 보이지 않고 댓글 알림도 오지 않습니다. 설정 → 동네 이야기 내 활동에서 풀 수 있습니다.`)) return;
+        start(async () => {
+          const r = await blockUserAction(userId, !blocked);
+          setMsg(r.error ?? r.ok ?? null);
+          if (r.error) window.alert(r.error);
+        });
+      }}
+      className="inline-flex items-center gap-1 text-xs text-muted hover:text-up"
+    >
+      <Ban size={12} />
+      {blocked ? "차단 해제" : "차단"}
+    </button>
   );
 }
 

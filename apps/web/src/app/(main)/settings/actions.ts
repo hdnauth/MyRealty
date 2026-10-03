@@ -6,7 +6,9 @@ import { normalizeEmail } from "@/lib/auth/otp";
 import { cookies } from "next/headers";
 import { destroySession, ensureUser, requireUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
-import { AREA_UNIT_COOKIE, isAreaUnit } from "@/lib/format";
+import { AREA_UNIT_COOKIE, isAreaUnit, parseManwon } from "@/lib/format";
+import { DEFAULT_LTV, LTV_OPTIONS } from "@/lib/brief";
+import { isViewMode, VIEW_MODE_COOKIE } from "@/lib/view-mode";
 
 export async function logoutAction() {
   await destroySession();
@@ -43,6 +45,42 @@ export async function setAreaUnitAction(form: FormData) {
   if (!isAreaUnit(unit)) return;
   (await cookies()).set(AREA_UNIT_COOKIE, unit, { path: "/", maxAge: 60 * 60 * 24 * 365 * 2, sameSite: "lax" });
   refresh();
+}
+
+export async function setViewModeAction(form: FormData) {
+  const mode = form.get("mode");
+  if (!isViewMode(mode)) return;
+  (await cookies()).set(VIEW_MODE_COOKIE, mode, { path: "/", maxAge: 60 * 60 * 24 * 365 * 2, sameSite: "lax" });
+  refresh();
+}
+
+export type FinanceFormState = { error?: string; saved?: boolean };
+
+/**
+ * 내 자금(가용 현금·연소득·LTV): 매수 후보·관심 부동산의 "살 수 있나"를 계산한다. 게스트도 이 기기에 저장한다.
+ * 비우면 지운다.
+ */
+export async function saveFinanceProfileAction(_: FinanceFormState, form: FormData): Promise<FinanceFormState> {
+  const rawCash = String(form.get("cash") ?? "").trim();
+  const rawIncome = String(form.get("income") ?? "").trim();
+  const cash = parseManwon(rawCash);
+  const income = parseManwon(rawIncome);
+  if (rawCash && (cash === null || cash < 0)) return { error: "가용 현금을 읽을 수 없습니다. 예) 3억 5000" };
+  if (rawIncome && (income === null || income <= 0)) return { error: "연소득을 읽을 수 없습니다. 예) 8000만" };
+  const ltvRaw = Number(form.get("ltv"));
+  const ltv = (LTV_OPTIONS as readonly number[]).includes(ltvRaw) ? ltvRaw : DEFAULT_LTV;
+  let user;
+  try {
+    user = await ensureUser();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+  const rest = { ...user.settings };
+  delete rest.finance;
+  const settings = cash === null && income === null ? rest : { ...rest, finance: { cash, income, ltv } };
+  await sql`update users set settings = ${sql.json(settings)} where id = ${user.id}`;
+  refresh();
+  return { saved: true };
 }
 
 export async function deleteAccountAction(_: { error?: string }, form: FormData): Promise<{ error?: string }> {

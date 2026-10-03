@@ -4,6 +4,7 @@ import { formatDate, formatPct } from "@/lib/format";
 import type { WatchItem } from "@/lib/queries/items";
 import { itemLocation, type LocationCalibration, type LocCategory, locationCalibration, type LocDetail, openingEffects } from "@/lib/queries/location";
 import { ZONE_STAGES } from "@/lib/projects";
+import type { ViewMode } from "@/lib/view-mode";
 
 const CAT_LABEL: Record<string, string> = {
   subway: "지하철역", bus: "버스정류장", school: "학교", academy: "학원", hospital: "종합병원", clinic: "의원",
@@ -49,7 +50,7 @@ export function weightText(scores: Record<string, LocCategory>) {
     .join(" · ");
 }
 
-export async function LocationTab({ item }: { item: WatchItem }) {
+export async function LocationTab({ item, mode }: { item: WatchItem; mode: ViewMode }) {
   const [loc, effects, calib] = await Promise.all([itemLocation(item.id), openingEffects(item), locationCalibration()]);
   if (!loc) {
     return (
@@ -81,10 +82,14 @@ export async function LocationTab({ item }: { item: WatchItem }) {
             내 관심 부동산 {loc.myCount}곳 중 <b>{loc.myRank}위</b>
           </p>
         ) : null}
-        <p className="mt-3 text-[11px] text-muted">
-          {weightText(loc.scores)} 가중. 개수 항목은 거리 가중 후 포화 곡선(수도권 주거지 보통 수준 ≈ 63점)이라 도심 상권·학원가와 한적한 곳이
-          구별됩니다. 거리는 직선거리(공원은 경계까지, 규모 반영), 미수집 항목은 제외. 계산 {formatDate(loc.computed_at)}
-        </p>
+        {mode === "pro" ? (
+          <p className="mt-3 text-[11px] text-muted">
+            {weightText(loc.scores)} 가중. 개수 항목은 거리 가중 후 포화 곡선(수도권 주거지 보통 수준 ≈ 63점)이라 도심 상권·학원가와 한적한 곳이
+            구별됩니다. 거리는 직선거리(공원은 경계까지, 규모 반영), 미수집 항목은 제외. 계산 {formatDate(loc.computed_at)}
+          </p>
+        ) : (
+          <p className="mt-3 text-[11px] text-muted">역·직장·학교·마트·공원 등 8개 항목을 거리와 개수로 점수화했어요(수도권 주거지 보통 ≈ 63점). 계산 {formatDate(loc.computed_at)}</p>
+        )}
       </Card>
 
       <Card className="lg:col-span-2">
@@ -107,7 +112,7 @@ export async function LocationTab({ item }: { item: WatchItem }) {
         </ul>
       </Card>
 
-      {calib ? <CalibrationCard calib={calib} scores={loc.scores} /> : null}
+      {calib && mode === "pro" ? <CalibrationCard calib={calib} scores={loc.scores} /> : null}
 
       {dev ? (
         <Card className="lg:col-span-3">

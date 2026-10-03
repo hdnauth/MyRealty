@@ -141,3 +141,127 @@ export async function health(): Promise<Health> {
     return { ...base, db: "error", dbError: code ?? (e instanceof Error ? e.name : "error"), migrations: null };
   }
 }
+
+// ───────── 이용 지표(개요) ─────────
+
+export type UsageStats = {
+  /** 하루 단위 접속 기록이 시작된 날(0018 마이그레이션 이후 쌓인다) */
+  since: string | null;
+  dau: number;
+  wau: number;
+  mau: number;
+  /** 최근 60일에 생긴 사용자(게스트 포함) 코호트 */
+  cohort: {
+    users: number;
+    withItem: number;
+    members: number;
+    /** 사용자 생성 → 첫 관심 부동산까지(분, 중위) */
+    minutesToFirstItem: number | null;
+    /** 생긴 지 7일 넘은 사용자 중 7일째 이후 다시 접속한 비율의 분모·분자 */
+    d7Eligible: number;
+    d7Returned: number;
+  };
+  weeks: { week: string; newUsers: number; active: number }[];
+  notifications: { total: number; read: number; opened: number; pushed: number; emailed: number };
+  byKind: { kind: string; total: number; opened: number }[];
+  features: { finance: number; regionRequests: number; groups: Record<string, number> };
+};
+
+export async function usageStats(): Promise<UsageStats> {
+  const today = sql`(now() at time zone 'Asia/Seoul')::date`;
+  const [[act], [co], weeks, [nt], byKind, [ft], groups] = await Promise.all([
+    sql<{ since: string | null; dau: number; wau: number; mau: number }[]>`
+      select min(day)::text as since,
+        count(distinct user_id) filter (where day = ${today})::int as dau,
+        count(distinct user_id) filter (where day > ${today} - 7)::int as wau,
+        count(distinct user_id) filter (where day > ${today} - 30)::int as mau
+      from user_active_days`,
+    sql<UsageStats["cohort"][]>`
+      with c as (
+        select u.id, u.email, u.created_at,
+          (select min(w.created_at) from watch_items w where w.user_id = u.id) as first_item
+        from users u where u.created_at > now() - interval '60 days'
+      )
+      select count(*)::int as users,
+        count(*) filter (where first_item is not null)::int as "withItem",
+        count(*) filter (where email is not null)::int as members,
+        (percentile_cont(0.5) within group (order by extract(epoch from first_item - created_at) / 60)
+          filter (where first_item is not null))::float8 as "minutesToFirstItem",
+        count(*) filter (where created_at <= now() - interval '7 days')::int as "d7Eligible",
+        count(*) filter (where created_at <= now() - interval '7 days' and (
+          exists (select 1 from user_active_days a where a.user_id = c.id and a.day >= (c.created_at at time zone 'Asia/Seoul')::date + 7)
+          or exists (select 1 from sessions s where s.user_id = c.id and s.last_seen_at >= c.created_at + interval '7 days')))::int as "d7Returned"
+      from c`,
+    sql<{ week: string; newUsers: number; active: number }[]>`
+      select to_char(w, 'MM.DD') as week,
+        (select count(*) from users u where u.created_at >= w and u.created_at < w + interval '7 days')::int as "newUsers",
+        (select count(distinct a.user_id) from user_active_days a where a.day >= w::date and a.day < w::date + 7)::int as active
+      from generate_series(date_trunc('week', now()) - interval '7 weeks', date_trunc('week', now()), interval '1 week') w
+      order by w`,
+    sql<UsageStats["notifications"][]>`
+      select count(*)::int as total, count(read_at)::int as read, count(opened_at)::int as opened,
+        count(pushed_at)::int as pushed, count(emailed_at)::int as emailed
+      from notifications where created_at > now() - interval '30 days'`,
+    sql<UsageStats["byKind"]>`
+      select kind, count(*)::int as total, count(opened_at)::int as opened
+      from notifications where created_at > now() - interval '30 days' group by kind order by count(*) desc limit 8`,
+    sql<{ finance: number; regionRequests: number }[]>`
+      select (select count(*) from users where settings ? 'finance')::int as finance,
+        (select count(*) from region_requests where created_at > now() - interval '30 days')::int as "regionRequests"`,
+    sql<{ group_tag: string; n: number }[]>`select group_tag, count(*)::int as n from watch_items group by 1`,
+  ]);
+  return {
+    since: act?.since ?? null,
+    dau: act?.dau ?? 0,
+    wau: act?.wau ?? 0,
+    mau: act?.mau ?? 0,
+    cohort: co,
+    weeks,
+    notifications: nt,
+    byKind,
+    features: { finance: ft.finance, regionRequests: ft.regionRequests, groups: Object.fromEntries(groups.map((g) => [g.group_tag, g.n])) },
+  };
+}
+
+// ───────── 수집 지역 ─────────
+
+export type TargetRow = {
+  sgg_cd: string;
+  name: string | null;
+  enabled: boolean;
+  created_at: string;
+  backfilled_to: string | null;
+  backfill_months: number;
+  items: number;
+  requests: number;
+  trades: number;
+  last_deal: string | null;
+  indicators: boolean;
+};
+
+export type RegionRequestRow = { id: number; sgg_cd: string; name: string | null; status: "enabled" | "pending" | "rejected"; created_at: string; email: string | null; same: number };
+
+export async function regionAdmin() {
+  const [targets, pending, recent] = await Promise.all([
+    sql<TargetRow[]>`
+      select t.sgg_cd, t.name, t.enabled, t.created_at::text, t.backfilled_to::text, t.backfill_months,
+        (select count(*) from watch_items w where w.sgg_cd = t.sgg_cd)::int as items,
+        (select count(*) from region_requests r where r.sgg_cd = t.sgg_cd)::int as requests,
+        coalesce(x.n, 0)::int as trades, x.last_deal::text as last_deal,
+        exists (select 1 from series s where s.code = 'ind.temp.' || t.sgg_cd) as indicators
+      from collect_targets t
+      left join lateral (select count(*) as n, max(deal_date) as last_deal from transactions where sgg_cd = t.sgg_cd) x on true
+      order by t.enabled desc, t.created_at desc`,
+    // 대기 요청: 시군구별로 묶어 가장 오래된 요청 하나와 요청 수
+    sql<RegionRequestRow[]>`
+      select distinct on (r.sgg_cd) r.id::int, r.sgg_cd, r.name, r.status, r.created_at::text, u.email,
+        (select count(*) from region_requests r2 where r2.sgg_cd = r.sgg_cd and r2.status = 'pending')::int as same
+      from region_requests r left join users u on u.id = r.user_id
+      where r.status = 'pending' order by r.sgg_cd, r.created_at`,
+    sql<RegionRequestRow[]>`
+      select r.id::int, r.sgg_cd, r.name, r.status, r.created_at::text, u.email, 1 as same
+      from region_requests r left join users u on u.id = r.user_id
+      order by r.created_at desc limit 30`,
+  ]);
+  return { targets, pending, recent, cap: env.regionTargetCap, enabled: targets.filter((t) => t.enabled).length };
+}

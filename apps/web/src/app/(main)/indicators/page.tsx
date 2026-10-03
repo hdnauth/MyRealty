@@ -4,14 +4,16 @@ import { LineSeriesChart, Sparkline } from "@/components/charts/series-chart";
 import { SentimentCard } from "@/components/community/sentiment-card";
 import { ContribBars } from "@/components/indicators/contrib-bars";
 import { type JeonseItemOption, JeonseCheck } from "@/components/indicators/jeonse-check";
-import { BacktestCard, InsightCard } from "@/components/indicators/insight-card";
+import { BacktestCard, InsightCard, MarketVerdictCard } from "@/components/indicators/insight-card";
+import { ViewModeToggle } from "@/components/shell/view-mode-toggle";
+import { getViewMode } from "@/lib/view-mode";
 import { Simulator } from "@/components/indicators/simulator";
 import { Badge, Card, CardHeader, EmptyState, Notice, PageHeader, Stat, Tabs } from "@/components/ui";
 import { Term } from "@/components/ui/term";
 import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatManwon, formatPct } from "@/lib/format";
-import { backtestInsights, marketInsights } from "@/lib/insights";
+import { backtestInsights, marketInsights, MIN_BACKTEST_MONTHS, rankInsights, signalRecord } from "@/lib/insights";
 import { change, INSIGHT_REGION_KEYS, indicatorRegions, MACRO_CODES, last, type Point, seriesMeta, seriesValues, TEMP_FACTORS, tempBand } from "@/lib/queries/indicators";
 import { listItems } from "@/lib/queries/items";
 import { pipelineHints } from "@/lib/queries/pipeline";
@@ -52,7 +54,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
   const since = new Date(new Date().getFullYear() - 8, 0, 1).toISOString().slice(0, 10);
   const macroCodes = MACRO_CODES;
   // 지역 목록이 있어야 정해지는 지역 지표만 다음 단계로 두고 나머지는 한 번에 조회
-  const [user, regions, macroV, meta, items, official] = await Promise.all([
+  const [user, regions, macroV, meta, items, official, mode] = await Promise.all([
     pageUser(uid),
     indicatorRegions(uid),
     seriesValues(macroCodes, since),
@@ -64,6 +66,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
       join official_prices o on o.target_key = w.pnu or o.target_key like w.pnu || '|%'
       where w.user_id = ${uid} and o.target_type in ('apt_unit', 'house')
       order by w.id, o.year desc`,
+    getViewMode(),
   ]);
   const sgg = regions.find((r) => r.sgg === sp.sgg)?.sgg ?? regions[0]?.sgg;
 
@@ -86,7 +89,15 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
   const insightInput = { ...v, ...Object.fromEntries(INSIGHT_REGION_KEYS.map((k) => [k, r(k)])) };
   const insights = marketInsights(insightInput);
   const bt = view === "summary" ? backtestInsights(insightInput) : null;
-  const record = new Map((bt?.rules ?? []).map((x) => [x.id, x]));
+  // 채점 기간이 짧으면 규칙별 적중률을 해석 옆에 붙이지 않는다(표는 전문 보기에서 그대로)
+  const record = new Map((bt && bt.months >= MIN_BACKTEST_MONTHS ? bt.rules : []).map((x) => [x.id, x]));
+  const ranked = rankInsights(insights, bt);
+  const signal = signalRecord(insights, bt);
+  const pro = mode === "pro";
+  // 최근 달은 신고 기한(30일) 때문에 덜 잡힌다 — 기본 보기는 3개월 평균으로
+  const thisMonth = `${new Date().toISOString().slice(0, 7)}-01`;
+  const volPts = r("vol").filter(([d]) => d < thisMonth).slice(-3);
+  const vol3 = volPts.length ? volPts.reduce((a, [, x]) => a + x, 0) / volPts.length : null;
   const regionName = regions.find((g) => g.sgg === sgg)?.name ?? null;
 
   const temp = last(r("ind.temp"));
@@ -128,7 +139,10 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
 
       <Tabs active={view} items={VIEWS.map((x) => ({ ...x, href: q({ view: x.key }) }))} />
 
-      {view === "summary" ? <InsightCard insights={insights} region={regionName} record={record} /> : null}
+      {view === "summary" && pro ? <InsightCard insights={insights} region={regionName} record={record} /> : null}
+      {view === "summary" && !pro && sgg ? (
+        <MarketVerdictCard insights={insights} ranked={ranked} region={regionName} record={record} signal={signal} temp={temp} band={band} />
+      ) : null}
 
       {view === "macro" || view === "tools" ? null : !sgg ? (
         <Card>
@@ -143,7 +157,20 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
         </Card>
       ) : (
         <>
+          {view === "summary" && !pro ? (
+            <Card className="p-4">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <Stat label="가격 1년 변화" value={formatPct(change(r("idx"), 12))} sub={<span className="text-muted">최근 3개월 {formatPct(change(r("idx"), 3))}</span>} />
+                <Stat label="84㎡ 아파트 중간 가격" value={formatManwon(last(r("med84")), { short: true })} />
+                <Stat label="전세가 ÷ 매매가" value={formatPct(last(r("jr")), 1, false)} sub={<span className="text-muted">높을수록 갭이 작음</span>} />
+                <Stat label="월 매매(최근 3개월 평균)" value={vol3 !== null ? `${Math.round(vol3).toLocaleString()}건` : "-"} sub={<span className="text-muted">집계 중인 이번 달 제외</span>} />
+              </div>
+            </Card>
+          ) : null}
           {view === "summary" ? (
+          <details open={pro} className="group">
+          <summary className={pro ? "hidden" : "cursor-pointer px-1 text-sm font-medium text-accent"}>숫자로 더 보기 — 온도계 구성·조합 지표·규칙별 과거 성적</summary>
+          <div className={pro ? "space-y-4" : "mt-4 space-y-4"}>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card className="p-4">
               <div className="flex items-start justify-between">
@@ -175,9 +202,10 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
               </div>
             </Card>
           </div>
+          {bt ? <BacktestCard bt={bt} /> : null}
+          </div>
+          </details>
           ) : null}
-
-          {view === "summary" && bt ? <BacktestCard bt={bt} /> : null}
           {view === "summary" ? (
             <div>
               <SentimentCard sgg={sgg} region={regionName} />
@@ -357,6 +385,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
 
       {view === "tools" || view === "burden" ? <Simulator defaultPrice={defaultPrice} defaultRate={mortgage} defaultIncome={7185} /> : null}
       {view === "tools" ? <JeonseCheck items={jeonseItems} /> : null}
+      <ViewModeToggle mode={mode} what="온도계 구성·회귀·과거 성적 표" />
     </div>
   );
 }

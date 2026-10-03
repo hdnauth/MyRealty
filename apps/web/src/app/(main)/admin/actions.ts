@@ -154,3 +154,51 @@ export async function cleanupAction(): Promise<AdminActionState> {
   refresh();
   return { ok: `오래된 로그인 코드 ${otp.count}건, 만료 세션 ${ses.count}건을 정리했습니다.` };
 }
+
+// ───────── 수집 지역 ─────────
+
+const SGG = /^\d{5}$/;
+
+/** 대기 중인 지역 요청 켜기: 수집 대상을 켜고 그 시군구의 대기 요청을 모두 enabled 로 */
+export async function enableRegionAction(_: AdminActionState, form: FormData): Promise<AdminActionState> {
+  const admin = await requireAdmin();
+  const sgg = String(form.get("sgg") ?? "");
+  if (!SGG.test(sgg)) return { error: "시군구 코드가 올바르지 않습니다." };
+  const [req] = await sql<{ name: string | null }[]>`select name from region_requests where sgg_cd = ${sgg} order by created_at limit 1`;
+  const name = req?.name ?? null;
+  await sql.begin(async (tx) => {
+    await tx`insert into collect_targets (sgg_cd, name) values (${sgg}, ${name})
+             on conflict (sgg_cd) do update set enabled = true, name = coalesce(collect_targets.name, excluded.name)`;
+    await tx`update region_requests set status = 'enabled' where sgg_cd = ${sgg} and status = 'pending'`;
+  });
+  await audit(admin, "region.enable", name ?? sgg, { sgg });
+  refresh();
+  return { ok: `${name ?? sgg} 수집을 켰습니다. 다음 매일 수집부터 채워집니다.` };
+}
+
+/** 대기 중인 지역 요청 거절(수집하지 않음) */
+export async function rejectRegionAction(_: AdminActionState, form: FormData): Promise<AdminActionState> {
+  const admin = await requireAdmin();
+  const sgg = String(form.get("sgg") ?? "");
+  if (!SGG.test(sgg)) return { error: "시군구 코드가 올바르지 않습니다." };
+  const r = await sql`update region_requests set status = 'rejected' where sgg_cd = ${sgg} and status = 'pending'`;
+  await audit(admin, "region.reject", sgg, { count: r.count });
+  refresh();
+  return { ok: `대기 요청 ${r.count}건을 거절했습니다.` };
+}
+
+/**
+ * 수집 대상 켜기/끄기. 끄면 매일 수집에서 빠지고 모은 실거래는 그대로 남는다.
+ * 관심 부동산이 있는 지역을 끄면 그 사용자들의 새 거래·알림이 멈추므로 확인 문구로 알린다(화면).
+ */
+export async function setTargetEnabledAction(_: AdminActionState, form: FormData): Promise<AdminActionState> {
+  const admin = await requireAdmin();
+  const sgg = String(form.get("sgg") ?? "");
+  if (!SGG.test(sgg)) return { error: "시군구 코드가 올바르지 않습니다." };
+  const enabled = form.get("enabled") === "1";
+  const [t] = await sql<{ name: string | null }[]>`update collect_targets set enabled = ${enabled} where sgg_cd = ${sgg} returning name`;
+  if (!t) return { error: "수집 대상을 찾을 수 없습니다." };
+  await audit(admin, enabled ? "region.target_on" : "region.target_off", t.name ?? sgg, { sgg });
+  refresh();
+  return { ok: enabled ? `${t.name ?? sgg} 수집을 켰습니다.` : `${t.name ?? sgg} 수집을 껐습니다(모은 데이터는 남습니다).` };
+}

@@ -74,3 +74,27 @@ export async function vworldGeocode(address: string, kind: "PARCEL" | "ROAD"): P
   const y = Number(resp.result?.point?.y);
   return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
 }
+
+/** 좌표 → 법정동(코드·시도·시군구·읍면동). 바다·국외 등 결과가 없으면 null */
+export async function vworldReverse(lng: number, lat: number): Promise<{ lawdCd: string; sido: string; sigungu: string; emd: string } | null> {
+  if (!env.vworldKey) return null;
+  const q = withKey({
+    service: "address",
+    request: "getAddress",
+    version: "2.0",
+    crs: "epsg:4326",
+    point: `${lng},${lat}`,
+    format: "json",
+    type: "PARCEL",
+    zipcode: "false",
+    simple: "false",
+  });
+  const res = await fetch(`https://api.vworld.kr/req/address?${q}`, { cache: "no-store", signal: AbortSignal.timeout(8_000) });
+  const resp = (await res.json())?.response;
+  if (resp?.status === "NOT_FOUND") return null;
+  if (resp?.status !== "OK") throw new Error(`VWorld reverse ${resp?.error?.code ?? res.status}`);
+  const st = resp.result?.[0]?.structure;
+  const code = String(st?.level4LC ?? "");
+  if (!/^\d{10}$/.test(code)) return null;
+  return { lawdCd: code, sido: st.level1 ?? "", sigungu: st.level2 ?? "", emd: st.level4L ?? "" };
+}

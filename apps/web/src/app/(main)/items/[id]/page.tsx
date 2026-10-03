@@ -1,6 +1,7 @@
 import { Map as MapIcon, Pencil } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { ITEM_TABS } from "@/lib/item-tabs";
 import { TypeIcon } from "@/components/items/item-card";
 import { Badge, LinkButton, Tabs } from "@/components/ui";
 import { pageUser, sessionUserId } from "@/lib/auth/session";
@@ -15,14 +16,15 @@ import { ItemSwitcher, type SwitcherItem } from "@/components/items/item-switche
 import { AreaBar } from "@/components/items/area-bar";
 import { clusterAreas } from "@/lib/units";
 import { sql } from "@/lib/db";
-import { NearbyTab } from "./tabs/nearby";
-import { AnalysisTab } from "./tabs/analysis";
 import { LocationTab } from "./tabs/location";
 import { NewsTab } from "./tabs/news";
 import { NotesTab } from "./tabs/notes";
 import { TalkTab } from "./tabs/talk";
 import { OverviewTab } from "./tabs/overview";
 import { PriceTab } from "./tabs/price";
+import { ViewModeToggle } from "@/components/shell/view-mode-toggle";
+import { readFinanceProfile } from "@/lib/brief";
+import { getViewMode } from "@/lib/view-mode";
 
 export async function generateMetadata(props: PageProps<"/items/[id]">): Promise<Metadata> {
   const [uid, { id }] = await Promise.all([sessionUserId(), props.params]);
@@ -30,20 +32,12 @@ export async function generateMetadata(props: PageProps<"/items/[id]">): Promise
   return { title: item?.label ?? "부동산" };
 }
 
-const TABS = [
-  { key: "overview", label: "개요" },
-  { key: "price", label: "시세" },
-  { key: "nearby", label: "주변" },
-  { key: "location", label: "입지" },
-  { key: "news", label: "소식" },
-  { key: "talk", label: "이야기" },
-  { key: "analysis", label: "분석" },
-  { key: "notes", label: "메모" },
-] as const;
+/** 질문 중심 5개 탭 — 예전 탭 주소(주변·분석·이야기)는 proxy 가 합쳐진 위치로 보낸다(lib/item-tabs) */
+const TABS = ITEM_TABS;
 
 export default async function ItemPage(props: PageProps<"/items/[id]">) {
   const [uid, { id }, sp] = await Promise.all([sessionUserId(), props.params, props.searchParams]);
-  const [user, first, unit, siblings] = await Promise.all([
+  const [user, first, unit, siblings, mode] = await Promise.all([
     pageUser(uid),
     getItem(uid, id),
     getAreaUnit(),
@@ -51,6 +45,7 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
     sql<SwitcherItem[]>`
       select id, label, property_type, group_tag from watch_items where user_id = ${uid}
       order by array_position(array['owned', 'candidate', 'watch', 'tenant'], group_tag), sort_order, created_at`,
+    getViewMode(),
   ]);
   if (!first || !user) notFound();
   let item = first;
@@ -58,7 +53,7 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
   if (item.lng === null && (await fillMissingItemGeoms(user.id).catch(() => 0)) > 0) item = (await getItem(uid, id)) ?? item;
   const tab = TABS.find((t) => t.key === sp.tab)?.key ?? "overview";
   const welcome = sp.welcome === "1";
-  const areaTab = tab === "overview" || tab === "price" || tab === "nearby";
+  const areaTab = tab === "overview" || tab === "price";
   const [[status, run], sales] = await Promise.all([
     tab === "overview" ? Promise.all([itemDataStatus(item), latestRun(item.id)]) : Promise.resolve([null, null] as const),
     // 평형 막대: 이 단지에서 최근 3년 거래된 평형(많은 순 6개, 면적 순)
@@ -110,20 +105,29 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
 
       {status ? <DataStatusCard item={item} st={status} welcome={welcome} run={run} runnerReady={collectRunner() !== null} /> : null}
 
-      <Tabs active={tab} items={TABS.map((t) => ({ ...t, href: `/items/${item.id}?tab=${t.key}${viewing !== null && (t.key === "overview" || t.key === "price" || t.key === "nearby") ? `&area=${viewing}` : ""}` }))} />
+      <Tabs active={tab} items={TABS.map((t) => ({ ...t, href: `/items/${item.id}?tab=${t.key}${viewing !== null && (t.key === "overview" || t.key === "price") ? `&area=${viewing}` : ""}` }))} />
 
       {areaTab && (areaTypes.length > 1 || (areaTypes.length === 1 && !item.area_m2)) ? (
         <AreaBar itemId={item.id} tab={tab} types={areaTypes} saved={item.area_m2 ? Number(item.area_m2) : null} viewing={viewing} dongHo={item.dong_ho} />
       ) : null}
 
-      {tab === "overview" ? <OverviewTab item={viewItem} viewing={viewing !== null} /> : null}
-      {tab === "price" ? <PriceTab item={viewItem} all={sp.all === "1"} /> : null}
-      {tab === "nearby" ? <NearbyTab item={viewItem} all={sp.all === "1"} /> : null}
-      {tab === "location" ? <LocationTab item={item} /> : null}
-      {tab === "news" ? <NewsTab item={item} /> : null}
-      {tab === "analysis" ? <AnalysisTab item={item} /> : null}
+      {tab === "overview" ? <OverviewTab item={viewItem} viewing={viewing !== null} mode={mode} profile={readFinanceProfile(user.settings)} /> : null}
+      {tab === "price" ? <PriceTab item={viewItem} all={sp.all === "1"} nall={sp.nall === "1"} mode={mode} /> : null}
+      {tab === "location" ? <LocationTab item={item} mode={mode} /> : null}
+      {tab === "news" ? (
+        <div className="space-y-4">
+          <NewsTab item={item} />
+          <div id="talk" className="scroll-mt-20">
+            <TalkTab item={item} />
+          </div>
+        </div>
+      ) : null}
       {tab === "notes" ? <NotesTab item={item} /> : null}
-      {tab === "talk" ? <TalkTab item={item} /> : null}
+      {tab !== "notes" && tab !== "news" ? (
+        <div className="mt-6">
+          <ViewModeToggle mode={mode} what={tab === "location" ? "산식·점수 검증" : "세부 숫자·통계 수치"} />
+        </div>
+      ) : null}
     </div>
   );
 }

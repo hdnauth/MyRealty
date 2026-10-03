@@ -81,6 +81,8 @@ export const env = {
   githubDispatchRef: opt("GITHUB_DISPATCH_REF") ?? "main",
   /** 로컬 개발: 1 이면 GitHub 대신 services/etl 에서 `uv run myrealty item` 을 직접 띄운다 */
   itemCollectLocal: opt("ITEM_COLLECT_LOCAL") === "1",
+  /** 지도 "이 지역 데이터 모으기"로 바로 켜 주는 수집 대상(시군구) 상한. 넘으면 요청만 남기고 운영자가 켠다(공공 API 일일 한도 보호) */
+  regionTargetCap: Number(opt("REGION_TARGET_CAP") ?? 40),
   isDev: process.env.NODE_ENV !== "production",
 };
 

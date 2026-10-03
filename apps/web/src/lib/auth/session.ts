@@ -42,6 +42,8 @@ export type UserSettings = {
   digestHour?: number;
   pushEnabled?: boolean;
   instantPriority?: number;
+  /** 내 자금(가용 현금·연소득 만원, LTV 0~1) — lib/brief readFinanceProfile */
+  finance?: { cash: number | null; income: number | null; ltv: number };
 };
 
 export async function clientIp() {
@@ -119,6 +121,8 @@ export const getUser = cache(async (): Promise<User | null> => {
       await sql`
         update sessions set last_seen_at = now(), expires_at = greatest(expires_at, coalesce(${ext}::timestamptz, expires_at))
         where id = ${tok.sid}`;
+      // 하루 단위 접속 기록(관리 화면 활성·재방문 지표). 10분에 한 번만 오므로 부담이 작다
+      await sql`insert into user_active_days (user_id, day) values (${r.id}, (now() at time zone 'Asia/Seoul')::date) on conflict do nothing`.catch(() => {});
     });
   }
   const isEnvAdmin = r.email ? isAdminEmail(r.email, env.adminEmails) : false;

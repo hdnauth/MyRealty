@@ -13,6 +13,8 @@ import { activeFilterCount, COMPLEX_TYPES, EMPTY_FILTERS, type MapFilters, type 
 import { PHASE_COLOR, ZONE_STAGES, zonePhase } from "@/lib/projects";
 import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
 import { ComplexTrades, type Trade } from "./complex-trades";
+import { CoverageNote } from "./coverage-note";
+import { MapIntro } from "./map-intro";
 import { FilterBar, FilterPanel } from "./filter-panel";
 import { MapSearch } from "./map-search";
 import { type BaseMap, type BBox, clusterByDistance, createLeafletMap, distanceKm, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, declutter, pinLabel, satelliteSources, shortName, tileSources, vworldWmsUrl } from "./engines";
@@ -857,6 +859,9 @@ export function RealtyMap({
   const clusterCount = itemClusters.length;
   // 시트 바로 위에 붙는 지도 위 요소들(모바일). 데스크톱은 지도 아래 모서리 기준
   const aboveSheet = "bottom-[calc(var(--sheet-h)+0.75rem)] lg:bottom-8";
+  // 화면에 거래가 하나도 없고 동네 수준으로 확대했으면, 그 시군구가 아직 수집 전인지 확인한다
+  const viewCenter: [number, number] | null = bbox ? [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2] : null;
+  const emptyArea = Boolean(bbox && bbox[2] - bbox[0] < 0.3 && !searching && !searchError && points.length === 0 && !filterCount);
 
   return (
     <div
@@ -996,7 +1001,7 @@ export function RealtyMap({
                 </div>
                 <div className="mt-2 flex gap-3 text-sm">
                   <Link href={`/items/${focus.id}`} className="text-accent">상세</Link>
-                  <Link href={`/items/${focus.id}?tab=nearby`} className="text-accent">비슷한 주변 거래</Link>
+                  <Link href={`/items/${focus.id}?tab=price#nearby`} className="text-accent">비슷한 주변 거래</Link>
                   <Link href={`/items/${focus.id}?tab=location`} className="text-accent">입지</Link>
                 </div>
                 {focus.complex_id && detail ? <ComplexTrades key={focus.id} trades={detail.trades} unit={unit} area={focus.area_m2} limit={6} /> : null}
@@ -1042,6 +1047,9 @@ export function RealtyMap({
                 ) : null}
               </div>
             ) : (
+              <>
+              {sorted.length === 0 ? <CoverageNote center={viewCenter} active={emptyArea} /> : null}
+              {items.length === 0 && missingItems.length === 0 ? <MapIntro /> : null}
               <ul className={clsx("divide-y divide-border transition-opacity", searching && "opacity-50")} aria-busy={searching}>
                 {filterCount ? (
                   <li className="flex items-center justify-between gap-2 bg-accent-soft/40 px-4 py-2 text-xs">
@@ -1063,6 +1071,7 @@ export function RealtyMap({
                     {filterCount ? "이 화면에는 조건에 맞는 곳이 없습니다. 지도를 옮기거나 축소하고, 조건을 넓혀 보세요." : "이 영역에 해당 기간 거래가 없습니다."}
                   </li>
                 ) : null}
+
                 {sorted.map((p) => (
                   <li key={p.key}>
                     <button type="button" onClick={() => select(p)} className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-surface-2">
@@ -1084,6 +1093,7 @@ export function RealtyMap({
                   </li>
                 ))}
               </ul>
+              </>
             )}
           </div>
         </aside>
@@ -1304,6 +1314,11 @@ export function RealtyMap({
                   <Loader2 size={14} className="animate-spin" /> 이 화면 {filterCount ? "조건 검색" : "거래 조회"} 중…
                 </div>
               )}
+            </div>
+          ) : null}
+          {sheet === "peek" && !sel && emptyArea ? (
+            <div className={clsx("absolute left-2 right-16 z-[510] lg:hidden", aboveSheet)}>
+              <CoverageNote center={viewCenter} active compact />
             </div>
           ) : null}
           {notice ? (

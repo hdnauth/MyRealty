@@ -18,6 +18,10 @@ const LABELS: Record<string, string> = {
   "allowlist.add": "허용 목록 추가",
   "allowlist.remove": "허용 목록 삭제",
   "system.cleanup": "정리 작업",
+  "region.enable": "지역 요청 켜기",
+  "region.reject": "지역 요청 거절",
+  "region.target_on": "수집 지역 켜기",
+  "region.target_off": "수집 지역 끄기",
 };
 
 export default async function AdminAudit() {

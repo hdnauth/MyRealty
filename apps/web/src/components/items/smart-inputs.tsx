@@ -94,12 +94,14 @@ export function ChoiceChips({
   options,
   defaultValue,
   hint,
+  onChange,
 }: {
   name: string;
   label: string;
   options: readonly { value: string; label: string }[];
   defaultValue: string;
   hint?: string;
+  onChange?: (v: string) => void;
 }) {
   const [v, setV] = useState(defaultValue);
   const opts = options.some((o) => o.value === defaultValue) ? options : [...options, { value: defaultValue, label: defaultValue }];
@@ -114,7 +116,10 @@ export function ChoiceChips({
             key={o.value}
             role="radio"
             aria-checked={v === o.value}
-            onClick={() => setV(o.value)}
+            onClick={() => {
+              setV(o.value);
+              onChange?.(o.value);
+            }}
             className={`rounded-full border px-3 py-1.5 text-[13px] ${v === o.value ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text"}`}
           >
             {o.label}

@@ -89,14 +89,16 @@ export function jeonseCheck(p: { deposit: number | null; role: "landlord" | "ten
   const gap = p.deposit && current ? current - p.deposit : null; // 음수면 시세가 보증금보다 낮음
   // 같은 기간 신규 계약과 갱신 계약(5% 상한) 중위 — 신규가 훨씬 비싸면 전세 수요 압력
   const recent6 = jeonse.filter((x) => (now - t(x.deal_date)) / (30.44 * DAY) < 6);
-  const newMedian = median(recent6.filter((x) => x.contract_type === "new").map((x) => x.price));
-  const renewalMedian = median(recent6.filter((x) => x.contract_type === "renewal").map((x) => x.price));
+  const newPrices = recent6.filter((x) => x.contract_type === "new").map((x) => x.price);
+  const renewalPrices = recent6.filter((x) => x.contract_type === "renewal").map((x) => x.price);
+  const newMedian = median(newPrices);
+  const renewalMedian = median(renewalPrices);
   let level: "양호" | "주의" | "위험" | "판단불가" = "판단불가";
   if (gap !== null && p.deposit) {
     const r = gap / p.deposit;
     level = r >= -0.03 ? "양호" : r >= -0.1 ? "주의" : "위험";
   }
-  return { current, twoYearsAgo, trend, gap, level, samples: within(0, 6).length, newMedian, renewalMedian };
+  return { current, twoYearsAgo, trend, gap, level, samples: within(0, 6).length, newMedian, renewalMedian, newN: newPrices.length, renewalN: renewalPrices.length };
 }
 
 // ───────── 가격 추이 겹쳐 보기 · 상대 가격 위치 ─────────

@@ -8,7 +8,10 @@ import { formatDate, timeAgo } from "@/lib/format";
 import { getSiteSettings } from "@/lib/site-settings";
 import { cookies } from "next/headers";
 import { getAreaUnit } from "@/lib/area-unit";
-import { logoutAction, revokeSessionAction, setAreaUnitAction, updateNotificationSettingsAction } from "./actions";
+import { logoutAction, revokeSessionAction, setAreaUnitAction, setViewModeAction, updateNotificationSettingsAction } from "./actions";
+import { FinanceProfileForm } from "@/components/brief/finance-form";
+import { readFinanceProfile } from "@/lib/brief";
+import { getViewMode } from "@/lib/view-mode";
 import { DeleteAccount } from "./delete-account";
 import { PushManager } from "./push-manager";
 import { ThemePicker } from "@/components/shell/theme-picker";
@@ -20,7 +23,7 @@ export const metadata: Metadata = { title: "설정" };
 
 export default async function SettingsPage() {
   const uid = await sessionUserId();
-  const [viewer, sessions, current, [ai], site, unit, aiRow] = await Promise.all([
+  const [viewer, sessions, current, [ai], site, unit, aiRow, mode] = await Promise.all([
     pageUser(uid),
     sql<{ id: string; user_agent: string | null; created_at: string; last_seen_at: string | null; remember: boolean }[]>`
       select id, user_agent, created_at::text, last_seen_at::text, remember from sessions
@@ -33,6 +36,7 @@ export default async function SettingsPage() {
     getSiteSettings(),
     getAreaUnit(),
     userAiRow(uid),
+    getViewMode(),
   ]);
   const user = viewer ?? { email: null, isGuest: true, isAdmin: false, isEnvAdmin: false, settings: {} as Record<string, unknown> };
   const member = !user.isGuest;
@@ -100,6 +104,35 @@ export default async function SettingsPage() {
               </button>
             </form>
           ))}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="보기 방식" sub="기본 보기는 판정과 이유를 먼저 보여 주고, 통계 수치(z·회귀·분위)와 검증 표는 접어 둡니다. 이 기기에 저장됩니다." />
+        <div className="flex gap-2 px-4 pb-4">
+          {([
+            ["simple", "기본 보기", "판정 · 이유 3가지 · 쉬운 말"],
+            ["pro", "전문 보기", "모든 지표 · 검증 표 · 산식"],
+          ] as const).map(([k, label, ex]) => (
+            <form key={k} action={setViewModeAction} className="flex-1">
+              <input type="hidden" name="mode" value={k} />
+              <button
+                type="submit"
+                aria-pressed={mode === k}
+                className={`w-full rounded-lg border px-3 py-2 text-left ${mode === k ? "border-accent bg-accent-soft" : "border-border hover:bg-surface-2"}`}
+              >
+                <span className={`block text-sm font-semibold ${mode === k ? "text-accent" : ""}`}>{label}</span>
+                <span className="block text-xs text-muted">{ex}</span>
+              </button>
+            </form>
+          ))}
+        </div>
+      </Card>
+
+      <Card id="finance" className="scroll-mt-20">
+        <CardHeader title="내 자금" sub="매수 후보·관심 부동산과 단지 화면에서 “내 자금으로 살 수 있나”를 계산합니다. 비우고 저장하면 지웁니다." />
+        <div className="px-4 pb-4">
+          <FinanceProfileForm profile={readFinanceProfile(viewer?.settings)} />
         </div>
       </Card>
 

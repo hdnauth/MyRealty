@@ -13,7 +13,7 @@ import { getAreaUnit } from "@/lib/area-unit";
 import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { env } from "@/lib/env";
 import { formatArea, formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceLabel, unitPriceName } from "@/lib/format";
-import { monthlyRollingMedian } from "@/lib/item-analytics";
+import { floorPremiums, jeonseCheck, monthlyRollingMedian } from "@/lib/item-analytics";
 import { mapComplexHref, registerComplexHref } from "@/lib/links";
 import { isPropertyType, PROPERTY_TYPES } from "@/lib/property";
 import { complexLocation, complexTransactions, getComplex } from "@/lib/queries/complexes";
@@ -22,6 +22,14 @@ import { ZONE_STAGES } from "@/lib/projects";
 import { myComplexItems, summarize } from "@/lib/queries/items";
 import { clusterAreas } from "@/lib/units";
 import { detailText, ORDER } from "../../items/[id]/tabs/location";
+import { ExternalLink } from "lucide-react";
+import { BriefCard } from "@/components/brief/brief-card";
+import { FinanceProfileForm } from "@/components/brief/finance-form";
+import { buildBrief, notableSignals, readFinanceProfile } from "@/lib/brief";
+import { NotableCard } from "@/components/brief/notable-card";
+import { naverLandHref } from "@/lib/links";
+import { compsBrief, marketBrief, pointPermit } from "@/lib/queries/brief";
+import { sql } from "@/lib/db";
 
 export async function generateMetadata(props: PageProps<"/complexes/[id]">): Promise<Metadata> {
   const c = await getComplex(Number((await props.params).id));
@@ -35,9 +43,16 @@ export async function generateMetadata(props: PageProps<"/complexes/[id]">): Pro
 export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
   const [uid, { id: raw }, sp] = await Promise.all([sessionUserId(), props.params, props.searchParams]);
   const id = Number(raw);
-  const [, c, unit, mine] = await Promise.all([pageUser(uid), getComplex(id), getAreaUnit(), myComplexItems(uid)]);
+  const [viewer, c, unit, mine] = await Promise.all([pageUser(uid), getComplex(id), getAreaUnit(), myComplexItems(uid)]);
   if (!c) notFound();
-  const [txs, loc, zones] = await Promise.all([complexTransactions(id, 5), complexLocation(id), complexZones(id)]);
+  const [txs, loc, zones, mkt, permit, [rate]] = await Promise.all([
+    complexTransactions(id, 5),
+    complexLocation(id),
+    complexZones(id),
+    marketBrief(c.sgg_cd),
+    pointPermit(c.lng, c.lat, c.pnu),
+    sql<{ value: number }[]>`select value from series_values where code = 'ecos.mortgage_rate' order by period desc limit 1`,
+  ]);
   const myItemId = mine[id] ?? null;
 
   // 평형(전용면적) 목록: 거래 많은 순 최대 6개. 기본은 가장 많이 거래된 평형
@@ -68,6 +83,31 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
     ),
   }));
   const ptype = isPropertyType(c.property_type) ? c.property_type : "apt";
+  // 다섯 질문 요약(관심 등록 전이라 '관심' 관점): 선택한 평형 기준
+  const comps = pick ? await compsBrief({ complex_id: id, lng: c.lng, lat: c.lat, radius_m: 1000, area_m2: pick.area }) : { relative: null, compGap: null };
+  const profile = readFinanceProfile(viewer?.settings);
+  const current = s.saleMedian6m ?? s.lastSale?.price ?? null;
+  const answers = buildBrief({
+    group: "watch",
+    kind: "complex",
+    value: { current, basis: "최근 6개월 같은 평형 거래 중위", samples12m: s.count12m },
+    change1y: s.change1y,
+    fromHigh: current && s.high ? current / s.high.price - 1 : null,
+    relative: comps.relative,
+    compGap: comps.compGap,
+    market: mkt.market,
+    rate: rate?.value ?? 4,
+    loans: [],
+    profile,
+    flags: { permit, unregistered: mkt.unregistered, supply: mkt.supply },
+  });
+  const floors = pick ? floorPremiums(points) : null;
+  const contracts = jeonseCheck({ deposit: null, role: null, points });
+  const signals = notableSignals({
+    floors: floors ? { mine: null, low: floors.bands.find((x) => x.key === "low")?.premium ?? null, high: floors.bands.find((x) => x.key === "high")?.premium ?? null } : null,
+    jeonseContracts: { newMedian: contracts.newMedian, renewalMedian: contracts.renewalMedian, newN: contracts.newN, renewalN: contracts.renewalN },
+    region: mkt.signals,
+  });
   const address = c.road_address ?? [c.sigungu, c.umd_nm, c.jibun].filter(Boolean).join(" ");
   const all = sp.all === "1";
 
@@ -123,6 +163,35 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <BriefCard
+            answers={answers}
+            title="한눈에 보기"
+            sub={pick ? `전용 ${formatArea(pick.area, unit).split(" ")[0]} 기준 · 실거래·금리 등 공공데이터로 계산` : "실거래·금리 등 공공데이터로 계산"}
+            links={{
+              price: "#trend",
+              compare: "#trend",
+              market: c.sgg_cd ? `/indicators?sgg=${c.sgg_cd}` : "/indicators",
+              money: "/settings#finance",
+              risk: "#trend",
+            }}
+            slots={{ "finance-profile": <FinanceProfileForm profile={profile} compact /> }}
+            footer="참고 정보이며 투자 권유가 아닙니다."
+          />
+        </div>
+        <Card className="flex flex-col justify-between gap-3 p-4">
+          <div>
+            <div className="text-xs text-muted">{pick ? `전용 ${formatArea(pick.area, unit)}` : "전체 평형"} · 최근 6개월 거래 중위</div>
+            <div className="tabular mt-0.5 text-3xl font-bold tracking-tight">{formatManwon(current)}</div>
+            <div className="mt-1 text-sm">1년 <Change value={s.change1y} /></div>
+          </div>
+          <a href={naverLandHref(c.umd_nm, c.name)} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm font-medium text-accent">
+            지금 나온 매물 보기(네이버 부동산) <ExternalLink size={13} />
+          </a>
+        </Card>
+
+        <NotableCard signals={signals} className="lg:col-span-3" />
+
         <Card className="p-4 lg:col-span-2">
           <div className="mb-3 text-xs text-muted">{pick ? `전용 ${formatArea(pick.area, unit)} 기준 · 최근 5년 실거래` : "최근 5년 실거래"}</div>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -192,7 +261,7 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
           </Card>
         ) : null}
 
-        <Card className="lg:col-span-3">
+        <Card id="trend" className="scroll-mt-20 lg:col-span-3">
           <CardHeader title="실거래가 추이" sub={pick ? `전용 ${formatArea(pick.area, unit).split(" ")[0]} ±3㎡` : "전체 평형"} />
           <div className="px-2 pb-3">
             <PriceHistoryChart points={points} />

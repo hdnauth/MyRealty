@@ -1,15 +1,24 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Badge, Card, CardHeader, Stat } from "@/components/ui";
-import { health, listUsers, siteStats } from "@/lib/admin";
+import { health, listUsers, siteStats, usageStats } from "@/lib/admin";
+import { UsageCards } from "./usage-card";
 import { SIGNUP_MODES } from "@/lib/auth/policy";
 import { formatNumber, timeAgo } from "@/lib/format";
 import { getSiteSettings } from "@/lib/site-settings";
+import { sql } from "@/lib/db";
 
 export const metadata: Metadata = { title: "개요" };
 
 export default async function AdminHome() {
-  const [stats, recent, h, site] = await Promise.all([siteStats(), listUsers({ page: 1 }), health(), getSiteSettings()]);
+  const [stats, recent, h, site, usage, [regions]] = await Promise.all([
+    siteStats(),
+    listUsers({ page: 1 }),
+    health(),
+    getSiteSettings(),
+    usageStats(),
+    sql<{ pending: number }[]>`select count(distinct sgg_cd)::int as pending from region_requests where status = 'pending'`,
+  ]);
   const { users, counts } = stats;
   const budget = Number(process.env.AI_MONTHLY_BUDGET_USD ?? 30);
   const mode = SIGNUP_MODES.find((m) => m.value === site.signupMode)!;
@@ -18,6 +27,7 @@ export default async function AdminHome() {
     h.migrations?.pending.length ? `미적용 마이그레이션 ${h.migrations.pending.length}개` : null,
     !h.authSecret ? "AUTH_SECRET 미설정" : null,
     !h.smtp ? "SMTP 미설정(로그인 코드가 서버 로그로만 출력)" : null,
+    regions?.pending ? `지역 요청 대기 ${regions.pending}곳` : null,
   ].filter(Boolean);
 
   return (
@@ -27,7 +37,9 @@ export default async function AdminHome() {
           <div className="flex flex-wrap items-center gap-2 p-4 text-sm">
             <Badge tone="warn">점검 필요</Badge>
             {problems.join(" · ")}
-            <Link href="/admin/system" className="ml-auto text-accent">시스템 →</Link>
+            <Link href={regions?.pending && problems.length === 1 ? "/admin/regions" : "/admin/system"} className="ml-auto text-accent">
+              {regions?.pending && problems.length === 1 ? "수집 지역 →" : "시스템 →"}
+            </Link>
           </div>
         </Card>
       ) : null}
@@ -48,6 +60,8 @@ export default async function AdminHome() {
           />
         </div>
       </Card>
+
+      <UsageCards u={usage} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

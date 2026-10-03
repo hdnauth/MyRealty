@@ -7,6 +7,7 @@ import { sql } from "@/lib/db";
 import { geocode, geocodeQueries } from "@/lib/external/geocode";
 import { defaultRadius, GROUP_TAGS, isPropertyType, makePnu } from "@/lib/property";
 import { parseManwon } from "@/lib/format";
+import { DEFAULT_LTV } from "@/lib/brief";
 import { buildKeywords } from "@/lib/keywords";
 import { requestCollect } from "@/lib/collect";
 import { checkUnitArea } from "@/lib/unit-check";
@@ -149,6 +150,14 @@ export async function createItemAction(_: ItemFormState, form: FormData): Promis
         ${num(form.get("radius_m")) ?? defaultRadius(type)})
       returning id`;
   });
+  // 매수 후보 등록 때 함께 넣은 내 자금(가용 현금·연소득)은 계정 설정에 저장한다(모든 후보에 같이 쓰인다)
+  const profileCash = parseManwon(str(form.get("profile_cash")));
+  const profileIncome = parseManwon(str(form.get("profile_income")));
+  if (group === "candidate" && (profileCash !== null || profileIncome !== null)) {
+    const prev = user.settings.finance;
+    const finance = { cash: profileCash ?? prev?.cash ?? null, income: profileIncome ?? prev?.income ?? null, ltv: prev?.ltv ?? DEFAULT_LTV };
+    await sql`update users set settings = ${sql.json({ ...user.settings, finance })} where id = ${user.id}`;
+  }
   // 매일 아침 수집을 기다리지 않고 이 부동산만 바로 수집(실행기는 응답 뒤에 깨운다). 실패해도 등록은 유지
   try {
     await requestCollect(row.id, "register");

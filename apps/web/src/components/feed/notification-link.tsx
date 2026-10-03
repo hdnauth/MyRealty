@@ -5,7 +5,7 @@ import { useTransition, type ReactNode } from "react";
 import { markReadAction } from "@/app/(main)/notifications/actions";
 
 /**
- * 알림 행 링크. 누르면 읽음 처리(배지 갱신)한 뒤 이동한다.
+ * 알림 행 링크. 누르면 읽음·열람 기록(배지 갱신)한 뒤 이동한다.
  * 외부 링크(뉴스)는 새 탭으로 바로 열고 읽음 처리는 뒤에서 한다.
  */
 export function NotificationLink({ id, href, unread, children }: { id: number; href: string | null; unread: boolean; children: ReactNode }) {
@@ -16,7 +16,7 @@ export function NotificationLink({ id, href, unread, children }: { id: number; h
 
   if (external) {
     return (
-      <a href={href!} target="_blank" rel="noreferrer" className={cls} onClick={() => unread && start(() => markReadAction(id))}>
+      <a href={href!} target="_blank" rel="noreferrer" className={cls} onClick={() => start(() => markReadAction(id))}>
         {children}
       </a>
     );
@@ -38,7 +38,8 @@ export function NotificationLink({ id, href, unread, children }: { id: number; h
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
         e.preventDefault();
         start(async () => {
-          if (unread) await markReadAction(id);
+          // 이미 읽은 알림도 열람 기록(opened_at)을 남긴다
+          await markReadAction(id);
           router.push(href);
         });
       }}

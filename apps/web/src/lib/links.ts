@@ -23,6 +23,11 @@ export function mapComplexHref(complexId: number): string {
   return `/map?complex=${complexId}`;
 }
 
+/** 단지가 없는 유형(단독·토지·상가)의 읍면동 시장 상세 */
+export function regionHref(lawd: string, type: string): string {
+  return `/regions/${lawd}?type=${type === "forest" ? "land" : type}`;
+}
+
 /** 관심 부동산 등록 화면을 이 단지로 채워 연다 */
 export function registerComplexHref(complexId: number): string {
   return `/items/new?complex=${complexId}`;

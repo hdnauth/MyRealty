@@ -6,14 +6,17 @@ import { ChevronLeft, Crosshair, Layers, List, Loader2, Maximize2, Minimize2, St
 import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { type AreaUnit, formatDate, formatManwon, formatPct, fromPerPyeong, shortAddress, unitPriceLabel } from "@/lib/format";
-import { complexHref, type MyComplexes, registerComplexHref } from "@/lib/links";
+import { complexHref, type MyComplexes, naverLandHref, regionHref, registerComplexHref } from "@/lib/links";
+import { REGION_TYPE_INFO, type RegionMarket, isRegionType } from "@/lib/region-market";
 import type { MapOverlays } from "@/app/api/map/overlays/route";
 import type { MapSearchResult } from "@/app/api/map/search/route";
-import { activeFilterCount, COMPLEX_TYPES, EMPTY_FILTERS, type MapFilters, type MapPoint, normalizeFilters, SORTS, type SortKey, filtersToQuery, sortPoints } from "@/lib/map-filters";
-import { PHASE_COLOR, ZONE_STAGES, zonePhase } from "@/lib/projects";
+import { activeFilterCount, COMPLEX_TYPES, type DealKind, EMPTY_FILTERS, filtersToQuery, kindFor, type MapFilters, type MapPoint, type MapType, normalizeFilters, SORTS, type SortKey, sortPoints, sortsFor, TYPE_KINDS, TYPE_LAYERS } from "@/lib/map-filters";
+import { DEFAULT_MAP_PREFS, filtersFor, LEGACY_FILTER_STORE, layersFor, type MapPrefs, readMapPrefsCookie, sortFor, writeMapPrefsCookie, ZONE_KINDS, zoneKindOf } from "@/lib/map-prefs";
+import { PHASE_COLOR, ZONE_PHASES, ZONE_STAGES, zonePhase } from "@/lib/projects";
 import type { LocSummary } from "@/lib/location-score";
 import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
 import { ComplexTrades, type Trade } from "./complex-trades";
+import { RegionTrades } from "./region-trades";
 import { CoverageNote } from "./coverage-note";
 import { MapIntro } from "./map-intro";
 import { FilterBar, FilterPanel } from "./filter-panel";
@@ -39,7 +42,21 @@ export type MapWatchItem = {
 };
 export type MapFocusComplex = { id: number; name: string; property_type: string; lng: number; lat: number };
 export type MapEvent = { id: number; title: string; kind: string; lng: number; lat: number; starts_on: string | null; households: number | null };
-export type MapProject = { type: "zone" | "infra"; id: number; name: string; kind: string; status: string | null; step: number | null; expected_open: string | null; lng: number; lat: number };
+export type MapProject = {
+  type: "zone" | "infra";
+  id: number;
+  name: string;
+  kind: string;
+  status: string | null;
+  step: number | null;
+  expected_open: string | null;
+  lng: number;
+  lat: number;
+  /** 계획 도로: 도시계획 결정 고시일 */
+  notice_date?: string | null;
+};
+/** 개발·테마에서 골라 들어온 사업(/map?zone= · ?infra=) — 경계(GeoJSON MultiPolygon)가 있으면 강조해 그린다 */
+export type MapFocusProject = MapProject & { shape: string | null };
 type MapPoi = { id: number; category: string; subcategory: string | null; name: string; lng: number; lat: number };
 
 const LAYER_GROUPS = [
@@ -56,7 +73,8 @@ const LAYER_GROUPS = [
   {
     title: "개발 · 공급",
     layers: [
-      { key: "projects", label: "🏗 정비구역(숫자=단계 1~9)·철도/도로" },
+      { key: "zones", label: "🏗 정비구역(재개발·재건축, 숫자=단계)" },
+      { key: "infra", label: "🚆 철도·도로 사업" },
       { key: "movein", label: "🏠 입주 예정" },
     ],
   },
@@ -111,7 +129,6 @@ function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-const FILTER_STORE = "map-filters-v1";
 /** 이 확대 단계(약 1.5km 폭) 이상에서만 화면 안 단지 입지 점수를 즉석으로 채운다 — 넓은 화면에서 수백 곳을 계산하지 않게 */
 const LOC_ZOOM = 15;
 /** 한 번에 묻는 단지 수(화면 가운데에 가까운 순) */
@@ -130,21 +147,47 @@ function metricText(p: MapPoint, sort: SortKey): string | null {
       return p.loc_score !== null ? `입지 ${Math.round(p.loc_score)}점` : null;
     case "new":
       return p.build_year ? `${p.build_year}년` : null;
+    case "yield_desc":
+      return p.rent_yield != null ? `수익률 ${formatPct(p.rent_yield, 1, false)}` : null;
+    case "share_asc":
+      return p.share_ratio != null ? `지분 ${Math.round(p.share_ratio * 100)}%` : null;
+    case "rent_asc":
+      return p.median_rent != null ? `월 ${Math.round(p.median_rent)}만` : null;
     default:
       return null;
   }
 }
 
-/** 단지 지표 요약(목록·선택 카드) */
-function indicatorBits(p: MapPoint): string[] {
+/** 지분거래가 이만큼 넘으면 라벨·카드에 경고(기획부동산식 지분 쪼개기 판매가 많은 곳) */
+const SHARE_WARN = 0.3;
+
+/** 단지·동네 지표 요약(목록·선택 카드) — 유형마다 보는 것이 다르다 */
+function indicatorBits(p: MapPoint, unit: AreaUnit): string[] {
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
   return [
     p.build_year ? `${p.build_year}년` : null,
     p.households ? `${p.households.toLocaleString()}세대` : null,
+    p.rent_yield != null ? `임대수익률 ${formatPct(p.rent_yield, 1, false)}` : null,
     p.jeonse_ratio !== null ? `전세가율 ${Math.round(p.jeonse_ratio * 100)}%` : null,
     p.change_1y !== null ? `1년 ${formatPct(p.change_1y, 1)}` : null,
     p.loc_score !== null ? `입지 ${Math.round(p.loc_score)}점` : null,
+    p.land_ppy != null ? `대지 ${unitPriceLabel(unit)} ${formatManwon(fromPerPyeong(p.land_ppy, unit), { short: true })}` : null,
+    p.share_ratio != null && p.share_ratio > 0 ? `${p.share_ratio >= SHARE_WARN ? "⚠ " : ""}지분거래 ${pct(p.share_ratio)}` : null,
+    p.direct_ratio != null && p.direct_ratio >= 0.5 ? `직거래 ${pct(p.direct_ratio)}` : null,
+    p.corp_ratio != null && p.corp_ratio >= 0.2 ? `법인 매수 ${pct(p.corp_ratio)}` : null,
   ].filter((x): x is string => x !== null);
 }
+
+/** 라벨 큰 글씨: 월세는 보증금/월세, 단위가격 보기는 유형별 기준 면적(단독은 대지)의 평당·㎡당, 아니면 거래가 중위 */
+function mainLabel(p: MapPoint, kind: DealKind, mode: "unit" | "total", unit: AreaUnit): string {
+  if (kind === "wolse") return `${formatManwon(p.median_price, { short: true })}/${p.median_rent != null ? `${Math.round(p.median_rent)}만` : "-"}`;
+  const ppy = p.land_ppy ?? p.median_ppy;
+  if (mode === "unit" && ppy) return `${formatManwon(fromPerPyeong(ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}`;
+  return formatManwon(p.median_price, { short: true });
+}
+
+/** 가격 라벨 단위가격의 기준 면적 이름 */
+const UNIT_BASIS: Record<string, string> = { apt: "전용", officetel: "전용", rowhouse: "전용", house: "대지", land: "토지", commercial: "건물" };
 
 /** 아직 집계에 없는 단지(검색·링크로 고른 단지)를 선택 상태로 둘 때 — 집계가 오면 그 값으로 바뀐다 */
 function stubPoint(c: { id: number; name: string; lng: number; lat: number }): MapPoint {
@@ -163,7 +206,6 @@ export function RealtyMap({
   vworldDomain = null,
   items,
   events,
-  projects = [],
   initialCenter,
   focusItemId = null,
   unit = "m2",
@@ -172,8 +214,14 @@ export function RealtyMap({
   atPoint = null,
   initialType = null,
   initialLayers = null,
+  initialPrefs = null,
+  focusProject = null,
   complexItems = {},
 }: {
+  /** 처음 골라 둘 개발사업(/map?zone= · ?infra=) */
+  focusProject?: MapFocusProject | null;
+  /** 이 기기에 저장된 지도 설정(쿠키) — 없으면 기본값 */
+  initialPrefs?: MapPrefs | null;
   /** 처음 골라 둘 단지(/map?complex=) */
   focusComplex?: MapFocusComplex | null;
   /** 처음 표시할 위치(/map?at=경도,위도) — 단지 없는 거래 위치 */
@@ -196,7 +244,6 @@ export function RealtyMap({
   vworldDomain?: string | null;
   items: MapWatchItem[];
   events: MapEvent[];
-  projects?: MapProject[];
   initialCenter: [number, number];
 }) {
   const el = useRef<HTMLDivElement>(null);
@@ -214,14 +261,21 @@ export function RealtyMap({
   // 데스크톱 옆 패널 펼침
   const [sideOpen, setSideOpen] = useState(true);
   const [mineOpen, setMineOpen] = useState(false);
-  // 관심 부동산·단지를 골라 들어오면 그 유형의 거래를 보여 준다
+  // 저장된 설정: 지금 쿠키를 먼저 본다(뒤로 가기로 예전 화면 데이터가 다시 쓰여도 마지막 설정으로). 서버도 같은 쿠키로 그려 하이드레이션 값이 같다
+  const [prefs0] = useState<MapPrefs>(() => readMapPrefsCookie() ?? initialPrefs ?? DEFAULT_MAP_PREFS);
+  // 쿠키가 없던 기기: 예전 저장소(localStorage)의 조건을 한 번 옮긴다
+  const [legacyStore] = useState(() => !initialPrefs && !readMapPrefsCookie());
+  // 관심 부동산·단지를 골라 들어오면 그 유형의 거래를 보여 준다. 아니면 마지막에 보던 유형
   const [type, setType] = useState<string>(() => {
     const t = initialType === "forest" ? "land" : initialType;
     if (t && TYPE_OPTIONS.some((o) => o.key === t)) return t;
-    return txOf(items.find((i) => i.id === focusItemId)) ?? "apt";
+    return txOf(items.find((i) => i.id === focusItemId)) ?? prefs0.type;
   });
-  const [kind, setKind] = useState<"sale" | "jeonse">("sale");
-  const [months, setMonths] = useState(6);
+  // 거래 종류도 유형별로 기억한다(오피스텔은 월세, 아파트는 매매). 토지·상가는 임대 실거래가 없어 매매로만 본다
+  const [kindByType, setKindByType] = useState<MapPrefs["kindByType"]>(prefs0.kindByType);
+  const effKind = kindFor(type, kindByType[type as MapType] ?? "sale");
+  const setKind = (k: DealKind) => setKindByType((prev) => ({ ...prev, [type]: k }));
+  const [months, setMonths] = useState(prefs0.months);
   const [rawPoints, setPoints] = useState<MapPoint[]>([]);
   // 즉석으로 받은 입지 점수(단지 id → 요약). 집계에 점수가 없던 단지는 이 값으로 채워 라벨·정렬·필터 표시에 쓴다
   const [locCache, setLocCache] = useState<Record<number, LocSummary>>({});
@@ -243,52 +297,83 @@ export function RealtyMap({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   // 후보 탐색 조건·정렬(이 기기에 기억)
-  const [filters, setFilters] = useState<MapFilters>(EMPTY_FILTERS);
-  const [sort, setSort] = useState<SortKey>("n");
+  // 조건·정렬은 유형별로 기억한다(토지의 지목 조건이 상가에 섞이지 않고, 오피스텔은 수익률 순을 기억)
+  const [filtersByType, setFiltersByType] = useState<MapPrefs["filtersByType"]>(prefs0.filtersByType);
+  const [sortByType, setSortByType] = useState<MapPrefs["sortByType"]>(prefs0.sortByType);
+  const filters = filtersFor({ filtersByType }, type);
+  const sort = sortFor({ sortByType }, type);
+  const setFilters = useCallback((f: MapFilters) => setFiltersByType((prev) => ({ ...prev, [type]: f })), [type]);
+  const setSort = useCallback((k: SortKey) => setSortByType((prev) => ({ ...prev, [type]: k })), [type]);
   // 라벨 큰 글씨: 단위가격(평당·㎡당) 또는 거래가(중위) — 단독·토지·상가는 늘 거래가
-  const [labelMode, setLabelMode] = useState<"unit" | "total">("unit");
+  const [labelMode, setLabelMode] = useState<"unit" | "total">(prefs0.labelMode);
   const [filterOpen, setFilterOpen] = useState(false);
-  const filterCount = activeFilterCount(filters, type);
+  const filterCount = activeFilterCount(filters, type, effKind);
   // 유형을 바꿨는데 그 유형에 없는 정렬(입지·신축)이면 기본으로
-  const sortKey: SortKey = COMPLEX_TYPES.has(type) || !SORTS.find((x) => x.key === sort)?.complexOnly ? sort : "n";
-  useEffect(() => {
-    try {
-      const v = JSON.parse(localStorage.getItem(FILTER_STORE) ?? "null");
-      if (!v) return;
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 저장된 조건은 마운트 뒤에만 읽을 수 있다
-      setFilters(normalizeFilters(v.filters));
-      if (SORTS.some((x) => x.key === v.sort)) setSort(v.sort);
-      if (v.labelMode === "total") setLabelMode("total");
-    } catch {
-      /* 저장소 사용 불가 */
-    }
-  }, []);
-  useEffect(() => {
-    try {
-      localStorage.setItem(FILTER_STORE, JSON.stringify({ filters, sort, labelMode }));
-    } catch {
-      /* 저장소 사용 불가 */
-    }
-  }, [filters, sort, labelMode]);
+  const typeSorts = sortsFor(type, effKind);
+  const sortKey: SortKey = typeSorts.some((x) => x.key === sort) ? sort : "n";
   // 전체 화면: 브라우저 전체 화면(Fullscreen API), 안 되면(iPhone Safari 등) 화면을 덮는 고정 배치
   const [fullscreen, setFullscreen] = useState<"off" | "native" | "css">("off");
   const [bbox, setBbox] = useState<BBox | null>(null);
   const [selected, setSelected] = useState<MapPoint | null>(() => (focusComplex ? stubPoint(focusComplex) : null));
   const [detail, setDetail] = useState<{ complex: { name: string; build_year: number | null; households: number | null }; trades: Trade[]; talk?: { total: number; recent: number } } | null>(null);
-  const [layers, setLayers] = useState<Set<string>>(() => new Set(["projects", "subway", "school", ...(initialLayers ?? [])]));
+  // 레이어는 유형별로 기억한다(토지는 지적도·용도지역, 오피스텔은 역…). 처음 보는 유형은 추천 레이어. ?layers= 는 처음 유형에 더한다
+  const [layersByType, setLayersByType] = useState<MapPrefs["layersByType"]>(() =>
+    initialLayers?.length ? { ...prefs0.layersByType, [type]: [...new Set([...layersFor(prefs0, type), ...initialLayers])] } : prefs0.layersByType,
+  );
+  // 용도지역은 브이월드 키가 있어야 그린다 — 키가 없으면 추천에서 뺀다(켤 때마다 안내가 뜨지 않게)
+  const recommended = useMemo(() => (TYPE_LAYERS[type as MapType] ?? TYPE_LAYERS.apt).filter((l) => vworldKey || l !== "zoning"), [type, vworldKey]);
+  const layers = useMemo(() => new Set(layersByType[type as MapType] ?? recommended), [layersByType, type, recommended]);
   const [pois, setPois] = useState<MapPoi[]>([]);
   const [poiNote, setPoiNote] = useState<string | null>(null);
   const [poiInfo, setPoiInfo] = useState<MapPoi | null>(null);
-  const [projectInfo, setProjectInfo] = useState<MapProject | null>(null);
+  const [projectInfo, setProjectInfo] = useState<MapProject | null>(focusProject);
+  // 정비구역 레이어에서 보일 단계 묶음·사업 종류(이 기기에 기억, null 이면 전부)
+  const [zoneView, setZoneView] = useState<MapPrefs["zoneView"]>(prefs0.zoneView);
+  const zoneShown = useCallback(
+    (kind: string | null, step: number | null) => {
+      const ph = zonePhase(step) ?? "early";
+      return (!zoneView.phases || zoneView.phases.includes(ph)) && (!zoneView.kinds || zoneView.kinds.includes(zoneKindOf(kind)));
+    },
+    [zoneView],
+  );
   const [layerOpen, setLayerOpen] = useState(false);
-  const [baseMap, setBaseMap] = useState<BaseMap>("normal");
+  const [baseMap, setBaseMap] = useState<BaseMap>(prefs0.baseMap);
   const [locating, setLocating] = useState(false);
   const meRef = useRef<Removable[]>([]);
+  useEffect(() => {
+    if (!legacyStore) return;
+    try {
+      const v = JSON.parse(localStorage.getItem(LEGACY_FILTER_STORE) ?? "null");
+      localStorage.removeItem(LEGACY_FILTER_STORE);
+      if (!v) return;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 예전 저장소는 마운트 뒤에만 읽을 수 있다(한 번만)
+      setFiltersByType({ [type]: normalizeFilters(v.filters) });
+      if (SORTS.some((x) => x.key === v.sort)) setSortByType({ [type]: v.sort });
+      if (v.labelMode === "total") setLabelMode("total");
+    } catch {
+      /* 저장소 사용 불가 */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 마운트 때 한 번(그때의 유형으로)
+  }, [legacyStore]);
+  // 설정이 바뀔 때마다 쿠키에 저장. 처음 값도 쿠키에서 왔으므로 마운트 때 다시 써도 그대로다
+  useEffect(() => {
+    try {
+      writeMapPrefsCookie({ type, kindByType, months, filtersByType, sortByType, labelMode, layersByType, baseMap, zoneView });
+    } catch {
+      /* 쿠키 사용 불가 */
+    }
+  }, [type, kindByType, months, filtersByType, sortByType, labelMode, layersByType, baseMap, zoneView]);
   const toggleLayer = (key: string) =>
-    setLayers((prev) => {
-      const next = new Set(prev);
+    setLayersByType((prev) => {
+      const next = new Set(prev[type as MapType] ?? recommended);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      return { ...prev, [type]: [...next] };
+    });
+  const resetLayers = () =>
+    setLayersByType((prev) => {
+      const next = { ...prev };
+      delete next[type as MapType];
       return next;
     });
   const [lng0, lat0] = initialCenter;
@@ -479,7 +564,7 @@ export function RealtyMap({
       const fq = filtersToQuery(filters);
       setSearching(true);
       setSearchError(null);
-      fetch(`/api/map/points?bbox=${bbox.map((v) => v.toFixed(5)).join(",")}&type=${type}&kind=${kind}&months=${months}${fq ? `&${fq}` : ""}`, { signal: ctl.signal })
+      fetch(`/api/map/points?bbox=${bbox.map((v) => v.toFixed(5)).join(",")}&type=${type}&kind=${effKind}&months=${months}${fq ? `&${fq}` : ""}`, { signal: ctl.signal })
         .then(async (r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           return r.json();
@@ -500,7 +585,7 @@ export function RealtyMap({
       clearTimeout(t);
       ctl.abort();
     };
-  }, [bbox, type, kind, months, filters, retry]);
+  }, [bbox, type, effKind, months, filters, retry]);
 
   // 화면 안 단지 입지 점수 즉석 채우기(확대 LOC_ZOOM 이상, 지도가 멈추고 0.6초 뒤, 가운데에 가까운 순).
   // 지도를 다시 움직이면 요청을 끊는다(서버도 남은 계산을 멈춘다). 한도 때문에 남은 단지(pending)는 조금 뒤 다시 묻는다.
@@ -578,10 +663,11 @@ export function RealtyMap({
       { w: 112, h: 42, keep: (p) => selected?.key === p.key || (p.complex_id !== null && myComplexes.has(p.complex_id)) },
     );
     markersRef.current = shown.map((p) => {
-      const main = labelMode === "unit" && p.median_ppy && COMPLEX_TYPES.has(type) ? `${formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}` : formatManwon(p.median_price, { short: true });
+      const main = mainLabel(p, effKind, labelMode, unit);
       const active = selected?.key === p.key;
       const mine = p.complex_id !== null && myComplexes.has(p.complex_id);
-      const sub = metricText(p, sortKey) ?? `${p.n}건`;
+      // 지분거래가 많은 동네(토지)는 건수 옆에 경고 — 기획부동산 판매가 시세를 끌어올렸을 수 있다
+      const sub = metricText(p, sortKey) ?? `${p.n}건${p.share_ratio != null && p.share_ratio >= SHARE_WARN ? ` · ⚠지분 ${Math.round(p.share_ratio * 100)}%` : ""}`;
       return map.addHtmlMarker({
         lng: p.lng,
         lat: p.lat,
@@ -590,7 +676,7 @@ export function RealtyMap({
         html: `<div style="position:relative;transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:4px 8px;border-radius:9px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:13px;line-height:1.3;white-space:nowrap;font-weight:600;cursor:pointer"><span>${mine ? "★ " : ""}${changeArrow(p.change_1y)}${main}</span><span style="font-weight:400;font-size:12px;opacity:.75">${escapeHtml(shortName(p.name))} · ${escapeHtml(sub)}</span>${p.talk ? `<span title="최근 7일 동네 이야기 새 글" style="position:absolute;top:-7px;right:-7px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:#f97316;color:#fff;font-size:11px;line-height:18px;text-align:center;font-weight:700">${p.talk > 9 ? "9+" : p.talk}</span>` : ""}</div>`,
       });
     });
-  }, [points, selected, type, select, mapVersion, unit, myComplexes, bbox, sortKey, labelMode]);
+  }, [points, selected, select, mapVersion, unit, myComplexes, bbox, sortKey, labelMode, effKind]);
 
   // POI 레이어 조회(수집된 시설 + 없으면 OpenStreetMap 에서 보충)
   useEffect(() => {
@@ -683,18 +769,41 @@ export function RealtyMap({
     map.fitBounds([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
   }, [itemClusters, bbox]);
 
+  // 개발사업 점: 레이어가 켜져 있을 때 화면 안만 받는다(예전에는 페이지가 전국 사업을 한꺼번에 내려보냈다)
+  const [projects, setProjects] = useState<MapProject[]>([]);
+  const projectLayers = [layers.has("zones") ? "zones" : null, layers.has("infra") ? "infra" : null].filter(Boolean).join(",");
+  useEffect(() => {
+    if (!bbox || !projectLayers) return;
+    const ctl = new AbortController();
+    const t = setTimeout(() => {
+      fetch(`/api/map/projects?bbox=${bbox.map((v) => v.toFixed(4)).join(",")}&layers=${projectLayers}`, { signal: ctl.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { projects: MapProject[] } | null) => d && setProjects(d.projects))
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(t);
+      ctl.abort();
+    };
+  }, [bbox, projectLayers]);
+
   // 개발사업·POI 마커
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     for (const m of layerMarkersRef.current) m.remove();
     const ms: Removable[] = [];
-    if (layers.has("projects")) {
+    if (layers.has("zones") || layers.has("infra")) {
       // 서울 정비구역만 해도 천 곳 가까이라 화면 안만 그리고, 넓게 보거나 많으면 단계 색 점으로
-      const inView = bbox ? projects.filter((p) => p.lng >= bbox[0] && p.lng <= bbox[2] && p.lat >= bbox[1] && p.lat <= bbox[3]) : projects;
+      // 계획 도로는 수가 많아 확대(15단계 이상)했을 때만 점을 찍는다(부지 면은 덮개로 그린다)
+      const wanted = projects.filter((p) =>
+        p.type === "zone" ? layers.has("zones") && zoneShown(p.kind, p.step) : layers.has("infra") && (p.kind !== "road" || map.zoom() >= 15),
+      );
+      const inView = bbox ? wanted.filter((p) => p.lng >= bbox[0] && p.lng <= bbox[2] && p.lat >= bbox[1] && p.lat <= bbox[3]) : wanted;
       const compact = map.zoom() < 15 || inView.length > 60;
       for (const p of inView.slice(0, 400)) {
-        const color = p.type === "zone" ? PHASE_COLOR[zonePhase(p.step) ?? "none"] : "#16191f";
+        const color = p.type === "zone" ? PHASE_COLOR[zonePhase(p.step) ?? "none"] : p.kind === "road" || p.kind === "ic" ? "#a05a00" : "#16191f";
+        const icon = p.type === "zone" ? "🏗" : p.kind === "road" || p.kind === "ic" ? "🛣" : "🚉";
         const label = p.type === "zone" ? `${p.kind} · ${p.status ?? ""}` : `${p.status ?? ""}${p.expected_open ? ` ${p.expected_open.slice(0, 4)}` : ""}`;
         ms.push(
           map.addHtmlMarker({
@@ -707,8 +816,8 @@ export function RealtyMap({
               setProjectInfo(p);
             },
             html: compact
-              ? `<div style="transform:translate(-50%,-50%);width:20px;height:20px;border-radius:6px;background:${color};color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${p.type === "zone" ? (p.step ?? "") : "🚉"}</div>`
-              : `<div style="transform:translate(-50%,-50%);display:inline-block;padding:4px 7px;border-radius:6px;background:${color};color:#fff;font-size:12px;white-space:nowrap">${p.type === "zone" ? "🏗" : "🚉"} ${escapeHtml(p.name.slice(0, 14))}<br><span style="opacity:.8">${escapeHtml(label)}</span></div>`,
+              ? `<div style="transform:translate(-50%,-50%);width:20px;height:20px;border-radius:6px;background:${color};color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${p.type === "zone" ? (p.step ?? "") : icon}</div>`
+              : `<div style="transform:translate(-50%,-50%);display:inline-block;padding:4px 7px;border-radius:6px;background:${color};color:#fff;font-size:12px;white-space:nowrap">${icon} ${escapeHtml(p.name.slice(0, 14))}<br><span style="opacity:.8">${escapeHtml(label)}</span></div>`,
           }),
         );
       }
@@ -731,7 +840,7 @@ export function RealtyMap({
       );
     }
     layerMarkersRef.current = ms;
-  }, [layers, projects, pois, bbox, mapVersion]);
+  }, [layers, projects, pois, bbox, mapVersion, zoneShown]);
 
   // 입주 예정 레이어
   useEffect(() => {
@@ -751,6 +860,7 @@ export function RealtyMap({
     return () => ms.forEach((m) => m.remove());
   }, [layers, events, mapVersion]);
 
+  const cadastralHinted = useRef(false);
   // 지적도·용도지역: 화면이 멈출 때마다 현재 범위 이미지 한 장(WMS). 네이버는 지적도를 자체 레이어로
   useEffect(() => {
     const map = mapRef.current;
@@ -770,7 +880,9 @@ export function RealtyMap({
     if (want("cadastral") && !nativeCadastral && vworldKey) {
       if (map.zoom() >= 16) {
         overlays.push(map.addImageOverlay({ url: vworldWmsUrl({ key: vworldKey, domain: vworldDomain, layers: CADASTRAL_LAYERS, bbox, width, height }), bbox, opacity: 0.8 }));
-      } else {
+      } else if (!cadastralHinted.current) {
+        // 토지는 지적도가 기본으로 켜져 있어, 지도를 움직일 때마다 띄우지 않고 한 번만 알린다
+        cadastralHinted.current = true;
         setNotice("지적도는 더 확대하면(16단계 이상) 보입니다.");
       }
     }
@@ -783,7 +895,8 @@ export function RealtyMap({
   useEffect(() => {
     const map = mapRef.current;
     const want = [
-      layers.has("projects") ? "zones,rail" : null,
+      layers.has("zones") ? "zones" : null,
+      layers.has("infra") ? "rail" : null,
       layers.has("permit") ? "permit" : null,
       layers.has("district_plan") ? "district_plan" : null,
     ].filter(Boolean);
@@ -798,10 +911,17 @@ export function RealtyMap({
           drawn.push(map.addPolygon({ coordinates: r.coordinates, color: r.kind === "permit" ? "#d9480f" : "#0b7285", weight: 1.5, fillOpacity: r.kind === "permit" ? 0.08 : 0.05, zIndex: 8 }));
         }
         for (const z of o.zones) {
+          if (!zoneShown(z.kind, z.step)) continue;
           drawn.push(map.addPolygon({ coordinates: z.coordinates, color: PHASE_COLOR[zonePhase(z.step) ?? "none"], weight: 1.5, fillOpacity: 0.15, zIndex: 12 }));
         }
+        for (const r of o.roads ?? []) {
+          // 계획 도로 부지: 미집행 주황, 부분집행 갈색
+          drawn.push(map.addPolygon({ coordinates: r.coordinates, color: r.status === "부분집행" ? "#a16207" : "#ea580c", weight: 1, fillOpacity: 0.35, zIndex: 10 }));
+        }
         for (const l of o.rails) {
-          drawn.push(map.addPolyline({ coordinates: l.coordinates, color: l.status === "개통" ? "#495057" : "#7048e8", weight: 3, dashed: l.status !== "개통" }));
+          // 철도 보라·도로 갈색, 개통 전은 점선
+          const open = l.status === "개통";
+          drawn.push(map.addPolyline({ coordinates: l.coordinates, color: l.kind === "road" ? (open ? "#7a5a3a" : "#c2410c") : open ? "#495057" : "#7048e8", weight: l.kind === "road" ? 4 : 3, dashed: !open }));
         }
       })
       .catch(() => {});
@@ -809,7 +929,22 @@ export function RealtyMap({
       ctrl.abort();
       drawn.forEach((d) => d.remove());
     };
-  }, [layers, bbox, mapVersion]);
+  }, [layers, bbox, mapVersion, zoneShown]);
+
+  // 개발·테마에서 골라 들어온 구역: 정보 카드가 그 구역인 동안 경계를 굵게 강조
+  const focusShape = useMemo(() => {
+    try {
+      return focusProject?.shape ? ((JSON.parse(focusProject.shape) as { coordinates: number[][][][] }).coordinates ?? null) : null;
+    } catch {
+      return null;
+    }
+  }, [focusProject]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !focusShape || !focusProject || projectInfo?.id !== focusProject.id || projectInfo.type !== focusProject.type) return;
+    const sh = map.addPolygon({ coordinates: focusShape, color: "#e8590c", weight: 3, fillOpacity: 0.12, zIndex: 20 });
+    return () => sh.remove();
+  }, [focusShape, focusProject, projectInfo, mapVersion]);
 
   // 지적도를 끄면 네이버 자체 레이어도 끈다
   useEffect(() => {
@@ -889,6 +1024,23 @@ export function RealtyMap({
     return () => ctl.abort();
   }, [selCid]);
   const selLoc = selCid !== null ? locCache[selCid] : undefined;
+  // 고른 읍면동(단독·토지·상가): 그 동네 거래·세부 유형별 요약. 유형을 바꾸면 같은 동네의 그 유형으로 다시 받는다
+  const selLawd = sel?.kind === "region" ? (sel.lawd_cd ?? null) : null;
+  const [region, setRegion] = useState<{ key: string; data: RegionMarket | null } | null>(null);
+  const regionKey = selLawd && isRegionType(type) ? `${selLawd}:${type}` : null;
+  useEffect(() => {
+    if (!regionKey) return;
+    const [lawd, t] = regionKey.split(":");
+    const ctl = new AbortController();
+    fetch(`/api/map/region/${lawd}?type=${t}`, { signal: ctl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: RegionMarket) => setRegion({ key: regionKey, data: d }))
+      .catch(() => {
+        if (!ctl.signal.aborted) setRegion({ key: regionKey, data: null });
+      });
+    return () => ctl.abort();
+  }, [regionKey]);
+  const regionData = region && region.key === regionKey ? region : null;
 
   // 검색 결과로 이동: 단지면 그 유형으로 바꾸고 단지를 연다, 동네·주소면 그 위치로
   const onSearchPick = useCallback(
@@ -978,19 +1130,25 @@ export function RealtyMap({
               </option>
             ))}
           </select>
-          <div role="group" aria-label="거래 유형" className="flex h-9 shrink-0 rounded-full bg-surface-2 p-0.5 text-sm">
-            {(["sale", "jeonse"] as const).map((k) => (
-              <button
-                key={k}
-                type="button"
-                aria-pressed={kind === k}
-                onClick={() => setKind(k)}
-                className={clsx("rounded-full px-3", kind === k ? "bg-surface font-semibold text-text shadow-sm" : "text-muted")}
-              >
-                {DEAL_KIND_LABEL[k]}
-              </button>
-            ))}
-          </div>
+          {TYPE_KINDS[type as MapType]?.length > 1 ? (
+            <div role="group" aria-label="거래 유형" className="flex h-9 shrink-0 rounded-full bg-surface-2 p-0.5 text-sm">
+              {TYPE_KINDS[type as MapType].map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={effKind === k}
+                  onClick={() => setKind(k)}
+                  className={clsx("rounded-full px-2.5 sm:px-3", effKind === k ? "bg-surface font-semibold text-text shadow-sm" : "text-muted")}
+                >
+                  {DEAL_KIND_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="hidden shrink-0 text-xs text-muted sm:inline" title="토지·상가는 임대 실거래가 공개되지 않습니다">
+              매매만 공개
+            </span>
+          )}
         </div>
         <FilterBar
           filters={filters}
@@ -998,7 +1156,7 @@ export function RealtyMap({
           onSort={setSort}
           type={type}
           unit={unit}
-          kind={kind}
+          kind={effKind}
           months={months}
           onMonths={setMonths}
           resultCount={sorted.length}
@@ -1060,7 +1218,7 @@ export function RealtyMap({
                     aria-label="정렬"
                     className="h-9 shrink-0 rounded-full border border-border bg-surface px-3 text-sm"
                   >
-                    {SORTS.filter((x) => COMPLEX_TYPES.has(type) || !x.complexOnly).map((x) => (
+                    {typeSorts.map((x) => (
                       <option key={x.key} value={x.key}>
                         {x.label}
                       </option>
@@ -1101,12 +1259,14 @@ export function RealtyMap({
                 <p className="text-xs text-muted">
                   {detail?.complex?.build_year ? `${detail.complex.build_year}년 준공 · ` : ""}
                   {detail?.complex?.households ? `${detail.complex.households.toLocaleString()}세대 · ` : ""}
-                  {sel.n ? `최근 ${months < 12 ? `${months}개월` : `${months / 12}년`} ${DEAL_KIND_LABEL[kind]} ${sel.n}건 · 중위 ${formatManwon(sel.median_price)}` : "최근 거래"}
+                  {sel.n
+                    ? `최근 ${months < 12 ? `${months}개월` : `${months / 12}년`} ${DEAL_KIND_LABEL[effKind]} ${sel.n}건 · ${effKind === "wolse" ? `보증금 중위 ${formatManwon(sel.median_price)}${sel.median_rent != null ? ` · 월세 ${Math.round(sel.median_rent)}만` : ""}` : `중위 ${formatManwon(sel.median_price)}`}`
+                    : "최근 거래"}
                   {sel.median_ppy ? ` · ${unitPriceLabel(unit)} ${formatManwon(fromPerPyeong(sel.median_ppy, unit), { short: true })}` : ""}
                 </p>
-                {indicatorBits(sel).length ? (
+                {indicatorBits(sel, unit).length ? (
                   <div className="mt-1.5 flex flex-wrap gap-1">
-                    {indicatorBits(sel).map((b) => (
+                    {indicatorBits(sel, unit).map((b) => (
                       <span key={b} className="rounded-md bg-surface-2 px-2 py-0.5 text-xs text-muted">
                         {b}
                       </span>
@@ -1158,7 +1318,34 @@ export function RealtyMap({
                     ) : null}
                   </div>
                 ) : null}
-                {detail ? (
+                {selLawd && isRegionType(type) ? (
+                  <>
+                    <p className="mt-2 text-xs leading-relaxed text-muted">
+                      {REGION_TYPE_INFO[type].label} 실거래는 지번 일부가 가려져 신고돼 단지처럼 묶을 수 없어, 읍면동 단위로 모아 보여 줍니다.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                      <Link href={regionHref(selLawd, type)} className="rounded-full bg-accent px-3.5 py-2 font-medium text-white">
+                        동네 시세 상세
+                      </Link>
+                      <Link href={`/community?sgg=${selLawd.slice(0, 5)}`} className="rounded-full border border-border px-3.5 py-2 hover:bg-surface-2">
+                        동네 이야기
+                      </Link>
+                      <a href={naverLandHref(sel.name, "")} target="_blank" rel="noreferrer" className="rounded-full border border-border px-3.5 py-2 hover:bg-surface-2">
+                        매물 보기
+                      </a>
+                      <Link href="/items/new" className="rounded-full border border-border px-3.5 py-2 hover:bg-surface-2">
+                        ★ 주소로 관심 등록
+                      </Link>
+                    </div>
+                    {regionData?.data ? (
+                      <RegionTrades key={regionKey} data={regionData.data} unit={unit} kind={effKind} insights />
+                    ) : regionData ? (
+                      <p className="mt-3 text-sm text-muted">이 동네 거래를 불러오지 못했습니다.</p>
+                    ) : (
+                      <p className="mt-3 text-sm text-muted">불러오는 중…</p>
+                    )}
+                  </>
+                ) : detail ? (
                   <ComplexTrades key={sel.key} trades={detail.trades} unit={unit} />
                 ) : sel.complex_id ? (
                   <p className="mt-3 text-sm text-muted">불러오는 중…</p>
@@ -1201,11 +1388,17 @@ export function RealtyMap({
                         <span className="text-xs text-muted">
                           {p.n}건 · 최근 {formatDate(p.last_date)}
                         </span>
-                        {indicatorBits(p).length ? <span className="block truncate text-xs text-muted">{indicatorBits(p).join(" · ")}</span> : null}
+                        {indicatorBits(p, unit).length ? <span className="block truncate text-xs text-muted">{indicatorBits(p, unit).join(" · ")}</span> : null}
                       </span>
                       <span className="tabular shrink-0 text-right text-base font-semibold">
-                        {formatManwon(p.median_price, { short: true })}
-                        {p.median_ppy ? <span className="block text-xs font-normal text-muted">{unitPriceLabel(unit)} {formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}</span> : null}
+                        {effKind === "wolse" ? mainLabel(p, "wolse", "total", unit) : formatManwon(p.median_price, { short: true })}
+                        {effKind === "wolse" ? (
+                          <span className="block text-xs font-normal text-muted">보증금/월세</span>
+                        ) : (p.land_ppy ?? p.median_ppy) ? (
+                          <span className="block text-xs font-normal text-muted">
+                            {UNIT_BASIS[type]} {unitPriceLabel(unit)} {formatManwon(fromPerPyeong(p.land_ppy ?? p.median_ppy, unit), { short: true })}
+                          </span>
+                        ) : null}
                       </span>
                     </button>
                   </li>
@@ -1252,7 +1445,7 @@ export function RealtyMap({
                 onSort={setSort}
                 type={type}
                 unit={unit}
-                kind={kind}
+                kind={effKind}
                 resultCount={sorted.length}
                 truncated={truncated}
                 onClose={() => setFilterOpen(false)}
@@ -1343,13 +1536,13 @@ export function RealtyMap({
                   </button>
                 ))}
               </div>
-              {COMPLEX_TYPES.has(type) ? (
+              {effKind !== "wolse" ? (
                 <>
                   <p className="mb-1 text-xs font-medium text-muted">가격 라벨</p>
                   <div className="mb-3 grid grid-cols-2 gap-1">
                     {(
                       [
-                        ["unit", `${unitPriceLabel(unit)} 가격`],
+                        ["unit", `${UNIT_BASIS[type] ?? ""} ${unitPriceLabel(unit)}`],
                         ["total", "거래가(중위)"],
                       ] as const
                     ).map(([k, label]) => (
@@ -1365,6 +1558,14 @@ export function RealtyMap({
                   </div>
                 </>
               ) : null}
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-muted">레이어 · {TYPE_OPTIONS.find((o) => o.key === type)?.label}에서 기억</p>
+                {layersByType[type as MapType] ? (
+                  <button type="button" className="shrink-0 text-xs text-accent" onClick={resetLayers}>
+                    추천으로
+                  </button>
+                ) : null}
+              </div>
               {LAYER_GROUPS.map((g) => (
                 <div key={g.title} className="mb-2">
                   <p className="mb-1 text-xs font-medium text-muted">{g.title}</p>
@@ -1377,8 +1578,9 @@ export function RealtyMap({
                         onChange={() => toggleLayer(l.key)}
                       />
                       <span className={clsx(l.key === "traffic" && engine !== "naver" && "text-muted")}>{l.label}</span>
+                      {recommended.includes(l.key) ? <span className="ml-auto rounded bg-accent-soft px-1 text-[0.7rem] text-accent">추천</span> : null}
                     </label>
-                  ))}
+                  )).flatMap((row, i) => (g.layers[i].key === "zones" && layers.has("zones") ? [row, <ZoneViewControls key="zone-view" value={zoneView} onChange={setZoneView} />] : g.layers[i].key === "infra" && layers.has("infra") ? [row, <InfraLegend key="infra-legend" />] : [row]))}
                 </div>
               ))}
               <p className="mt-2 text-[0.75rem] text-muted">라벨의 <span className="text-up">▲</span>/<span className="text-down">▼</span> 는 1년 가격 변동(±1% 이상)입니다.</p>
@@ -1391,13 +1593,27 @@ export function RealtyMap({
                 <span className="min-w-0">
                   <b className="block truncate">{projectInfo.name}</b>
                   <span className="text-xs text-muted">
-                    {projectInfo.kind} · {projectInfo.status ?? "단계 미상"}
+                    {projectInfo.type === "zone" ? projectInfo.kind : INFRA_KIND[projectInfo.kind] ?? projectInfo.kind} · {projectInfo.status ?? "단계 미상"}
                     {projectInfo.type === "zone" && projectInfo.step ? ` (${projectInfo.step}/${ZONE_STAGES.length})` : ""}
                     {projectInfo.expected_open ? ` · 개통 ${projectInfo.expected_open.slice(0, 7)}` : ""}
                   </span>
-                  <Link href={projectInfo.type === "zone" ? `/projects?zone=${projectInfo.id}` : "/projects?tab=infra"} className="mt-0.5 block text-xs font-semibold text-accent">
-                    사업 상세 보기
-                  </Link>
+                  {projectInfo.type === "zone" && projectInfo.step ? (
+                    // 9단계 진행 막대(단계 묶음 색)
+                    <span className="mt-1 flex gap-0.5" aria-label={`${projectInfo.step}/${ZONE_STAGES.length} 단계`}>
+                      {ZONE_STAGES.map((st, i) => (
+                        <span key={st} title={st} className="h-1.5 w-4 rounded-sm" style={{ background: i < projectInfo.step! ? PHASE_COLOR[zonePhase(projectInfo.step) ?? "none"] : "var(--border)" }} />
+                      ))}
+                    </span>
+                  ) : null}
+                  {projectInfo.kind === "road" ? (
+                    <span className="mt-1 block text-xs text-muted">
+                      도시계획 결정 도로{projectInfo.notice_date ? ` · 고시 ${projectInfo.notice_date}` : ""} · 개통 시기는 자료에 없어요
+                    </span>
+                  ) : (
+                    <Link href={projectInfo.type === "zone" ? `/projects?zone=${projectInfo.id}` : "/projects?tab=transit"} className="mt-1 block text-xs font-semibold text-accent">
+                      {projectInfo.type === "zone" ? "단계 이력·가격 효과 보기" : "교통 호재 상세 보기"}
+                    </Link>
+                  )}
                 </span>
                 <button type="button" aria-label="닫기" onClick={() => setProjectInfo(null)} className="text-muted">
                   <X size={14} />
@@ -1486,5 +1702,71 @@ function MapButton({
       {children}
       {badge ? <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-text px-1 text-[0.75rem] font-bold leading-4 text-surface">{badge}</span> : null}
     </button>
+  );
+}
+
+const INFRA_KIND: Record<string, string> = { rail: "철도", station: "역", road: "도로", ic: "IC" };
+
+/** 정비구역 레이어 보기: 단계 묶음(색 범례 겸 켜고 끄기)·사업 종류. 준공 구역은 지도에 그리지 않는다 */
+function ZoneViewControls({ value, onChange }: { value: MapPrefs["zoneView"]; onChange: (v: MapPrefs["zoneView"]) => void }) {
+  const phases = ZONE_PHASES.filter((p) => p.key !== "done");
+  const toggle = <T extends string>(cur: T[] | null, all: readonly T[], k: T): T[] | null => {
+    const set = new Set(cur ?? all);
+    if (set.has(k)) set.delete(k);
+    else set.add(k);
+    // 전부 켜지거나 전부 꺼지면 '전부'로(아무것도 안 보이는 상태를 만들지 않는다)
+    return set.size === 0 || set.size === all.length ? null : all.filter((x) => set.has(x));
+  };
+  const phaseKeys = phases.map((p) => p.key);
+  const kindKeys = ZONE_KINDS.map((k) => k.key);
+  return (
+    <div className="mb-1 ml-6 mt-0.5 space-y-1.5 rounded-md bg-surface-2/60 p-2">
+      <div className="flex flex-wrap gap-1" role="group" aria-label="정비구역 단계">
+        {phases.map((p) => {
+          const on = !value.phases || value.phases.includes(p.key);
+          return (
+            <button
+              key={p.key}
+              type="button"
+              aria-pressed={on}
+              title={p.sub}
+              onClick={() => onChange({ ...value, phases: toggle(value.phases, phaseKeys, p.key) })}
+              className={clsx("flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.75rem]", on ? "border-border bg-surface" : "border-transparent text-muted line-through opacity-60")}
+            >
+              <i className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: PHASE_COLOR[p.key] }} />
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-1" role="group" aria-label="정비사업 종류">
+        {ZONE_KINDS.map((k) => {
+          const on = !value.kinds || value.kinds.includes(k.key);
+          return (
+            <button
+              key={k.key}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChange({ ...value, kinds: toggle(value.kinds, kindKeys, k.key) })}
+              className={clsx("rounded-full border px-2 py-0.5 text-[0.75rem]", on ? "border-accent bg-accent-soft text-accent" : "border-border text-muted")}
+            >
+              {k.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[0.7rem] leading-snug text-muted">색이 진할수록 사업이 진척(초기 → 조합 → 인가 → 이주·착공). 숫자는 9단계 중 현재 단계</p>
+    </div>
+  );
+}
+
+/** 철도·도로 레이어 범례 */
+function InfraLegend() {
+  return (
+    <div className="mb-1 ml-6 mt-0.5 space-y-0.5 rounded-md bg-surface-2/60 p-2 text-[0.75rem]">
+      <p className="flex items-center gap-1.5"><i className="inline-block h-0.5 w-5 border-t-2 border-dashed" style={{ borderColor: "#7048e8" }} />철도 계획·공사 <i className="ml-2 inline-block h-0.5 w-5 bg-[#495057]" />개통</p>
+      <p className="flex items-center gap-1.5"><i className="inline-block h-2.5 w-4 rounded-sm" style={{ background: "#ea580c", opacity: 0.6 }} />계획 도로(미집행) <i className="ml-2 inline-block h-2.5 w-4 rounded-sm" style={{ background: "#a16207", opacity: 0.6 }} />일부 개설</p>
+      <p className="leading-snug text-muted">계획 도로는 도시계획으로 결정됐지만 아직 다 만들지 않은 폭 12m 이상 도로예요(도시계획정보 UPIS). 동네 수준으로 확대하면 보입니다.</p>
+    </div>
   );
 }

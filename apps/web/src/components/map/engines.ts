@@ -357,8 +357,13 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
     },
     setTraffic(on) {
       if (!naver.maps.TrafficLayer) return false;
+      if (!alive) return true;
       traffic ??= new naver.maps.TrafficLayer({ interval: 300000 });
-      traffic.setMap(on ? map : null);
+      try {
+        traffic.setMap(on ? map : null);
+      } catch {
+        /* 인증 실패 직후 */
+      }
       return true;
     },
     addImageOverlay(o) {
@@ -372,8 +377,14 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
     },
     setCadastral(on) {
       if (!naver.maps.CadastralLayer) return false;
+      // 지도를 정리한 뒤(인증 실패로 대체 지도 전환 등)에는 건드리지 않는다 — 네이버 스크립트가 예외를 던진다
+      if (!alive) return true;
       cadastral ??= new naver.maps.CadastralLayer();
-      cadastral.setMap(on ? map : null);
+      try {
+        cadastral.setMap(on ? map : null);
+      } catch {
+        /* 인증 실패 직후 레이어 등록부가 비어 있을 수 있다 */
+      }
       return true;
     },
     size: () => ({ width: el.clientWidth, height: el.clientHeight }),
@@ -381,8 +392,14 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
     destroy() {
       alive = false;
       ro.disconnect();
-      cadastral?.setMap(null);
-      traffic?.setMap(null);
+      // 인증 실패 직후에는 네이버 내부가 이미 비어 레이어 해제가 예외를 던진다(토지 유형은 지적도가 기본으로 켜져 있다)
+      for (const layer of [cadastral, traffic]) {
+        try {
+          layer?.setMap(null);
+        } catch {
+          /* 이미 정리됨 */
+        }
+      }
       try {
         map.destroy();
       } catch {

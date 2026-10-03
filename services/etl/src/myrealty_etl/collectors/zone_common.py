@@ -230,6 +230,44 @@ def locate(conn, rec: dict) -> tuple[float, float, str] | None:
     return None
 
 
+def locate_pending(conn, limit: int | None = None) -> dict:
+    """좌표 없는 구역 이어서 찾기 — 출처를 다시 받지 않는다. 한 실행 상한(LOCATE_BUDGET)에 걸렸거나 30일 전에 못 찾은 곳.
+    수집 지역(collect_targets) 시군구·진행 중 구역부터."""
+    budget = LOCATE_BUDGET["left"] if limit is None else limit
+    stats = {"pending": 0, "located": 0, "missed": 0}
+    if budget <= 0:
+        return stats
+    rows = conn.execute(
+        """select id, name, kind, address, attrs->>'sido' as sido, attrs->>'gu' as gu, sgg_cd
+           from redevelopment_zones
+           where geom is null and not coalesce((attrs->>'geo_tried')::date > current_date - 30, false)
+           order by (sgg_cd in (select sgg_cd from collect_targets)) desc nulls last, stage_order = 9, address is null, id
+           limit %s""",
+        (budget,),
+    ).fetchall()
+    stats["pending"] = len(rows)
+    for i, r in enumerate(rows):
+        LOCATE_BUDGET["left"] -= 1
+        pt = locate(conn, {"name": r["name"], "kind": r["kind"], "address": r["address"], "sido": r["sido"], "sgg_name": r["gu"]})
+        if pt:
+            sgg = r["sgg_cd"] or sgg_of_point(pt[0], pt[1])
+            conn.execute(
+                """update redevelopment_zones set geom = ST_SetSRID(ST_MakePoint(%s, %s), 4326), sgg_cd = coalesce(sgg_cd, %s),
+                     attrs = attrs || jsonb_build_object('geo', %s::text) - 'geo_tried', updated_at = now() where id = %s""",
+                (pt[0], pt[1], sgg, pt[2], r["id"]),
+            )
+            stats["located"] += 1
+        else:
+            conn.execute(
+                "update redevelopment_zones set attrs = attrs || jsonb_build_object('geo_tried', current_date::text) where id = %s", (r["id"],)
+            )
+            stats["missed"] += 1
+        if i % 50 == 49:
+            conn.commit()
+    conn.commit()
+    return stats
+
+
 # ───── 저장 ─────
 
 # 한 번 실행에서 새로 위치를 찾는 횟수 상한(첫 수집 때 수천 건 지오코딩·검색으로 매일 작업 시간을 넘기지 않게).

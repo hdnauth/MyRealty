@@ -185,6 +185,7 @@ DAILY_STEPS: list[tuple[str, str]] = [
     ("events", "myrealty_etl.jobs.events_job:collect_events"),
     ("zones", "myrealty_etl.jobs.zones_job:collect_zones"),
     ("rail", "myrealty_etl.collectors.rail_seed:collect_rail_seed"),
+    ("roads", "myrealty_etl.collectors.planned_roads:collect_planned_roads"),
     ("regulations", "myrealty_etl.collectors.regulations:collect_regulations"),
     ("news", "myrealty_etl.jobs.news_job:collect_news"),
     ("classify", "myrealty_etl.ai.news_classifier:classify_pending"),

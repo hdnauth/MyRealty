@@ -4,7 +4,8 @@ import clsx from "clsx";
 import { ChevronDown, RotateCcw, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AreaUnit, formatManwon, M2_PER_PYEONG } from "@/lib/format";
-import { activeFilterCount, COMPLEX_TYPES, EMPTY_FILTERS, FILTER_PRESETS, type MapFilters, type SortKey } from "@/lib/map-filters";
+import { activeFilterCount, CATEGORY_GROUPS, type DealKind, EMPTY_FILTERS, filterApplies, type MapFilters, presetsFor, sameFilters, type SortKey, ZONE_GROUPS } from "@/lib/map-filters";
+import { MAP_MONTHS } from "@/lib/map-prefs";
 
 /*
  * 지도 후보 탐색 조건. 값은 기준 단위(만원·평당 만원·㎡·비율)로 갖고, 입력 칸만 보기 좋은 단위(억·설정 면적 단위·%)로 바꿔 보여 준다.
@@ -56,7 +57,7 @@ function Range({ min, max, onMin, onMax, scale, unit }: { min: number | null; ma
   );
 }
 
-type QuickItem = { label: string; active: boolean; onClick: () => void };
+type QuickItem = { label: string; active: boolean; onClick: () => void; /** 누르기 전에 알면 좋은 설명(마우스를 올리면) */ hint?: string };
 
 function Quick({ items }: { items: QuickItem[] }) {
   return (
@@ -65,6 +66,8 @@ function Quick({ items }: { items: QuickItem[] }) {
         <button
           key={q.label}
           type="button"
+          title={q.hint}
+          aria-pressed={q.active}
           onClick={q.onClick}
           className={clsx("rounded-full border px-3 py-1.5 text-sm", q.active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-text hover:bg-surface-2")}
         >
@@ -72,6 +75,21 @@ function Quick({ items }: { items: QuickItem[] }) {
         </button>
       ))}
     </div>
+  );
+}
+
+/** 묶음 설명(휴대폰은 마우스 올리기가 없어 글로 보여 준다) */
+function PresetHints({ items }: { items: QuickItem[] }) {
+  const hints = items.filter((q) => q.hint);
+  if (!hints.length) return null;
+  return (
+    <ul className="mt-2 space-y-0.5 text-xs text-muted">
+      {hints.map((q) => (
+        <li key={q.label} className={clsx(q.active && "font-medium text-accent")}>
+          · {q.label}: {q.hint}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -94,6 +112,95 @@ function rangeText(lo: number | null, hi: number | null, f: (v: number) => strin
   return lo !== null ? `${f(lo)}~` : `~${f(hi!)}`;
 }
 
+type SectionKey = "price" | "rent" | "yield" | "area" | "cats" | "zones" | "share" | "bldg" | "floor" | "year" | "hh" | "jr" | "chg" | "loc" | "ppy";
+
+/** 유형별 조건 순서 — 그 유형에서 먼저 따지는 것부터(토지는 지목·용도지역, 상가는 용도·층, 오피스텔은 월세·수익률) */
+const ORDER: Record<string, SectionKey[]> = {
+  apt: ["price", "rent", "area", "year", "hh", "jr", "chg", "loc", "yield", "ppy"],
+  officetel: ["price", "rent", "yield", "area", "year", "jr", "chg", "loc", "ppy"],
+  rowhouse: ["price", "rent", "jr", "year", "area", "yield", "chg", "ppy"],
+  house: ["price", "rent", "cats", "year", "area", "ppy", "chg"],
+  land: ["cats", "zones", "share", "ppy", "price", "area", "chg"],
+  commercial: ["cats", "bldg", "floor", "zones", "share", "ppy", "price", "area", "year", "chg"],
+};
+/** 칩 줄에 값이 없어도 늘 보이는 단위가격 조건(토지·상가는 단위가격이 곧 시세) */
+const PPY_CHIP = new Set(["land", "commercial", "house"]);
+
+/** 섹션 → 그 섹션의 대표 조건(유형·거래 종류에 맞는지 판단) */
+const SECTION_FILTER: Record<SectionKey, keyof MapFilters> = {
+  price: "priceMin",
+  rent: "rentMax",
+  yield: "yieldMin",
+  area: "areaMin",
+  cats: "cats",
+  zones: "zones",
+  share: "noShare",
+  bldg: "bldg",
+  floor: "floor",
+  year: "yearMin",
+  hh: "hhMin",
+  jr: "jrMin",
+  chg: "chgMin",
+  loc: "locMin",
+  ppy: "ppyMin",
+};
+
+const AREA_QUICK: Record<string, [string, number | null, number | null][]> = {
+  apt: [
+    ["소형 ~60㎡", null, 60],
+    ["국민평형 84㎡", 80, 90],
+    ["중형 60~85㎡", 60, 85],
+    ["중대형 85~135㎡", 85, 135],
+    ["대형 135㎡~", 135, null],
+  ],
+  officetel: [
+    ["원룸 ~20㎡", null, 20],
+    ["1.5룸 20~40㎡", 20, 40],
+    ["투룸 40~60㎡", 40, 60],
+    ["60㎡~(아파텔)", 60, null],
+  ],
+  rowhouse: [
+    ["~40㎡", null, 40],
+    ["40~60㎡", 40, 60],
+    ["60~85㎡", 60, 85],
+    ["85㎡~", 85, null],
+  ],
+  house: [
+    ["~100㎡", null, 100],
+    ["100~200㎡", 100, 200],
+    ["200~330㎡", 200, 330],
+    ["330㎡(100평)~", 330, null],
+  ],
+  land: [
+    ["~330㎡(100평)", null, 330],
+    ["330~1,000㎡", 330, 1000],
+    ["1,000~3,300㎡", 1000, 3300],
+    ["3,300㎡(1천평)~", 3300, null],
+  ],
+  commercial: [
+    ["~33㎡(10평)", null, 33],
+    ["33~66㎡", 33, 66],
+    ["66~165㎡", 66, 165],
+    ["165㎡(50평)~", 165, null],
+  ],
+};
+const AREA_LABEL: Record<string, [string, string]> = {
+  apt: ["평형", "전용면적 · 이 면적의 거래만 집계"],
+  officetel: ["면적", "전용면적 · 이 면적의 거래만 집계"],
+  rowhouse: ["면적", "전용면적 · 이 면적의 거래만 집계"],
+  house: ["연면적", "건물 연면적 · 이 면적의 거래만 집계"],
+  land: ["면적", "거래 토지면적 · 이 면적의 거래만 집계"],
+  commercial: ["면적", "건물(전용)면적 · 이 면적의 거래만 집계"],
+};
+const PPY_LABEL: Record<string, string> = { house: "대지 ", land: "토지 ", commercial: "건물 " };
+
+/** 목록 값 → "대지", "대지 외 2" */
+const listText = (keys: string[], labels: { key: string; label: string }[]) => {
+  if (!keys.length) return null;
+  const first = labels.find((l) => l.key === keys[0])?.label ?? keys[0];
+  return keys.length > 1 ? `${first.replace(/\(.*\)/, "")} 외 ${keys.length - 1}` : first;
+};
+
 function buildSections({
   filters,
   onChange,
@@ -106,23 +213,28 @@ function buildSections({
   onChange: (f: MapFilters) => void;
   type: string;
   unit: AreaUnit;
-  kind: "sale" | "jeonse";
+  kind: DealKind;
   /** 빠른 값을 고른 뒤(칩 팝오버는 닫는다) */
   onPicked?: () => void;
 }): Section[] {
-  const complex = COMPLEX_TYPES.has(type);
   const year = new Date().getFullYear();
   const set = (patch: Partial<MapFilters>) => onChange({ ...filters, ...patch });
   const is = (patch: Partial<MapFilters>) => (Object.keys(patch) as (keyof MapFilters)[]).every((k) => filters[k] === patch[k]);
   // 같은 값을 다시 누르면 끈다
   const toggle = (patch: Partial<MapFilters>) => {
-    set(is(patch) ? Object.fromEntries(Object.keys(patch).map((k) => [k, null])) : patch);
+    set(is(patch) ? Object.fromEntries(Object.keys(patch).map((k) => [k, (EMPTY_FILTERS as Record<string, unknown>)[k]])) : patch);
     onPicked?.();
   };
   const quick = <K extends keyof MapFilters>(lo: K, hi: K | null, opts: [string, number | null, number | null][]): QuickItem[] =>
     opts.map(([label, a, b]) => {
       const patch = (hi ? { [lo]: a, [hi]: b } : { [lo]: a }) as Partial<MapFilters>;
       return { label, active: is(patch), onClick: () => toggle(patch) };
+    });
+  // 여러 개 고르는 목록(지목·용도지역): 누를 때마다 넣고 빼며, 팝오버는 열어 둔다
+  const multi = (k: "cats" | "zones", opts: { key: string; label: string }[]): QuickItem[] =>
+    opts.map((o) => {
+      const on = filters[k].includes(o.key);
+      return { label: o.label, active: on, onClick: () => set({ [k]: on ? filters[k].filter((x) => x !== o.key) : [...filters[k], o.key] }) };
     });
   const summary = (items: QuickItem[], text: string | null) => (text === null ? null : (items.find((q) => q.active)?.label ?? text));
   const pyeong = unit === "pyeong";
@@ -131,31 +243,56 @@ function buildSections({
   const eokText = (v: number) => formatManwon(v, { short: true });
   const pctText = (v: number) => `${round(v * 100, 0)}%`;
 
-  const price = quick("priceMin", "priceMax", [
-    ["~3억", null, 30_000],
-    ["3~6억", 30_000, 60_000],
-    ["6~10억", 60_000, 100_000],
-    ["10~15억", 100_000, 150_000],
-    ["15억~", 150_000, null],
-  ]);
-  const area = quick(
-    "areaMin",
-    "areaMax",
-    complex
+  const price = quick(
+    "priceMin",
+    "priceMax",
+    kind === "wolse"
       ? [
-          ["소형 ~60㎡", null, 60],
-          ["국민평형 84㎡", 80, 90],
-          ["중형 60~85㎡", 60, 85],
-          ["중대형 85~135㎡", 85, 135],
-          ["대형 135㎡~", 135, null],
+          ["보증금 ~500만", null, 500],
+          ["~1천만", null, 1000],
+          ["~3천만", null, 3000],
+          ["~5천만", null, 5000],
         ]
-      : [
-          ["~330㎡(100평)", null, 330],
-          ["330~1,000㎡", 330, 1000],
-          ["1,000~3,300㎡", 1000, 3300],
-          ["3,300㎡(1천평)~", 3300, null],
-        ],
+      : type === "land" || type === "commercial" || type === "officetel"
+        ? [
+            ["~1억", null, 10_000],
+            ["1~3억", 10_000, 30_000],
+            ["3~5억", 30_000, 50_000],
+            ["5~10억", 50_000, 100_000],
+            ["10억~", 100_000, null],
+          ]
+        : [
+            ["~3억", null, 30_000],
+            ["3~6억", 30_000, 60_000],
+            ["6~10억", 60_000, 100_000],
+            ["10~15억", 100_000, 150_000],
+            ["15억~", 150_000, null],
+          ],
   );
+  const rent = quick("rentMax", null, [
+    ["~40만", 40, null],
+    ["~60만", 60, null],
+    ["~80만", 80, null],
+    ["~100만", 100, null],
+  ]);
+  const yld = quick("yieldMin", null, [
+    ["3%+", 0.03, null],
+    ["4%+", 0.04, null],
+    ["5%+", 0.05, null],
+    ["6%+", 0.06, null],
+  ]);
+  const area = quick("areaMin", "areaMax", AREA_QUICK[type] ?? AREA_QUICK.apt);
+  const catGroups = CATEGORY_GROUPS[type as keyof typeof CATEGORY_GROUPS] ?? [];
+  const cats = multi("cats", catGroups);
+  const zones = multi("zones", ZONE_GROUPS);
+  const bldg = ([
+    ["집합(구분 상가)", "집합"],
+    ["일반(통건물)", "일반"],
+  ] as const).map(([label, v]) => ({ label, active: filters.bldg === v, onClick: () => toggle({ bldg: v }) }));
+  const floor = ([
+    ["1층", "ground"],
+    ["2층 이상", "upper"],
+  ] as const).map(([label, v]) => ({ label, active: filters.floor === v, onClick: () => toggle({ floor: v }) }));
   const built = quick("yearMin", "yearMax", [
     ["5년 이내", year - 5, null],
     ["10년 이내", year - 10, null],
@@ -187,45 +324,101 @@ function buildSections({
   ]);
   const areaUnit = pyeong ? "평" : "㎡";
   const areaText = (v: number) => `${round(areaScale.toView(v), 0)}${areaUnit}`;
+  const [areaLabel, areaHint] = AREA_LABEL[type] ?? AREA_LABEL.apt;
 
-  const sections: (Section & { complexOnly?: boolean })[] = [
-    {
+  const all: Record<SectionKey, Section> = {
+    price: {
       key: "price",
-      label: kind === "jeonse" ? "전세가" : "매매가",
+      label: kind === "wolse" ? "보증금" : kind === "jeonse" ? "전세가" : "매매가",
       hint: "중위 가격 · 고른 기간 기준",
       summary: summary(price, rangeText(filters.priceMin, filters.priceMax, eokText)),
       clear: () => set({ priceMin: null, priceMax: null }),
       quick: price,
       range: <Range min={filters.priceMin} max={filters.priceMax} onMin={(v) => set({ priceMin: v })} onMax={(v) => set({ priceMax: v })} scale={eok} unit="억" />,
     },
-    {
+    rent: {
+      key: "rent",
+      label: "월세",
+      hint: "월세 중위 이하 · 고른 기간 기준",
+      summary: filters.rentMax === null ? null : `월 ${filters.rentMax}만 이하`,
+      clear: () => set({ rentMax: null }),
+      quick: rent,
+      range: <Range min={null} max={filters.rentMax} onMin={() => {}} onMax={(v) => set({ rentMax: v })} scale={id} unit="만원" />,
+    },
+    yield: {
+      key: "yield",
+      label: "임대수익률",
+      hint: "최근 1년 월세×12 ÷ (매매가 − 월세 보증금) · 세금·관리비 빼기 전 추정치",
+      summary: filters.yieldMin === null ? null : `수익률 ${pctText(filters.yieldMin)}+`,
+      clear: () => set({ yieldMin: null }),
+      quick: yld,
+    },
+    area: {
       key: "area",
-      label: complex ? "평형" : "면적",
-      hint: complex ? "전용면적 · 이 면적의 거래만 집계" : "토지·연면적 · 이 면적의 거래만 집계",
+      label: areaLabel,
+      hint: areaHint,
       summary: summary(area, rangeText(filters.areaMin, filters.areaMax, areaText)),
       clear: () => set({ areaMin: null, areaMax: null }),
       quick: area,
       range: <Range min={filters.areaMin} max={filters.areaMax} onMin={(v) => set({ areaMin: v })} onMax={(v) => set({ areaMax: v })} scale={areaScale} unit={areaUnit} />,
     },
-    {
+    cats: {
+      key: "cats",
+      label: type === "land" ? "지목" : type === "house" ? "주택 유형" : "건물 용도",
+      hint: "여러 개 고를 수 있어요",
+      summary: listText(filters.cats, catGroups),
+      clear: () => set({ cats: [] }),
+      quick: cats,
+    },
+    zones: {
+      key: "zones",
+      label: "용도지역",
+      hint: "여러 개 고를 수 있어요 · 계획관리·자연녹지처럼 개발 가능 범위가 다릅니다",
+      summary: listText(filters.zones, ZONE_GROUPS),
+      clear: () => set({ zones: [] }),
+      quick: zones,
+    },
+    share: {
+      key: "share",
+      label: "지분거래",
+      hint: "한 필지를 여럿이 나눠 사는 지분 거래는 기획부동산 판매가 많아 시세를 왜곡합니다",
+      summary: filters.noShare ? "지분 제외" : null,
+      clear: () => set({ noShare: false }),
+      quick: [{ label: "지분거래 빼기", active: filters.noShare, onClick: () => toggle({ noShare: true }) }],
+    },
+    bldg: {
+      key: "bldg",
+      label: "건물",
+      hint: "집합은 호수별로 파는 구분 상가, 일반은 건물 전체(통건물) 거래",
+      summary: filters.bldg === "집합" ? "구분 상가" : filters.bldg === "일반" ? "통건물" : null,
+      clear: () => set({ bldg: null }),
+      quick: bldg,
+    },
+    floor: {
+      key: "floor",
+      label: "층",
+      hint: "층은 구분 상가(집합) 거래에만 있습니다 · 1층은 보통 상층의 2배 이상",
+      summary: filters.floor === "ground" ? "1층" : filters.floor === "upper" ? "2층 이상" : null,
+      clear: () => set({ floor: null }),
+      quick: floor,
+    },
+    year: {
       key: "year",
       label: "준공",
-      complexOnly: true,
       summary: summary(built, rangeText(filters.yearMin, filters.yearMax, (v) => `${v}년`)),
       clear: () => set({ yearMin: null, yearMax: null }),
       quick: built,
       range: <Range min={filters.yearMin} max={filters.yearMax} onMin={(v) => set({ yearMin: v })} onMax={(v) => set({ yearMax: v })} scale={id} unit="년" />,
     },
-    {
+    hh: {
       key: "hh",
       label: "세대수",
       hint: "건축물대장을 불러온 단지만 남습니다",
-      complexOnly: true,
       summary: summary(hh, filters.hhMin === null ? null : `${filters.hhMin.toLocaleString()}세대+`),
       clear: () => set({ hhMin: null }),
       quick: hh,
     },
-    {
+    jr: {
       key: "jr",
       label: "전세가율",
       hint: "최근 12개월 ㎡당 전세 ÷ 매매",
@@ -234,7 +427,7 @@ function buildSections({
       quick: jr,
       range: <Range min={filters.jrMin} max={filters.jrMax} onMin={(v) => set({ jrMin: v })} onMax={(v) => set({ jrMax: v })} scale={pct} unit="%" />,
     },
-    {
+    chg: {
       key: "chg",
       label: "1년 변동",
       hint: "최근 6개월 vs 1년 전 같은 기간 ㎡당 중위",
@@ -243,39 +436,39 @@ function buildSections({
       quick: chg,
       range: <Range min={filters.chgMin} max={filters.chgMax} onMin={(v) => set({ chgMin: v })} onMax={(v) => set({ chgMax: v })} scale={pct} unit="%" />,
     },
-    {
+    loc: {
       key: "loc",
       label: "입지",
       hint: "점수를 계산한 단지만 남습니다",
-      complexOnly: true,
       summary: summary(loc, filters.locMin === null ? null : `${filters.locMin}점+`),
       clear: () => set({ locMin: null }),
       quick: loc,
     },
-    {
+    ppy: {
       key: "ppy",
-      label: pyeong ? "평당가" : "㎡당 가격",
+      label: `${PPY_LABEL[type] ?? ""}${pyeong ? "평당가" : "㎡당 가격"}`,
+      hint: type === "house" ? "대지면적 기준(단독은 땅값으로 비교)" : undefined,
       summary: rangeText(filters.ppyMin, filters.ppyMax, (v) => formatManwon(ppyScale.toView(v), { short: true })),
       clear: () => set({ ppyMin: null, ppyMax: null }),
       quick: [],
       range: <Range min={filters.ppyMin} max={filters.ppyMax} onMin={(v) => set({ ppyMin: v })} onMax={(v) => set({ ppyMax: v })} scale={ppyScale} unit={pyeong ? "만원/평" : "만원/㎡"} />,
     },
-  ];
-  return sections.filter((s) => complex || !s.complexOnly);
+  };
+  return (ORDER[type] ?? ORDER.apt).filter((k) => filterApplies(SECTION_FILTER[k], type, kind)).map((k) => all[k]);
 }
 
 function presetItems(filters: MapFilters, type: string, onChange: (f: MapFilters) => void, onSort: (s: SortKey) => void, onPicked?: () => void): QuickItem[] {
-  const complex = COMPLEX_TYPES.has(type);
   const year = new Date().getFullYear();
-  return FILTER_PRESETS.filter((p) => complex || !p.complexOnly).map((p) => {
-    const patch = p.filters(year);
+  return presetsFor(type).map((p) => {
+    const target = { ...EMPTY_FILTERS, ...p.filters(year) };
     // 이 묶음의 값만 켜져 있을 때
-    const active = (Object.keys(EMPTY_FILTERS) as (keyof MapFilters)[]).every((k) => filters[k] === (patch[k] ?? null));
+    const active = sameFilters(filters, target);
     return {
       label: p.label,
+      hint: p.hint,
       active,
       onClick: () => {
-        onChange(active ? EMPTY_FILTERS : { ...EMPTY_FILTERS, ...patch });
+        onChange(active ? EMPTY_FILTERS : target);
         if (p.sort && !active) onSort(p.sort);
         onPicked?.();
       },
@@ -298,7 +491,7 @@ type BarProps = {
   onSort: (s: SortKey) => void;
   type: string;
   unit: AreaUnit;
-  kind: "sale" | "jeonse";
+  kind: DealKind;
   months: number;
   onMonths: (m: number) => void;
   resultCount: number;
@@ -306,7 +499,7 @@ type BarProps = {
   onOpenAll: () => void;
 };
 
-const MONTHS = [3, 6, 12, 36];
+const MONTHS = MAP_MONTHS;
 const monthLabel = (m: number) => (m < 12 ? `${m}개월` : `${m / 12}년`);
 
 /**
@@ -321,7 +514,7 @@ export function FilterBar({ filters, onChange, onSort, type, unit, kind, months,
   const close = () => setOpen(null);
   const sections = buildSections({ filters, onChange, type, unit, kind, onPicked: close });
   const presets = presetItems(filters, type, onChange, onSort, close);
-  const count = activeFilterCount(filters, type);
+  const count = activeFilterCount(filters, type, kind);
   const presetOn = presets.find((p) => p.active);
 
   useEffect(() => {
@@ -368,7 +561,7 @@ export function FilterBar({ filters, onChange, onSort, type, unit, kind, months,
         <BarChip label="추천" icon={<Sparkles size={13} />} value={presetOn?.label ?? null} open={open === "preset"} onClick={(e) => toggle("preset", e)} onClear={presetOn ? () => onChange(EMPTY_FILTERS) : undefined} />
         <BarChip label="기간" value={monthLabel(months)} quiet open={open === "months"} onClick={(e) => toggle("months", e)} />
         {sections
-          .filter((s) => s.key !== "ppy" || s.summary)
+          .filter((s) => s.key !== "ppy" || s.summary || PPY_CHIP.has(type))
           .map((s) => (
             <BarChip key={s.key} label={s.label} value={s.summary} open={open === s.key} onClick={(e) => toggle(s.key, e)} onClear={s.clear} />
           ))}
@@ -401,8 +594,9 @@ export function FilterBar({ filters, onChange, onSort, type, unit, kind, months,
             {section?.hint ? <p className="mb-2 text-xs text-muted">{section.hint}</p> : <div className="h-1" />}
             {open === "preset" ? (
               <>
-                <p className="mb-2 text-xs text-muted">누르면 다른 조건은 지우고 이 조건만 적용합니다</p>
+                <p className="mb-2 text-xs text-muted">이 유형에서 많이 찾는 조건이에요 · 누르면 다른 조건은 지우고 이것만 적용합니다</p>
                 <Quick items={presets} />
+                <PresetHints items={presets} />
               </>
             ) : open === "months" ? (
               <Quick items={MONTHS.map((m) => ({ label: monthLabel(m), active: months === m, onClick: () => {
@@ -480,13 +674,13 @@ export function FilterPanel({
   onSort: (s: SortKey) => void;
   type: string;
   unit: AreaUnit;
-  kind: "sale" | "jeonse";
+  kind: DealKind;
   resultCount: number;
   truncated: boolean;
   onClose: () => void;
 }) {
   const sections = buildSections({ filters, onChange, type, unit, kind });
-  const count = activeFilterCount(filters, type);
+  const count = activeFilterCount(filters, type, kind);
   return (
     <div className="flex max-h-full flex-col overflow-hidden rounded-xl border border-border bg-surface text-sm shadow-lg">
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -506,6 +700,7 @@ export function FilterPanel({
         <div className="py-3">
           <p className="mb-1.5 text-xs font-medium text-muted">추천 조건</p>
           <Quick items={presetItems(filters, type, onChange, onSort)} />
+          <PresetHints items={presetItems(filters, type, onChange, onSort)} />
         </div>
         {sections.map((s) => (
           <div key={s.key} className="py-3">

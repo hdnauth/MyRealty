@@ -80,7 +80,7 @@ export async function TransitTab({ uid, isAdmin, status, unit, href }: {
                           <span className="shrink-0 text-xs">개통 전후 <Change value={s.effect.complex} /> <span className="text-muted">지역 <Change value={s.effect.region} /></span></span>
                         ) : null}
                         {s.near_label && s.near_m !== null ? <span className="shrink-0 text-xs text-accent">{s.near_label} {formatDist(s.near_m)}</span> : null}
-                        {s.lng !== null ? <Link href={`/map?at=${s.lng},${s.lat}`} className="shrink-0 text-xs text-accent">지도</Link> : null}
+                        {s.lng !== null ? <Link href={`/map?infra=${s.id}`} className="shrink-0 text-xs text-accent">지도</Link> : null}
                         {isAdmin ? (
                           <form action={deleteProjectAction}>
                             <input type="hidden" name="id" value={s.id} />

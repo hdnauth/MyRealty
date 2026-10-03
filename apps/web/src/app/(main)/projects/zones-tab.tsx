@@ -311,7 +311,7 @@ function ZoneDetailCard({ d, unit, closeHref, isAdmin }: { d: ZoneDetail; unit: 
             {d.followed ? <><BellOff size={13} />팔로우 중</> : <><Bell size={13} />팔로우(단계 알림)</>}
           </button>
         </form>
-        {d.lng !== null ? <LinkButton href={`/map?at=${d.lng},${d.lat}`} variant="secondary" className="h-8 px-3 text-xs"><MapPin size={13} />지도</LinkButton> : null}
+        {d.lng !== null ? <LinkButton href={`/map?zone=${d.id}`} variant="secondary" className="h-8 px-3 text-xs"><MapPin size={13} />지도</LinkButton> : null}
         {d.sgg_cd ? <LinkButton href={`/community?sgg=${d.sgg_cd}`} variant="secondary" className="h-8 px-3 text-xs"><MessagesSquare size={13} />동네 이야기</LinkButton> : null}
         {d.url ? (
           <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-surface-2 px-3 text-xs">

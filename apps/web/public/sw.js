@@ -43,8 +43,13 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || "/";
+  // 알림 푸시(tag "n{id}")는 열람을 기록한다(관리 화면 알림 열람률). 실패해도 이동은 그대로
+  const m = /^n(\d+)$/.exec(event.notification.tag || "");
+  const opened = m
+    ? fetch("/api/notifications/opened", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: Number(m[1]) }) }).catch(() => {})
+    : Promise.resolve();
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    opened.then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const c of list) {
         if ("focus" in c) {
           c.navigate(url);
@@ -52,6 +57,6 @@ self.addEventListener("notificationclick", (event) => {
         }
       }
       return self.clients.openWindow(url);
-    }),
+    })),
   );
 });

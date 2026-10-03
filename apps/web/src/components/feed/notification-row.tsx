@@ -23,6 +23,9 @@ const KIND: Record<string, { label: string; icon: typeof Bell; tone: "up" | "dow
   zone_stage: { label: "정비사업", icon: Construction, tone: "accent" },
 };
 
+/** 알림 종류 → 이름(관리 화면 통계 등) */
+export const NOTIFICATION_LABELS: Record<string, string> = Object.fromEntries(Object.entries(KIND).map(([k, v]) => [k, v.label]));
+
 export function NotificationRow({ n, showItem = true }: { n: Notification; showItem?: boolean }) {
   const k = KIND[n.kind] ?? { label: n.kind, icon: Bell, tone: "neutral" as const };
   const Icon = k.icon;

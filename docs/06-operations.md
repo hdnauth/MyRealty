@@ -120,7 +120,7 @@ GitHub Actions **ETL item** 워크플로로 그 부동산만 수집하고, 상�
 - 한 단계가 실패해도 다음 단계를 계속한다. 대기 10분·실행 40분이 넘으면 화면에서 '멈춤'으로 닫고 다시 요청할 수 있다.
 - 공공데이터 호출량은 매일 수집과 같은 `api_quota` 한도를 나눠 쓴다(아파트 1건 등록 ≈ 매매·전월세 72회).
 - 로컬 개발: 루트 `.env` 에 `ITEM_COLLECT_LOCAL=1` 이면 `services/etl` 에서 `uv run myrealty item` 을 직접 띄운다.
-- 지도 "이 지역 데이터 모으기"(마이그레이션 `0017_region_requests.sql`): 켜진 수집 대상이 `REGION_TARGET_CAP`(기본 40) 미만이면 바로 켜고, 넘으면 `region_requests.status = 'pending'` 으로 남는다. 켜려면 `update collect_targets ...` 또는 `insert into collect_targets (sgg_cd, name) ...` 후 해당 요청을 `enabled` 로 바꾼다. 역지오코딩에 `VWORLD_KEY` 가 필요하다.
+- 지도 "이 지역 데이터 모으기"(마이그레이션 `0017_region_requests.sql`): 켜진 수집 대상이 `REGION_TARGET_CAP`(기본 40) 미만이면 바로 켜고, 넘으면 `region_requests.status = 'pending'` 으로 남는다. 관리 › 수집 지역에서 켜거나 거절한다. 역지오코딩에 `VWORLD_KEY` 가 필요하다.
 - 실거래 저장은 여러 행을 한 문장으로 보내(`jsonb_to_recordset`) GitHub(미국) ↔ DB(서울) 왕복을 줄였다 — 매일 수집도 함께 빨라진다.
 
 ## 5. 운영 팁

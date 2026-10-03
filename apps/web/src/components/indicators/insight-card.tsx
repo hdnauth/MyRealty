@@ -99,3 +99,88 @@ export function BacktestCard({ bt }: { bt: { horizon: number; months: number; ba
     </Card>
   );
 }
+
+/**
+ * 기본 보기의 지표 첫 카드: 판정 한 줄 → 이유 세 가지(과거 적중률이 높은 순) → 이 판정을 얼마나 믿을 수 있는지.
+ * 나머지 요인은 접어 둔다.
+ */
+export function MarketVerdictCard({
+  insights,
+  ranked,
+  region,
+  record,
+  signal,
+  temp,
+  band,
+}: {
+  insights: Insight[];
+  ranked: Insight[];
+  region: string | null;
+  record?: Map<string, RuleRecord>;
+  signal: { hitRate: number; base: number; signals: number; months: number } | null;
+  temp: number | null;
+  band: { label: string; tone: "up" | "down" | "neutral" };
+}) {
+  if (!insights.length) return null;
+  const b = insightBalance(insights);
+  const top = ranked.filter((x) => x.tone !== "neutral").slice(0, 3);
+  const rest = insights.length - top.length;
+  const tone = b.up - b.down >= 2 ? "text-up" : b.down - b.up >= 2 ? "text-down" : "";
+  return (
+    <Card className="p-4">
+      <div className="text-xs text-muted">{region ? `${region} 시장 판정` : "시장 판정"}</div>
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className={clsx("text-2xl font-bold tracking-tight", tone)}>{b.verdict}</span>
+        {temp !== null ? (
+          <span className="text-sm text-muted">
+            시장 온도 <b className="text-text">{Math.round(temp)}</b> · {band.label}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-1 text-sm text-muted">
+        가격을 올리는 요인 <b className="text-up">{b.up}</b> · 내리는 요인 <b className="text-down">{b.down}</b>
+      </p>
+      {top.length ? (
+        <ol className="mt-4 space-y-3">
+          {top.map((x, i) => {
+            const Icon = ICON[x.tone];
+            const r = record?.get(`${x.key}:${x.tone}`);
+            return (
+              <li key={x.key} className="flex gap-2.5">
+                <span className={clsx("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold", x.tone === "up" ? "bg-up/10 text-up" : "bg-down/10 text-down")}>
+                  <Icon size={14} aria-label={`${i + 1}`} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold">{x.title}</span>
+                  <span className="block text-[13px] leading-relaxed text-muted">{x.detail}</span>
+                  {r && r.n >= 6 ? (
+                    <span className="mt-0.5 block text-[11px] text-muted">
+                      이 지역에서 이 신호가 났던 {r.n}개월 중 6개월 뒤 {x.tone === "up" ? "올랐던" : "내렸던"} 비율 {(r.hitRate * 100).toFixed(0)}%
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="mt-3 text-sm text-muted">뚜렷하게 가격을 밀거나 당기는 요인이 없습니다.</p>
+      )}
+      {signal ? (
+        <p className="mt-4 rounded-lg bg-surface-2 px-3 py-2 text-[12px] leading-relaxed text-muted">
+          이 판정은 얼마나 맞았나: 지금 켜진 신호 {signal.signals}개는 이 지역 과거 {signal.months}개월 동안 6개월 뒤 방향을{" "}
+          <b className="text-text">{(signal.hitRate * 100).toFixed(0)}%</b> 맞혔습니다(아무 때나 같은 방향으로 찍으면 {(signal.base * 100).toFixed(0)}%).
+        </p>
+      ) : null}
+      {rest > 0 ? (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-sm font-medium text-accent">요인 모두 보기 ({insights.length})</summary>
+          <div className="mt-3">
+            <InsightCard insights={insights} region={region} record={record} />
+          </div>
+        </details>
+      ) : null}
+      <p className="mt-3 text-[11px] text-muted">금리 → 대출 부담 → 거래 → 가격 흐름을 규칙으로 판단한 참고 정보입니다. 투자 권유가 아닙니다.</p>
+    </Card>
+  );
+}

@@ -13,6 +13,7 @@ import { type AreaUnit, shortAddress } from "@/lib/format";
 import { defaultRadius, PROPERTY_TYPES, type PropertyType } from "@/lib/property";
 import type { AreaType } from "@/lib/units";
 import { createItemAction, type ItemFormState } from "../actions";
+import type { FinanceProfile } from "@/lib/brief";
 import { TradePreviewCard } from "./trade-preview";
 import { SimpleArea, UnitPicker } from "./unit-picker";
 
@@ -61,7 +62,19 @@ function withLivePrices(types: AreaType[], preview: TradePreview | null): AreaTy
   });
 }
 
-export function NewItemForm({ mapKeys, unit, initialPick = null }: { mapKeys: MapKeys; unit: AreaUnit; initialPick?: AddressCandidate | null }) {
+export function NewItemForm({
+  mapKeys,
+  unit,
+  initialPick = null,
+  initialGroup,
+  profile = null,
+}: {
+  mapKeys: MapKeys;
+  unit: AreaUnit;
+  initialPick?: AddressCandidate | null;
+  initialGroup?: string;
+  profile?: FinanceProfile | null;
+}) {
   const [q, setQ] = useState(initialPick?.buildingName ?? "");
   const [results, setResults] = useState<AddressCandidate[]>([]);
   const [meta, setMeta] = useState<{ jusoEnabled?: boolean; jusoError?: string | null; parcelError?: string | null; parcelEnabled?: boolean; searched?: string }>({});
@@ -302,6 +315,9 @@ export function NewItemForm({ mapKeys, unit, initialPick = null }: { mapKeys: Ma
           {isLand ? <Notice>토지·임야 실거래는 지번 일부가 공개되지 않아 같은 읍면동의 유사 면적 거래와 비교합니다.</Notice> : null}
 
           <DetailFields
+            d={{ group_tag: initialGroup }}
+            showProfile
+            profile={profile}
             isLand={isLand}
             labelPlaceholder={defaultLabel ? `비워 두면 "${defaultLabel}"` : "예) 우리집, 매수후보 A"}
             defaultRadius={defaultRadius(type)}

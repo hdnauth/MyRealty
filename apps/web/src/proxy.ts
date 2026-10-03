@@ -1,6 +1,7 @@
 import { jwtVerify, SignJWT, type JWTPayload } from "jose";
 import { NextResponse, type NextRequest } from "next/server";
 import { REMEMBER_DAYS, SESSION_COOKIE, shouldRenew } from "@/lib/auth/policy";
+import { legacyItemTabHref } from "@/lib/item-tabs";
 
 function secretKey() {
   const secret = process.env.AUTH_SECRET || (process.env.NODE_ENV !== "production" ? "dev-only-insecure-secret-change-me" : "");
@@ -13,6 +14,9 @@ function secretKey() {
  * 여기서는 "이 기기 기억하기" 세션(게스트 포함)의 쿠키를 하루에 한 번 새로 발급해 만료를 연장한다.
  */
 export async function proxy(req: NextRequest) {
+  // 예전 상세 탭 주소(주변·분석·이야기)는 합쳐진 위치로(스트리밍 전에 HTTP 리다이렉트)
+  const legacy = legacyItemTabHref(req.nextUrl.pathname, req.nextUrl.searchParams);
+  if (legacy) return NextResponse.redirect(new URL(legacy, req.url), 307);
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const key = secretKey();
   let payload: JWTPayload | null = null;

@@ -7,8 +7,15 @@ import { formatArea } from "@/lib/format";
 import { monthlyRollingMedian } from "@/lib/item-analytics";
 import { complexSales, itemTransactions, type WatchItem } from "@/lib/queries/items";
 import { clusterAreas } from "@/lib/units";
+import type { ViewMode } from "@/lib/view-mode";
+import { NearbyCompare, NearbyTrades } from "./nearby";
 
-export async function PriceTab({ item, all = false }: { item: WatchItem; all?: boolean }) {
+/**
+ * 시세 탭: "얼마인가"와 "싼가 비싼가"의 근거를 한 흐름으로 —
+ * 가격 추이 → 비슷한 단지와 비교 → 평형별 추이 → 거래 내역 → 주변 거래.
+ * all: 거래 내역 전체, nall: 주변 거래 전체(비슷한 것만이 아니라)
+ */
+export async function PriceTab({ item, all = false, nall = false, mode }: { item: WatchItem; all?: boolean; nall?: boolean; mode: ViewMode }) {
   const [points, sales, unit] = await Promise.all([
     itemTransactions(item, 10),
     item.complex_id ? complexSales(item.complex_id, 5) : Promise.resolve([]),
@@ -33,15 +40,29 @@ export async function PriceTab({ item, all = false }: { item: WatchItem; all?: b
     name: `${formatArea(t.area, unit).split(" ")[0]}${t === mine ? " ★" : ""}`,
     points: monthlyRollingMedian(sales.filter((s) => Math.abs(s.area_m2 - t.area) <= 0.5).map((s) => ({ date: s.deal_date, value: s.price })), { minN: 1 }),
   }));
+  const sections = [
+    ["trend", "가격 추이"],
+    ["compare", item.complex_id ? "비슷한 단지와 비교" : "주변 시장"],
+    ["trades", "거래 내역"],
+    ["nearby", "주변 거래"],
+  ] as const;
 
   return (
     <div className="space-y-4">
-      <Card>
+      <nav className="-mx-4 flex gap-1.5 overflow-x-auto px-4 md:mx-0 md:px-0" aria-label="시세 탭 바로가기">
+        {sections.map(([id, label]) => (
+          <a key={id} href={`#${id}`} className="shrink-0 rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">
+            {label}
+          </a>
+        ))}
+      </nav>
+      <Card id="trend" className="scroll-mt-20">
         <CardHeader title="실거래가 추이" sub={scope} />
         <div className="px-2 pb-3">
           <PriceHistoryChart points={points} />
         </div>
       </Card>
+      <NearbyCompare item={item} mode={mode} />
       {lines.length >= 2 ? (
         <Card>
           <CardHeader title="평형별 가격 추이" sub="같은 단지 매매 · 3개월 이동 중위 · ★ 내 평형" />
@@ -50,16 +71,11 @@ export async function PriceTab({ item, all = false }: { item: WatchItem; all?: b
           </div>
         </Card>
       ) : null}
-      <Card>
+      <Card id="trades" className="scroll-mt-20">
         <CardHeader title="거래 내역" sub={`${points.length}건 · 해제(취소) 거래 포함 표시`} />
-        <TxTable
-          rows={[...points].reverse()}
-          showName={!item.complex_id}
-          discuss
-          limit={all ? 5000 : 30}
-          moreHref={`/items/${item.id}?tab=price&all=1`}
-        />
+        <TxTable rows={[...points].reverse()} showName={!item.complex_id} discuss limit={all ? 5000 : 30} moreHref={`/items/${item.id}?tab=price&all=1#trades`} />
       </Card>
+      <NearbyTrades item={item} all={nall} />
     </div>
   );
 }

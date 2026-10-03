@@ -27,3 +27,12 @@ export function mapComplexHref(complexId: number): string {
 export function registerComplexHref(complexId: number): string {
   return `/items/new?complex=${complexId}`;
 }
+
+/**
+ * 네이버 부동산(모바일) 단지 매물 검색. "동 + 단지명"이면 대개 단지 화면으로 바로 넘어가고,
+ * 같은 이름이 여럿이면 검색 결과 목록이 열린다. 호가·매물은 공개 API 가 없어 외부로 넘긴다.
+ */
+export function naverLandHref(umd: string | null | undefined, name: string): string {
+  const q = [umd?.split(" ").at(-1), name.replace(/\s*\(.*?\)\s*/g, " ").trim()].filter(Boolean).join(" ");
+  return `https://m.land.naver.com/search/result/${encodeURIComponent(q)}`;
+}

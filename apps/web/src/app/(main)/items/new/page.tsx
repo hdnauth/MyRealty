@@ -7,6 +7,7 @@ import { getUser } from "@/lib/auth/session";
 import { env } from "@/lib/env";
 import { getComplex } from "@/lib/queries/complexes";
 import { NewItemForm } from "./new-item-form";
+import { isItemGroup, readFinanceProfile } from "@/lib/brief";
 
 export const metadata: Metadata = { title: "부동산 등록" };
 
@@ -16,11 +17,22 @@ export default async function NewItemPage(props: PageProps<"/items/new">) {
   // ?complex=단지 id: 단지 상세·지도에서 '관심 등록'으로 들어오면 그 단지를 고른 상태로 연다
   const [unit, complex] = await Promise.all([getAreaUnit(), typeof sp.complex === "string" ? getComplex(Number(sp.complex)) : null]);
   const initialPick: AddressCandidate | null = complex ? complexCandidate(complex) : null;
+  // ?group=owned|candidate|watch|tenant: 그룹을 미리 고른 채로 연다
+  const group = isItemGroup(sp.group) ? sp.group : undefined;
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader title="관심 부동산 등록" sub="아파트·빌라·오피스텔·단독·토지·임야·상가를 주소로 등록하세요." />
+      <PageHeader
+        title="관심 부동산 등록"
+        sub="주소만 넣으면 시세·비슷한 단지 비교·시장 흐름·위험 신호를 한 화면에 정리해 드려요."
+      />
       {!user || user.isGuest ? <GuestNote className="mb-4 rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-muted" /> : null}
-      <NewItemForm mapKeys={{ keyId: env.ncpKeyId ?? null, vworldKey: env.vworldKey ?? null }} unit={unit} initialPick={initialPick} />
+      <NewItemForm
+        mapKeys={{ keyId: env.ncpKeyId ?? null, vworldKey: env.vworldKey ?? null }}
+        unit={unit}
+        initialPick={initialPick}
+        initialGroup={group}
+        profile={readFinanceProfile(user?.settings)}
+      />
     </div>
   );
 }
@@ -48,3 +60,4 @@ function complexCandidate(c: NonNullable<Awaited<ReturnType<typeof getComplex>>>
     dongs: [],
   };
 }
+

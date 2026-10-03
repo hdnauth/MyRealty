@@ -300,3 +300,44 @@ export function backtestInsights(s: SeriesMap, opts: { target?: string; horizon?
   const rules: RuleRecord[] = [...acc.values()].map(({ sum, hits, ...r }) => ({ ...r, avgForward: sum / r.n, hitRate: hits / r.n }));
   return { horizon, months: total, baseUp: total ? ups / total : 0, rules: rules.sort((a, b) => b.n - a.n) };
 }
+
+/** 적중률을 사용자에게 내세우려면 최소한 이만큼의 달을 채점해야 한다 */
+export const MIN_BACKTEST_MONTHS = 24;
+
+/**
+ * 지금 켜진 신호들의 이 지역 과거 성적: 신호별 적중률을 표본 수로 가중 평균하고,
+ * 같은 기간 '무작정 찍기'(상승 신호면 상승 비율, 하락 신호면 하락 비율)와 나란히 보인다.
+ */
+export function signalRecord(xs: Insight[], bt: ReturnType<typeof backtestInsights>, minN = 6) {
+  // 채점한 기간이 짧으면(지역 지표가 3년 남짓이면 6개월뿐) 적중률이 우연에 가깝다 — 보이지 않는다
+  if (!bt || bt.months < MIN_BACKTEST_MONTHS) return null;
+  const byId = new Map(bt.rules.map((r) => [r.id, r]));
+  let n = 0;
+  let hits = 0;
+  let base = 0;
+  let signals = 0;
+  for (const x of xs) {
+    if (x.tone === "neutral") continue;
+    const r = byId.get(`${x.key}:${x.tone}`);
+    if (!r || r.n < minN) continue;
+    signals += 1;
+    n += r.n;
+    hits += r.hitRate * r.n;
+    base += (x.tone === "up" ? bt.baseUp : 1 - bt.baseUp) * r.n;
+  }
+  return n ? { hitRate: hits / n, base: base / n, signals, months: bt.months } : null;
+}
+
+/** 가격 방향 요인을 중요한 순으로: 방향이 있는 것 → 과거 적중률이 높은 것(표본 6개월 이상) → 원래 순서 */
+export function rankInsights(xs: Insight[], bt?: ReturnType<typeof backtestInsights>): Insight[] {
+  const byId = new Map((bt?.rules ?? []).map((r) => [r.id, r]));
+  const score = (x: Insight) => {
+    if (x.tone === "neutral") return -1;
+    const r = byId.get(`${x.key}:${x.tone}`);
+    return r && r.n >= 6 ? r.hitRate : 0.5;
+  };
+  return xs
+    .map((x, i) => ({ x, i, s: score(x) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map((o) => o.x);
+}

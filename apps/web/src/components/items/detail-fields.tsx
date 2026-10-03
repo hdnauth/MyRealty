@@ -2,6 +2,8 @@
 
 import { type ReactNode, useState } from "react";
 import { Field, Input, Select } from "@/components/ui";
+import { formatManwon } from "@/lib/format";
+import type { FinanceProfile } from "@/lib/brief";
 import { GROUP_TAGS } from "@/lib/property";
 import type { Lease, Loan } from "@/lib/queries/items";
 import { ChoiceChips, DongHoField, MoneyField, RADIUS_OPTIONS } from "./smart-inputs";
@@ -30,7 +32,12 @@ export function DetailFields({
   unitSlot,
   labelPlaceholder = "예) 우리집, 매수후보 A",
   defaultRadius = 1000,
+  profile,
+  showProfile = false,
 }: {
+  /** 새로 등록할 때 매수 후보면 내 자금(가용 현금·연소득)을 함께 받는다(계정 설정에 저장) */
+  showProfile?: boolean;
+  profile?: FinanceProfile | null;
   /** 새로 등록할 때 유형별 기본 반경(아파트 1km, 토지 2km) */
   defaultRadius?: number;
   d?: DetailDefaults;
@@ -43,15 +50,23 @@ export function DetailFields({
 }) {
   const loan = d.loans?.[0];
   const [area, setArea] = useState<string>(isLand ? String(d.land_area_m2 ?? "") : String(d.area_m2 ?? ""));
-  const [finance, setFinance] = useState(Boolean(d.purchase_price || loan || d.lease));
+  const [group, setGroup] = useState(d.group_tag ?? "watch");
+  const [finance, setFinance] = useState(Boolean(d.purchase_price || loan || d.lease) || group === "owned" || group === "tenant");
+  // 관계마다 필요한 칸만 보인다(숨긴 칸도 값은 그대로 보내 수정 때 지워지지 않는다)
+  const tenant = group === "tenant";
+  const showPurchase = !tenant && group !== "candidate";
   return (
     <div className="space-y-4">
       <ChoiceChips
         name="group_tag"
         label="이 부동산은"
         options={Object.entries(GROUP_TAGS).map(([value, label]) => ({ value, label }))}
-        defaultValue={d.group_tag ?? "watch"}
-        hint="보유는 포트폴리오·손익에, 전월세 거주는 보증금 안전 점검에 쓰입니다."
+        defaultValue={group}
+        onChange={(v) => {
+          setGroup(v);
+          if (v === "owned" || v === "tenant") setFinance(true);
+        }}
+        hint="보유는 손익·대출 부담에, 전월세 거주는 보증금 점검에, 매수 후보는 자금 계산에 쓰입니다."
       />
       <Field label="이름(표시용)">
         <Input name="label" defaultValue={d.label ?? ""} placeholder={labelPlaceholder} />
@@ -82,18 +97,40 @@ export function DetailFields({
         </>
       )}
 
-      <button type="button" className="text-sm font-medium text-accent" onClick={() => setFinance((v) => !v)}>
-        {finance ? "− 매입·대출·임대 정보 접기" : "+ 매입·대출·임대 정보 입력 (선택)"}
-      </button>
-      {finance ? (
-        <div className="space-y-4 rounded-xl bg-surface-2 p-4">
+      {showProfile ? (
+        // 다른 관계를 눌렀다 돌아와도 입력값이 남도록 숨기기만 한다(서버는 매수 후보일 때만 저장)
+        <div className={group === "candidate" ? "space-y-3 rounded-xl bg-surface-2 p-4" : "hidden"}>
+          <p className="text-sm font-medium">자금 정보 (선택) — 필요한 대출·월 상환 계산용</p>
+          {profile?.cash != null ? (
+            <p className="text-[13px] text-muted">
+              저장된 자금: 현금 {formatManwon(profile.cash, { short: true })}
+              {profile.income ? ` · 연소득 ${formatManwon(profile.income, { short: true })}` : ""} · LTV {Math.round(profile.ltv * 100)}%. 바꾸려면 아래에 새로 넣으세요.
+            </p>
+          ) : null}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <MoneyField label="집 사는 데 쓸 수 있는 현금" name="profile_cash" placeholder="예) 3억 5000" />
+            <MoneyField label="가구 연소득(세전)" name="profile_income" placeholder="예) 8000만" />
+          </div>
+          <p className="text-xs text-muted">모든 매수 후보에 같이 쓰이고, 설정 › 내 자금에서 바꿀 수 있습니다. 다른 사람에게 보이지 않습니다.</p>
+        </div>
+      ) : null}
+
+      {group === "candidate" ? null : (
+        <button type="button" className="text-sm font-medium text-accent" onClick={() => setFinance((v) => !v)}>
+          {finance ? `− ${tenant ? "보증금" : "매입·대출·임대"} 정보 접기` : `+ ${tenant ? "보증금·계약 만기" : "매입·대출·임대 정보"} 입력 (선택)`}
+        </button>
+      )}
+      {finance ? (
+        <div className={group === "candidate" ? "hidden" : "space-y-4 rounded-xl bg-surface-2 p-4"}>
+          {tenant ? <p className="text-[13px] text-muted">보증금을 넣으면 깡통전세 비율·보증보험 한도·전세 시세와 비교합니다.</p> : null}
+
+          <div className={showPurchase ? "grid grid-cols-1 gap-4 sm:grid-cols-2" : "hidden"}>
             <MoneyField label="매입가" name="purchase_price" defaultValue={d.purchase_price} />
             <Field label="매입일">
               <Input name="purchase_date" type="date" defaultValue={d.purchase_date ?? ""} />
             </Field>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <div className={showPurchase ? "grid grid-cols-1 gap-4 sm:grid-cols-4" : "hidden"}>
             <MoneyField label="대출금" name="loan_amount" defaultValue={loan?.amount} placeholder="예) 6억" />
             <Field label="금리(%)">
               <Input name="loan_rate" inputMode="decimal" defaultValue={loan?.rate ?? ""} />
@@ -111,12 +148,16 @@ export function DetailFields({
             <Field label="계약 만기">
               <Input name="lease_end" type="date" defaultValue={d.lease?.end_date ?? ""} />
             </Field>
-            <Field label="내 역할">
-              <Select name="lease_role" defaultValue={d.lease?.role ?? "landlord"}>
-                <option value="landlord">임대인</option>
-                <option value="tenant">임차인</option>
-              </Select>
-            </Field>
+            {tenant ? (
+              <input type="hidden" name="lease_role" value="tenant" />
+            ) : (
+              <Field label="내 역할">
+                <Select name="lease_role" defaultValue={d.lease?.role ?? "landlord"}>
+                  <option value="landlord">임대인(세 놓음)</option>
+                  <option value="tenant">임차인(세 들어 삶)</option>
+                </Select>
+              </Field>
+            )}
           </div>
         </div>
       ) : null}
@@ -145,3 +186,4 @@ export function DetailFields({
     </div>
   );
 }
+

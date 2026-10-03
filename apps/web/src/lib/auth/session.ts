@@ -42,6 +42,8 @@ export type UserSettings = {
   digestHour?: number;
   pushEnabled?: boolean;
   instantPriority?: number;
+  /** 내 자금(가용 현금·연소득 만원, LTV 0~1) — lib/brief readFinanceProfile */
+  finance?: { cash: number | null; income: number | null; ltv: number };
 };
 
 export async function clientIp() {

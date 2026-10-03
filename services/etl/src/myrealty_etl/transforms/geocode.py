@@ -106,6 +106,10 @@ def geocode_pending(conn, limit: int = 300, sgg_cd: str | None = None, lawd_cd: 
             conn.execute("update complexes set geom = ST_SetSRID(ST_MakePoint(%s, %s), 4326) where id = %s",
                          (pt[0], pt[1], c["id"]))
             stats["complexes"] += 1
+    # 읍면동 경계(브이월드): 코드 없는 토지·단독·상가 거래의 동네 코드, 좌표 없는 읍면동의 중심을 먼저 채운다
+    from .regions import fill_regions
+
+    stats.update(fill_regions(conn, sgg_cd=sgg_cd, limit=limit))
     regs = conn.execute(
         """select r.lawd_cd, coalesce(t.name, r.sido || ' ' || r.sigungu, '') as sgg_name, r.emd
            from regions r left join collect_targets t on t.sgg_cd = substr(r.lawd_cd, 1, 5)

@@ -1,21 +1,25 @@
 import type { Metadata } from "next";
-import { type MapEvent, type MapFocusComplex, type MapProject, type MapWatchItem, RealtyMap } from "@/components/map/realty-map";
+import { cookies } from "next/headers";
+import { type MapEvent, type MapFocusComplex, type MapFocusProject, type MapWatchItem, RealtyMap } from "@/components/map/realty-map";
 import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { fillMissingItemGeoms } from "@/lib/external/geocode";
 import { env } from "@/lib/env";
 import { getAreaUnit } from "@/lib/area-unit";
 import { busiestCenter } from "@/lib/queries/complexes";
+import { MAP_LAYER_KEYS, MAP_PREFS_COOKIE, parseMapPrefs } from "@/lib/map-prefs";
 
 export const metadata: Metadata = { title: "지도" };
 
 export default async function MapPage(props: PageProps<"/map">) {
-  const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
+  const [uid, sp, jar] = await Promise.all([sessionUserId(), props.searchParams, cookies()]);
+  // 이 기기에서 마지막으로 쓴 지도 설정(유형·조건·레이어 등)
+  const prefs = parseMapPrefs(jar.get(MAP_PREFS_COOKIE)?.value);
   // 시작 화면이라 방문자도 바로 본다(내 부동산 목록만 비어 있다)
   const user = await pageUser(uid);
   // 좌표가 없는 부동산(등록 때 지오코딩 실패 등)은 지금 채워 지도에 빠지지 않게 한다
   if (user?.itemCount) await fillMissingItemGeoms(user.id).catch((e) => console.error("[map] geocode", e));
-  const [items, missing, events, projects, unit] = await Promise.all([
+  const [items, missing, events, unit] = await Promise.all([
     sql<MapWatchItem[]>`
       select w.id, w.label, w.property_type, w.group_tag, w.radius_m, w.complex_id, w.pnu, w.area_m2::float8 as area_m2,
         ST_X(w.geom) as lng, ST_Y(w.geom) as lat, v.estimate, lt.price as last_price, lt.deal_date::text as last_date
@@ -36,15 +40,6 @@ export default async function MapPage(props: PageProps<"/map">) {
         (kind = 'subscription' and coalesce(ends_on, starts_on) >= current_date - 30)
         or (kind = 'move_in' and starts_on between current_date - 90 and current_date + interval '36 months'))
       order by starts_on desc limit 400`,
-    sql<MapProject[]>`
-      select 'zone' as type, id, name, kind, stage as status, stage_order as step, null::text as expected_open,
-        ST_X(ST_PointOnSurface(geom)) as lng, ST_Y(ST_PointOnSurface(geom)) as lat
-      from redevelopment_zones where geom is not null and stage_order is distinct from 9
-      union all
-      select 'infra', id, name, kind, status, status_order, expected_open::text,
-        ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom))
-      from infra_projects where geom is not null
-      limit 3000`,
     getAreaUnit(),
   ]);
   const focus = typeof sp.item === "string" ? items.find((i) => i.id === sp.item) : undefined;
@@ -54,9 +49,27 @@ export default async function MapPage(props: PageProps<"/map">) {
     ? await sql<MapFocusComplex[]>`
         select id::int as id, name, property_type, ST_X(geom) as lng, ST_Y(geom) as lat from complexes where id = ${complexId} and geom is not null`
     : [];
+  // ?zone=정비구역 id / ?infra=철도·도로 사업 id: 그 사업으로 이동해 레이어를 켜고 경계를 강조하며 정보 카드를 연다(개발·테마에서)
+  const zoneId = typeof sp.zone === "string" ? Number(sp.zone) : NaN;
+  const infraId = typeof sp.infra === "string" ? Number(sp.infra) : NaN;
+  const [focusProject] = Number.isInteger(zoneId)
+    ? await sql<MapFocusProject[]>`
+        select 'zone' as type, id::int as id, name, kind, stage as status, stage_order as step, null::text as expected_open,
+          ST_X(ST_PointOnSurface(geom)) as lng, ST_Y(ST_PointOnSurface(geom)) as lat,
+          case when GeometryType(geom) like '%POLYGON' then ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(geom, 0.00002)), 6) end as shape
+        from redevelopment_zones where id = ${zoneId} and geom is not null`
+    : Number.isInteger(infraId)
+      ? await sql<MapFocusProject[]>`
+          select 'infra' as type, id::int as id, name, kind, status, status_order as step, expected_open::text,
+            ST_X(ST_PointOnSurface(geom)) as lng, ST_Y(ST_PointOnSurface(geom)) as lat, attrs->>'notice_date' as notice_date,
+            case when kind = 'road' then ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(geom, 0.00002)), 6) end as shape
+          from infra_projects where id = ${infraId} and geom is not null`
+      : [];
   const at = typeof sp.at === "string" ? sp.at.split(",").map(Number) : null;
   const atPoint: [number, number] | null = at && at.length === 2 && at.every(Number.isFinite) ? [at[0], at[1]] : null;
-  const center: [number, number] = focusComplex
+  const center: [number, number] = focusProject
+    ? [focusProject.lng, focusProject.lat]
+    : focusComplex
     ? [focusComplex.lng, focusComplex.lat]
     : (atPoint ??
       (focus ? [focus.lng, focus.lat] : items[0] ? [items[0].lng, items[0].lat] : ((await busiestCenter().catch(() => null)) ?? [126.978, 37.5665])));
@@ -69,13 +82,17 @@ export default async function MapPage(props: PageProps<"/map">) {
       vworldDomain={env.vworldDomain ?? null}
       items={items}
       events={events}
-      projects={projects}
       initialCenter={center}
-      focusItemId={focusComplex || atPoint ? null : (focus?.id ?? null)}
+      focusItemId={focusComplex || atPoint || focusProject ? null : (focus?.id ?? null)}
+      focusProject={focusProject ?? null}
       focusComplex={focusComplex ?? null}
       atPoint={atPoint}
       initialType={initialType}
-      initialLayers={typeof sp.layers === "string" ? sp.layers.split(",").filter((l) => ["permit", "district_plan", "zoning", "cadastral", "movein"].includes(l)) : null}
+      initialLayers={[
+        ...(typeof sp.layers === "string" ? sp.layers.split(",").flatMap((l) => (l === "projects" ? ["zones", "infra"] : [l])).filter((l) => (MAP_LAYER_KEYS as readonly string[]).includes(l)) : []),
+        ...(focusProject ? [focusProject.type === "zone" ? "zones" : "infra"] : []),
+      ]}
+      initialPrefs={prefs}
       complexItems={myComplexes}
       unit={unit}
       missingItems={missing}

@@ -98,12 +98,19 @@ def collect_gyeonggi(conn, detail: bool = True) -> dict:
         token = (re.search(r'X-CSRF-TOKEN",\s*"([^"]+)"', page) or [None, None])[1]
         stats = {"rows": len(rows), "new": 0, "changed": 0, "same": 0, "detail": 0}
         seen: dict[str, int] = {}
+        # 사이트가 응답하지 않는 날 건마다 40초씩 기다리지 않게: 연속 5번 실패하면 이번 실행은 상세를 그만 받는다
+        fails = 0
         for r in rows:
             stage, extra = r["stage"], {}
+            if detail and fails >= 5:
+                stats["detail_stopped"] = True
+                detail = False
             if detail:
                 d = _gg_detail(client, token, r["id"])
-                if not d and conn.execute("select 1 from redevelopment_zones where source_key = %s", (f"gyeonggi:{r['id']}",)).fetchone():
-                    # 상세를 못 받으면 목록의 묶음 단계('조합(시행자)')로 덮어써 가짜 단계 변경이 생긴다 — 이번엔 건너뛴다
+                fails = 0 if d else fails + 1
+                if not d:
+                    # 상세를 못 받으면 목록의 묶음 단계('추진주체 구성 전' 등)뿐이다 — 있는 구역은 덮어써 가짜 단계 변경이 생기고,
+                    # 새 구역도 다음 실행에서 상세 단계로 바뀌며 가짜 변경이 남는다. 이번엔 건너뛰고 다음 실행에서 상세와 함께 넣는다
                     stats["detail_failed"] = stats.get("detail_failed", 0) + 1
                     continue
                 if d:
@@ -112,6 +119,8 @@ def collect_gyeonggi(conn, detail: bool = True) -> dict:
                     extra = {"group_stage": r["stage"], "owners": d.get("landOwnerCnt"), "members": d.get("gldMbrCnt"),
                              "method": d.get("enfcMthdNm"), "zoning": (d.get("cmmBizSumry") or {}).get("ctyPlanZngNm")}
                 time.sleep(0.15)
+            elif stats.get("detail_stopped"):
+                continue  # 상세 없이 목록 단계로 넣거나 덮어쓰지 않는다(가짜 단계 변경 방지)
             rec = {"source": "gyeonggi", "source_id": r["id"], "sido": "경기도", "sgg_name": r["sgg"], "name": r["name"],
                    "kind_raw": r["kind"], "stage": stage, "address": clean_address(r["addr"]), "url": GG_SHOW + r["id"],
                    "attrs": {k: v for k, v in extra.items() if v not in (None, "", "0")}}

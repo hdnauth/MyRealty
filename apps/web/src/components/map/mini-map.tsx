@@ -3,7 +3,7 @@
 import "leaflet/dist/leaflet.css";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { complexHref, type MyComplexes } from "@/lib/links";
+import { complexHref, type MyComplexes, regionHref } from "@/lib/links";
 import type { MapPoint } from "@/lib/map-filters";
 import { type AreaUnit, formatManwon, fromPerPyeong } from "@/lib/format";
 import { type BBox, createLeafletMap, createNaverMap, loadLeaflet, loadNaver, type MapHandle, declutter, pinLabel, polygonBBox, type Removable, shortName, tileSources } from "./engines";
@@ -15,7 +15,6 @@ const POI_ICON: Record<string, { bg: string; icon: string }> = {
   subway: { bg: "#2a78d6", icon: "🚇" },
   school: { bg: "#1baf7a", icon: "🏫" },
 };
-const COMPLEX_TYPES = new Set(["apt", "officetel", "rowhouse"]);
 
 function esc(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -161,22 +160,25 @@ export function MiniMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const perArea = COMPLEX_TYPES.has(txType);
+    // 단위가격 라벨: 단지는 전용, 단독은 대지, 토지는 토지, 상가는 건물 면적 기준(면적이 제각각이라 총액은 비교가 안 된다)
     const ms: Removable[] = [];
     const shown = declutter([...points].sort((a, b) => b.n - a.n).slice(0, 60), bbox, map.size(), { w: 96, h: 36 });
     for (const p of shown) {
       // 내 단지는 핀이 이미 가리키므로 라벨을 겹쳐 그리지 않는다
       if (selfComplexId !== null && p.complex_id === selfComplexId) continue;
       const self = false;
-      const main = perArea && p.median_ppy ? `${formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}` : formatManwon(p.median_price, { short: true });
+      // 단지는 단지 상세, 읍면동(단독·토지·상가)은 그 동네 시세 상세로
+      const href = p.complex_id ? complexHref(p.complex_id, myComplexes) : p.lawd_cd ? regionHref(p.lawd_cd, txType) : null;
+      const ppy = p.land_ppy ?? p.median_ppy;
+      const main = ppy ? `${formatManwon(fromPerPyeong(ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}` : formatManwon(p.median_price, { short: true });
       ms.push(
         map.addHtmlMarker({
           lng: p.lng,
           lat: p.lat,
           zIndex: self ? 900 : 100,
-          title: `${p.name} · 최근 1년 ${p.n}건${p.complex_id ? " — 눌러서 단지 보기" : ""}`,
-          onClick: p.complex_id ? () => router.push(complexHref(p.complex_id!, myComplexes)) : undefined,
-          html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${self ? "#2563eb" : "#fff"};color:${self ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.15);font-size:12px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:${p.complex_id ? "pointer" : "default"}">${main}<span style="font-weight:400;opacity:.75">${esc(shortName(p.name))} · ${p.n}건</span></div>`,
+          title: `${p.name} · 최근 1년 ${p.n}건${p.complex_id ? " — 눌러서 단지 보기" : href ? " — 눌러서 동네 시세 보기" : ""}`,
+          onClick: href ? () => router.push(href) : undefined,
+          html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${self ? "#2563eb" : "#fff"};color:${self ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.15);font-size:12px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:${href ? "pointer" : "default"}">${main}<span style="font-weight:400;opacity:.75">${esc(shortName(p.name))} · ${p.n}건</span></div>`,
         }),
       );
     }
@@ -205,7 +207,7 @@ export function MiniMap({
       </div>
       <p className="border-t border-border bg-surface px-3 py-1.5 text-[0.75rem] text-muted">
         파란 원: 탐색 반경 {radius >= 1000 ? `${radius / 1000}km` : `${radius}m`} · 라벨: 주변 최근 1년 매매 중위
-        {COMPLEX_TYPES.has(txType) ? `(${unit === "pyeong" ? "평" : "㎡"}당)` : ""}
+        {`(${txType === "house" ? "대지 " : ""}${unit === "pyeong" ? "평" : "㎡"}당)`}
         {points.length === 0 ? " — 아직 수집된 주변 거래가 없습니다" : ` ${points.length}곳`}
         {pois.length ? " · 🚇 지하철 · 🏫 학교" : ""}
         {boundary ? " · 주황 테두리: 필지 경계(연속지적도)" : ""}

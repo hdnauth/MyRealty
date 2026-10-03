@@ -106,7 +106,7 @@ export default async function ProjectsPage(props: PageProps<"/projects">) {
       <PageHeader
         title="개발·테마"
         sub={SUBS[tab]}
-        action={<LinkButton href="/map" variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm"><MapPin size={14} />지도</LinkButton>}
+        action={<LinkButton href={tab === "transit" ? "/map?layers=infra" : tab === "regulation" ? "/map?layers=permit,district_plan" : "/map?layers=zones"} variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm"><MapPin size={14} />지도</LinkButton>}
       />
       <Tabs active={tab} items={THEME_TABS.map((t) => ({ key: t.key, label: t.label, href: t.key === "zones" ? "/projects" : `/projects?tab=${t.key}` }))} />
       {body}

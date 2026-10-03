@@ -75,15 +75,19 @@ const ym = (ms: number) => {
   return `${String(d.getFullYear()).slice(2)}년 ${d.getMonth() + 1}월`;
 };
 
-/** 매매(파랑)·전세(초록) 실거래 점 그래프. 취소·월세는 뺀다. 해가 바뀌는 곳에 세로 눈금과 "2025년" */
-function TradeChart({ trades }: { trades: Trade[] }) {
-  const pts = trades.filter((t) => !t.is_canceled && (t.deal_kind === "sale" || (t.deal_kind === "jeonse" && !t.monthly_rent)));
+/**
+ * 매매(파랑)·전세(초록) 실거래 점 그래프. 취소·월세는 뺀다. 해가 바뀌는 곳에 세로 눈금과 "2025년".
+ * y 를 주면 거래가 대신 그 값(면적이 제각각인 토지·단독은 단위가격)으로 그린다
+ */
+export function TradeChart({ trades, y: yOf = (t) => t.price, label = "최근 실거래가" }: { trades: Trade[]; y?: (t: Trade) => number | null; label?: string }) {
+  const pts = trades.filter((t) => !t.is_canceled && (t.deal_kind === "sale" || (t.deal_kind === "jeonse" && !t.monthly_rent)) && yOf(t) !== null);
   if (pts.length < 2) return null;
   const W = 320;
   const H = 120;
-  const pad = { l: 40, r: 8, t: 8, b: 20 };
+  // 왼쪽 여백: "2,578만"·"12.5억" 같은 눈금 라벨이 잘리지 않게
+  const pad = { l: 50, r: 8, t: 8, b: 20 };
   const xs = pts.map((t) => Date.parse(t.deal_date));
-  const ys = pts.map((t) => t.price);
+  const ys = pts.map((t) => yOf(t)!);
   const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
   let [y0, y1] = [Math.min(...ys), Math.max(...ys)];
   const span = Math.max(y1 - y0, y1 * 0.1);
@@ -104,7 +108,7 @@ function TradeChart({ trades }: { trades: Trade[] }) {
         {hasSale ? <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-full bg-accent" />매매</span> : null}
         {hasJeonse ? <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-full bg-ok" />전세</span> : null}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="최근 실거래가 점 그래프">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`${label} 점 그래프`}>
         {[y1, mid, y0].map((v) => (
           <g key={v}>
             <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} stroke="var(--chart-grid)" strokeWidth={1} />
@@ -134,8 +138,8 @@ function TradeChart({ trades }: { trades: Trade[] }) {
           {ym(x1)}
         </text>
         {pts.map((t) => (
-          <circle key={t.id} cx={x(Date.parse(t.deal_date))} cy={y(t.price)} r={3.5} fill={t.deal_kind === "sale" ? "var(--accent)" : "var(--ok)"} fillOpacity={0.75} stroke="var(--surface)" strokeWidth={1}>
-            <title>{`${formatDate(t.deal_date, "long")} ${DEAL_KIND_LABEL[t.deal_kind]} ${formatManwon(t.price)}`}</title>
+          <circle key={t.id} cx={x(Date.parse(t.deal_date))} cy={y(yOf(t)!)} r={3.5} fill={t.deal_kind === "sale" ? "var(--accent)" : "var(--ok)"} fillOpacity={0.75} stroke="var(--surface)" strokeWidth={1}>
+            <title>{`${formatDate(t.deal_date, "long")} ${DEAL_KIND_LABEL[t.deal_kind]} ${formatManwon(yOf(t))}`}</title>
           </circle>
         ))}
       </svg>

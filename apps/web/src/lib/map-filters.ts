@@ -1,5 +1,6 @@
 // 지도 후보 탐색 필터(화면·API 공용). 값은 모두 기준 단위로 둔다:
-// 가격 만원, 단위가격 평당 만원, 면적 ㎡, 준공 연도, 세대수, 전세가율·1년 변화·수익률 비율(0.7=70%), 입지 점수 0~100, 월세 만원.
+// 가격 만원, 단위가격 평당 만원, 면적 ㎡, 준공 연도, 세대수, 전세가율·1년 변화·수익률 비율(0.7=70%), 입지 점수 0~100, 월세 만원,
+// 용적률 %, 대지지분 ㎡.
 // 부동산 유형마다 보는 것이 달라(오피스텔은 월세 수익률, 토지는 지목·용도지역·지분거래, 상가는 층·용도) 조건·정렬·묶음을 유형별로 둔다.
 
 export type MapType = "apt" | "officetel" | "rowhouse" | "house" | "land" | "commercial";
@@ -70,6 +71,19 @@ export type MapPoint = {
   corp_ratio?: number | null;
   /** 직거래 비율(고른 기간 매매) */
   direct_ratio?: number | null;
+  /** 용적률(%, 건축물대장 — 아파트) */
+  far?: number | null;
+  /** 용적률 여유(%p) = 용도지역 상한 − 현재. 서울 밖은 법정 상한 기준(far_basis) */
+  far_headroom?: number | null;
+  far_basis?: "seoul" | "law" | null;
+  /** 대지지분(㎡): 빌라는 고른 기간 매매의 대지권 면적 중위, 아파트는 대지면적 ÷ 세대수(평균) */
+  land_share?: number | null;
+  /** 대지지분 평당가(만원): 매매가 ÷ 대지지분(평) 중위 */
+  land_share_ppy?: number | null;
+  /** 수집 전 지역 미리보기(공공데이터 바로 조회, DB 에 저장 안 함) */
+  live?: boolean;
+  /** 미리보기 최근 거래(선택 카드용) */
+  recent?: { date: string; price: number; rent: number | null; area: number | null; floor: number | null; name: string }[];
 };
 
 /** 세부 유형 묶음(단독은 주택 유형, 토지는 지목, 상가는 건물 용도) — 필터·요약이 같이 쓴다 */
@@ -135,6 +149,10 @@ export type MapFilters = {
   bldg: "집합" | "일반" | null;
   /** 상가 층: 1층 · 2층 이상 */
   floor: "ground" | "upper" | null;
+  /** 용적률 상한(%, 아파트 — 재건축 사업성) */
+  farMax: number | null;
+  /** 대지지분 하한(㎡, 아파트 세대당 평균·빌라 대지권) */
+  lsMin: number | null;
 };
 
 type NumKey = { [K in keyof MapFilters]: MapFilters[K] extends number | null ? K : never }[keyof MapFilters];
@@ -161,6 +179,8 @@ export const EMPTY_FILTERS: MapFilters = {
   noShare: false,
   bldg: null,
   floor: null,
+  farMax: null,
+  lsMin: null,
 };
 
 const PARAM: Record<NumKey, string> = {
@@ -180,6 +200,8 @@ const PARAM: Record<NumKey, string> = {
   locMin: "loc_min",
   yieldMin: "yield_min",
   rentMax: "rent_max",
+  farMax: "far_max",
+  lsMin: "ls_min",
 };
 const NUM_KEYS = Object.keys(PARAM) as NumKey[];
 
@@ -201,6 +223,8 @@ const RANGE: Record<NumKey, [number, number]> = {
   locMin: [0, 100],
   yieldMin: [0, 0.5],
   rentMax: [0, 100_000],
+  farMax: [0, 2000],
+  lsMin: [0, 100_000],
 };
 
 /** 조건이 의미 있는 유형(그 밖의 유형에서는 화면에서 숨기고, 세지 않고, 서버도 무시한다) */
@@ -227,6 +251,8 @@ export const FILTER_TYPES: Record<keyof MapFilters, MapType[]> = {
   noShare: ["land", "commercial"],
   bldg: ["commercial"],
   floor: ["commercial"],
+  farMax: ["apt"],
+  lsMin: ["apt", "rowhouse"],
 };
 
 /** 단지 유형(아파트·오피스텔·빌라)에서만 의미가 있는 필터(이전 호환) */
@@ -335,6 +361,8 @@ const FILTER_GROUPS: (keyof MapFilters)[][] = [
   ["noShare"],
   ["bldg"],
   ["floor"],
+  ["farMax"],
+  ["lsMin"],
 ];
 
 /** 켜진 조건 개수 — 가격 6~10억처럼 최소·최대를 함께 줘도 한 개. 유형·거래 종류에 해당 없는 조건은 세지 않는다 */
@@ -343,7 +371,21 @@ export function activeFilterCount(f: MapFilters, type: string, kind: DealKind = 
   return FILTER_GROUPS.filter((g) => g.some((k) => isSet(a, k))).length;
 }
 
-export type SortKey = "n" | "price_asc" | "price_desc" | "ppy_asc" | "jr_desc" | "chg_desc" | "loc_desc" | "new" | "yield_desc" | "share_asc" | "rent_asc";
+export type SortKey =
+  | "n"
+  | "price_asc"
+  | "price_desc"
+  | "ppy_asc"
+  | "jr_desc"
+  | "chg_desc"
+  | "loc_desc"
+  | "new"
+  | "yield_desc"
+  | "share_asc"
+  | "rent_asc"
+  | "far_asc"
+  | "land_desc"
+  | "landppy_asc";
 
 export const SORTS: { key: SortKey; label: string; types?: MapType[]; kinds?: DealKind[] }[] = [
   { key: "n", label: "거래 많은 순" },
@@ -357,6 +399,9 @@ export const SORTS: { key: SortKey; label: string; types?: MapType[]; kinds?: De
   { key: "share_asc", label: "지분거래 적은 순", types: ["land", "commercial"] },
   { key: "loc_desc", label: "입지 점수 순", types: COMPLEX },
   { key: "new", label: "신축 순", types: COMPLEX },
+  { key: "far_asc", label: "용적률 낮은 순", types: ["apt"] },
+  { key: "land_desc", label: "대지지분 큰 순", types: ["apt", "rowhouse"] },
+  { key: "landppy_asc", label: "대지지분 평당가 낮은 순", types: ["apt", "rowhouse"], kinds: ["sale"] },
 ];
 
 export function sortsFor(type: string, kind: DealKind = "sale") {
@@ -380,6 +425,9 @@ export function sortPoints(points: MapPoint[], key: SortKey): MapPoint[] {
     yield_desc: (p) => p.rent_yield ?? null,
     share_asc: (p) => (p.share_ratio === null || p.share_ratio === undefined ? null : -p.share_ratio),
     rent_asc: (p) => (p.median_rent === null || p.median_rent === undefined ? null : -p.median_rent),
+    far_asc: (p) => (p.far == null ? null : -p.far),
+    land_desc: (p) => p.land_share ?? null,
+    landppy_asc: (p) => (p.land_share_ppy == null ? null : -p.land_share_ppy),
   };
   const f = val[key];
   return [...points].sort((a, b) => {
@@ -402,6 +450,7 @@ export const FILTER_PRESETS: FilterPreset[] = [
   { key: "rebuild", label: "재건축 연한(30년+)", filters: (y) => ({ yearMax: y - 30 }), types: ["apt"] },
   { key: "rising", label: "1년 +5% 이상", filters: () => ({ chgMin: 0.05 }), sort: "chg_desc", types: ALL },
   { key: "good-loc", label: "입지 70점+", filters: () => ({ locMin: 70 }), sort: "loc_desc", types: ["apt"] },
+  { key: "rebuild-biz", label: "재건축 사업성(30년+·용적률 200%↓)", filters: (y) => ({ yearMax: y - 30, farMax: 200 }), sort: "far_asc", types: ["apt"], hint: "건축물대장을 받은 단지만(수집 지역에서 차례로 채움)" },
   // 수익형(오피스텔·빌라·아파트 월세)
   { key: "yield5", label: "임대수익률 5%+", filters: () => ({ yieldMin: 0.05 }), sort: "yield_desc", types: ["officetel", "rowhouse", "apt"], hint: "최근 1년 월세·매매로 낸 추정치" },
   { key: "studio", label: "원룸·소형(~40㎡)", filters: () => ({ areaMax: 40 }), sort: "yield_desc", types: ["officetel"] },
@@ -409,6 +458,7 @@ export const FILTER_PRESETS: FilterPreset[] = [
   { key: "gap-risk", label: "깡통 위험(전세가율 80%+)", filters: () => ({ jrMin: 0.8 }), sort: "jr_desc", types: ["rowhouse"], hint: "전세로 들어갈 때 조심할 곳" },
   { key: "new-villa", label: "신축 빌라(5년 이내)", filters: (y) => ({ yearMin: y - 5 }), sort: "new", types: ["rowhouse"], hint: "신축 빌라는 시세가 불투명해 전세 사고가 잦다" },
   { key: "old-villa", label: "노후(30년+, 재개발 관심)", filters: (y) => ({ yearMax: y - 30 }), types: ["rowhouse"] },
+  { key: "land10", label: "대지지분 10평+", filters: () => ({ lsMin: 33 }), sort: "landppy_asc", types: ["rowhouse"], hint: "재개발 권리가액은 대지지분이 클수록 유리 — 대지지분 평당가로 비교" },
   // 단독·다가구
   { key: "multi", label: "다가구(임대용)", filters: () => ({ cats: ["multi"] }), types: ["house"] },
   { key: "single", label: "단독주택", filters: () => ({ cats: ["single"] }), types: ["house"] },

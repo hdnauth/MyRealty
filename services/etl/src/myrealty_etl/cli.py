@@ -175,6 +175,7 @@ _simple("cleanup", "myrealty_etl.jobs.cleanup_job:cleanup_auth", "보관 기간�
 # collect(수집·분석) → notify(알림·발송·정리). 워크플로는 둘을 따로 실행해 수집이 시간을 넘겨도 알림은 나가게 한다.
 # backfill 은 남는 시간만 쓰도록 수집 단계 맨 끝에 둔다(DAILY_BUDGET_MIN 마감까지, 다음 실행에서 이어서).
 DAILY_STEPS: list[tuple[str, str]] = [
+    ("targets", "myrealty_etl.jobs.targets_job:expand_city_targets"),
     ("rtms", "myrealty_etl.jobs.rtms_job:collect_recent"),
     ("geocode", "myrealty_etl.transforms.geocode:geocode_pending"),
     ("link", "myrealty_etl.transforms.complexes:link_watch_items"),

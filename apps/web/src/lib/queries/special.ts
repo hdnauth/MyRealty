@@ -1,5 +1,6 @@
 import "server-only";
 import { sql } from "../db";
+import { type FarBasis, farCap } from "../far";
 import type { WatchItem } from "./items";
 
 /*
@@ -8,10 +9,6 @@ import type { WatchItem } from "./items";
 
 const pt = (item: WatchItem) => sql`ST_SetSRID(ST_MakePoint(${item.lng}, ${item.lat}), 4326)`;
 
-// 용도지역별 용적률 상한(서울시 도시계획 조례 기준, 참고용 — ETL analytics/location.py FAR_CAP 과 같음)
-const FAR_CAP: Record<string, number> = {
-  제1종전용주거지역: 100, 제2종전용주거지역: 120, 제1종일반주거지역: 150, 제2종일반주거지역: 200, 제3종일반주거지역: 250, 준주거지역: 400,
-};
 export const REBUILD_AGE = 30;
 
 export type Redevelopment = {
@@ -29,7 +26,7 @@ export type Redevelopment = {
   } | null;
   buildYear: number | null;
   age: number | null;
-  far: { current: number; cap: number; zone: string } | null;
+  far: { current: number; cap: number; zone: string; basis: FarBasis } | null;
   /** 대지지분(㎡)과 근거 */
   landShare: { m2: number; basis: string } | null;
   /** 주변 준공 10년 이내 아파트 전용 평당가 중위(만원, 최근 1년) */
@@ -76,8 +73,8 @@ export async function redevelopmentInfo(item: WatchItem): Promise<Redevelopment 
   const oldHousing = ["rowhouse", "house"].includes(item.property_type);
   if (!zone && !(isApt && age !== null && age >= 25) && !(oldHousing && age !== null && age >= 20)) return null;
 
-  const zoneName = (bld?.zones ?? []).find((z) => z in FAR_CAP);
-  const far = bld?.vl_rat && zoneName ? { current: bld.vl_rat, cap: FAR_CAP[zoneName], zone: zoneName } : null;
+  const cap = farCap(bld?.zones, item.sgg_cd);
+  const far = bld?.vl_rat && cap ? { current: bld.vl_rat, ...cap } : null;
   const landShare = share?.m2
     ? { m2: share.m2, basis: "같은 평형 거래의 대지권 면적" }
     : item.property_type === "house" && item.land_area_m2

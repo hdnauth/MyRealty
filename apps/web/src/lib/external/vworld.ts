@@ -98,3 +98,27 @@ export async function vworldReverse(lng: number, lat: number): Promise<{ lawdCd:
   if (!/^\d{10}$/.test(code)) return null;
   return { lawdCd: code, sido: st.level1 ?? "", sigungu: st.level2 ?? "", emd: st.level4L ?? "" };
 }
+
+/** 시군구의 읍면동 경계(이름·코드·폴리곤). 수집 전 지역 미리보기에서 동네 중심을 잡을 때 한 번 받아 regions 에 넣는다 */
+export async function vworldEmdBoundaries(sgg: string): Promise<{ code: string; name: string; fullName: string; geometry: unknown }[]> {
+  if (!env.vworldKey || !/^\d{5}$/.test(sgg)) return [];
+  const q = withKey({
+    service: "data",
+    request: "GetFeature",
+    data: "LT_C_ADEMD_INFO",
+    format: "json",
+    crs: "EPSG:4326",
+    attrFilter: `emd_cd:like:${sgg}`,
+    geometry: "true",
+    attribute: "true",
+    size: "200",
+  });
+  const res = await fetch(`https://api.vworld.kr/req/data?${q}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+  const resp = (await res.json())?.response;
+  if (resp?.status === "NOT_FOUND") return [];
+  if (resp?.status !== "OK") throw new Error(`VWorld emd ${resp?.error?.code ?? res.status}`);
+  const feats = (resp.result?.featureCollection?.features ?? []) as { properties: Record<string, string>; geometry: unknown }[];
+  return feats
+    .filter((f) => /^\d{8}$/.test(f.properties?.emd_cd ?? ""))
+    .map((f) => ({ code: `${f.properties.emd_cd}00`, name: f.properties.emd_kor_nm, fullName: f.properties.full_nm ?? "", geometry: f.geometry }));
+}

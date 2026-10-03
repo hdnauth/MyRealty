@@ -83,6 +83,9 @@ export const env = {
   itemCollectLocal: opt("ITEM_COLLECT_LOCAL") === "1",
   /** 지도 "이 지역 데이터 모으기"로 바로 켜 주는 수집 대상(시군구) 상한. 넘으면 요청만 남기고 운영자가 켠다(공공 API 일일 한도 보호) */
   regionTargetCap: Number(opt("REGION_TARGET_CAP") ?? 40),
+  /** 수집 전 지역 지도 미리보기: 하루 실거래 API 호출 상한(매일 수집과 같은 일일 한도를 나눠 쓰므로 작게) · 하루 단지 위치 찾기 상한 */
+  livePreviewCalls: Number(opt("LIVE_PREVIEW_DAILY_CALLS") ?? 200),
+  livePreviewGeocodes: Number(opt("LIVE_PREVIEW_DAILY_GEOCODES") ?? 600),
   isDev: process.env.NODE_ENV !== "production",
 };
 

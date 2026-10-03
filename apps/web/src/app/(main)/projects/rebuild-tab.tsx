@@ -3,7 +3,8 @@ import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
 import type { AreaUnit } from "@/lib/format";
 import { formatManwon, fromPerPyeong, unitPriceLabel } from "@/lib/format";
 import { shortSido } from "@/lib/projects";
-import { FAR_CAP, type RebuildCandidate, rebuildCandidates } from "@/lib/queries/projects";
+import { FAR_BASIS_LABEL, type FarBasis, farCap } from "@/lib/far";
+import { type RebuildCandidate, rebuildCandidates } from "@/lib/queries/projects";
 import { Chip } from "./zone-parts";
 
 const PY = 3.305785;
@@ -13,7 +14,7 @@ const AGES = [25, 30, 35] as const;
 const SORTS = { score: "종합", headroom: "용적률 여유", share: "대지지분", age: "연식", price: "평당가 낮은" } as const;
 export type RebuildSort = keyof typeof SORTS;
 
-type Scored = RebuildCandidate & { cap: number | null; zoneName: string | null; headroom: number | null; share: number | null; age: number; score: number };
+type Scored = RebuildCandidate & { cap: number | null; basis: FarBasis | null; zoneName: string | null; headroom: number | null; share: number | null; age: number; score: number };
 
 /**
  * 재건축 후보: 아직 사업 초기이거나 구역 지정 전인 준공 오래된 아파트 단지.
@@ -30,14 +31,15 @@ export async function RebuildTab({ uid, sgg, age, sort, unit, href }: {
   const { rows, sggs } = await rebuildCandidates(uid, { sgg, minAge: age });
   const year = new Date().getFullYear();
   const scored: Scored[] = rows.map((r) => {
-    const zoneName = (r.zones ?? []).find((z) => z in FAR_CAP) ?? null;
-    const cap = zoneName ? FAR_CAP[zoneName] : null;
+    const fc = farCap(r.zones, r.sgg_cd);
+    const zoneName = fc?.zone ?? null;
+    const cap = fc?.cap ?? null;
     const headroom = cap !== null && r.vl_rat ? cap - r.vl_rat : null;
     const share = r.plat_area && r.households ? r.plat_area / r.households / PY : null;
     const a = year - r.build_year;
     // 여유 100%p·지분 15평·연식 40년을 각각 만점 1로 본 단순 합(없는 재료는 0)
     const score = Math.min(1, Math.max(0, (headroom ?? 0) / 100)) + Math.min(1, (share ?? 0) / 15) + Math.min(1, a / 40);
-    return { ...r, cap, zoneName, headroom, share, age: a, score };
+    return { ...r, cap, basis: fc?.basis ?? null, zoneName, headroom, share, age: a, score };
   });
   const by: Record<RebuildSort, (a: Scored, b: Scored) => number> = {
     score: (a, b) => b.score - a.score,
@@ -97,7 +99,7 @@ export async function RebuildTab({ uid, sgg, age, sort, unit, href }: {
                     </td>
                     <td className="tabular py-2 text-right">{r.build_year} <span className="text-[0.75rem] text-muted">({r.age}년)</span></td>
                     <td className="tabular py-2 text-right">{r.households?.toLocaleString() ?? "-"}</td>
-                    <td className="tabular py-2 text-right">{r.vl_rat ? `${Math.round(r.vl_rat)}%` : "-"} <span className="text-[0.75rem] text-muted">{r.cap ? `(${r.cap}%)` : ""}</span></td>
+                    <td className="tabular py-2 text-right">{r.vl_rat ? `${Math.round(r.vl_rat)}%` : "-"} <span className="text-[0.75rem] text-muted" title={r.basis ? FAR_BASIS_LABEL[r.basis] : undefined}>{r.cap ? `(${r.cap}%${r.basis === "law" ? "*" : ""})` : ""}</span></td>
                     <td className={`tabular py-2 text-right ${r.headroom !== null && r.headroom > 0 ? "font-semibold text-up" : ""}`}>
                       {r.headroom !== null ? `${r.headroom > 0 ? "+" : ""}${Math.round(r.headroom)}%p` : "-"}
                     </td>
@@ -115,7 +117,7 @@ export async function RebuildTab({ uid, sgg, age, sort, unit, href }: {
           <EmptyState title="후보 단지가 없습니다" desc="수집된 시군구(관심 부동산이 있는 지역)의 단지만 봅니다. 관심 부동산을 등록하면 그 지역 단지가 채워집니다." />
         )}
         <p className="px-4 pb-4 text-[0.75rem] leading-relaxed text-muted">
-          용적률 상한은 서울시 도시계획 조례의 용도지역별 기준(참고값)이고 지역마다 다릅니다. 세대당 대지 = 대지면적 ÷ 세대수(평균). 실제 사업성은
+          용적률 상한은 서울은 서울시 도시계획 조례, 그 밖(*)은 국토계획법 시행령 상한(참고값)입니다 — 시·군 조례는 대개 더 낮아 여유가 실제보다 크게 보일 수 있습니다. 세대당 대지 = 대지면적 ÷ 세대수(평균). 실제 사업성은
           종상향·기부채납·분담금에 따라 크게 달라지므로 재료로만 쓰세요. 수집된 시군구 단지만 대상입니다.
         </p>
       </Card>

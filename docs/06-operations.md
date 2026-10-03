@@ -121,6 +121,8 @@ GitHub Actions **ETL item** 워크플로로 그 부동산만 수집하고, 상�
 - 공공데이터 호출량은 매일 수집과 같은 `api_quota` 한도를 나눠 쓴다(아파트 1건 등록 ≈ 매매·전월세 72회).
 - 로컬 개발: 루트 `.env` 에 `ITEM_COLLECT_LOCAL=1` 이면 `services/etl` 에서 `uv run myrealty item` 을 직접 띄운다.
 - 지도 "이 지역 데이터 모으기"(마이그레이션 `0017_region_requests.sql`): 켜진 수집 대상이 `REGION_TARGET_CAP`(기본 40) 미만이면 바로 켜고, 넘으면 `region_requests.status = 'pending'` 으로 남는다. 관리 › 수집 지역에서 켜거나 거절한다. 역지오코딩에 `VWORLD_KEY` 가 필요하다.
+- 수집 전 지역 지도 미리보기(마이그레이션 `0020`): 실거래 API 를 바로 불러 DB 에 24시간 캐시한다. 하루 상한 `LIVE_PREVIEW_DAILY_CALLS`(기본 200, 매일 수집과 같은 서비스 한도에도 함께 셈)·`LIVE_PREVIEW_DAILY_GEOCODES`(기본 600). 관심 부동산이 있는 구의 같은 시 다른 구는 매일 수집 `targets` 단계가 자동으로 켠다(과거 12개월, 상한 안).
+- 토지이용계획 정비구역 경계·후보지(`zones` 안 `landuse`): 격자 상한 `LANDUSE_MAX_TILES`(150)·시간 상한 `LANDUSE_MAX_MIN`(8분). 자세한 내용은 [20 문서](20-zones-live-far.md).
 - 실거래 저장은 여러 행을 한 문장으로 보내(`jsonb_to_recordset`) GitHub(미국) ↔ DB(서울) 왕복을 줄였다 — 매일 수집도 함께 빨라진다.
 
 ## 5. 운영 팁

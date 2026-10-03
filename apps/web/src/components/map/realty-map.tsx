@@ -5,7 +5,7 @@ import "leaflet/dist/leaflet.css";
 import { ChevronLeft, Crosshair, Layers, List, Loader2, Maximize2, Minimize2, Star, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { type AreaUnit, formatDate, formatManwon, formatPct, fromPerPyeong, shortAddress, unitPriceLabel } from "@/lib/format";
+import { type AreaUnit, formatDate, formatManwon, formatPct, fromPerPyeong, M2_PER_PYEONG, shortAddress, unitPriceLabel } from "@/lib/format";
 import { complexHref, type MyComplexes, naverLandHref, regionHref, registerComplexHref } from "@/lib/links";
 import { REGION_TYPE_INFO, type RegionMarket, isRegionType } from "@/lib/region-market";
 import type { MapOverlays } from "@/app/api/map/overlays/route";
@@ -17,7 +17,8 @@ import type { LocSummary } from "@/lib/location-score";
 import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
 import { ComplexTrades, type Trade } from "./complex-trades";
 import { RegionTrades } from "./region-trades";
-import { CoverageNote } from "./coverage-note";
+import type { Coverage } from "@/lib/coverage";
+import { CoverageNote, type LiveInfo } from "./coverage-note";
 import { MapIntro } from "./map-intro";
 import { FilterBar, FilterPanel } from "./filter-panel";
 import { LocBars } from "./loc-bars";
@@ -54,6 +55,10 @@ export type MapProject = {
   lat: number;
   /** 계획 도로: 도시계획 결정 고시일 */
   notice_date?: string | null;
+  /** 정비구역: 토지이용계획 후보지(행위제한) 필지로 찾은 구역(어느 출처에도 아직 없음) */
+  candidate?: boolean | null;
+  /** 정비구역 면적(㎡) */
+  area_m2?: number | null;
 };
 /** 개발·테마에서 골라 들어온 사업(/map?zone= · ?infra=) — 경계(GeoJSON MultiPolygon)가 있으면 강조해 그린다 */
 export type MapFocusProject = MapProject & { shape: string | null };
@@ -153,6 +158,12 @@ function metricText(p: MapPoint, sort: SortKey): string | null {
       return p.share_ratio != null ? `지분 ${Math.round(p.share_ratio * 100)}%` : null;
     case "rent_asc":
       return p.median_rent != null ? `월 ${Math.round(p.median_rent)}만` : null;
+    case "far_asc":
+      return p.far != null ? `용적 ${Math.round(p.far)}%` : null;
+    case "land_desc":
+      return p.land_share != null ? `대지 ${(p.land_share / M2_PER_PYEONG).toFixed(1)}평` : null;
+    case "landppy_asc":
+      return p.land_share_ppy != null ? `대지 평당 ${formatManwon(p.land_share_ppy, { short: true })}` : null;
     default:
       return null;
   }
@@ -172,6 +183,11 @@ function indicatorBits(p: MapPoint, unit: AreaUnit): string[] {
     p.change_1y !== null ? `1년 ${formatPct(p.change_1y, 1)}` : null,
     p.loc_score !== null ? `입지 ${Math.round(p.loc_score)}점` : null,
     p.land_ppy != null ? `대지 ${unitPriceLabel(unit)} ${formatManwon(fromPerPyeong(p.land_ppy, unit), { short: true })}` : null,
+    p.far != null
+      ? `용적률 ${Math.round(p.far)}%${p.far_headroom != null ? `(여유 ${p.far_headroom > 0 ? "+" : ""}${Math.round(p.far_headroom)}%p${p.far_basis === "law" ? "·법정 상한" : ""})` : ""}`
+      : null,
+    p.land_share != null ? `대지지분 ${(p.land_share / M2_PER_PYEONG).toFixed(1)}평${p.kind === "complex" && p.far != null ? "(세대 평균)" : ""}` : null,
+    p.land_share_ppy != null ? `대지지분 평당 ${formatManwon(p.land_share_ppy, { short: true })}` : null,
     p.share_ratio != null && p.share_ratio > 0 ? `${p.share_ratio >= SHARE_WARN ? "⚠ " : ""}지분거래 ${pct(p.share_ratio)}` : null,
     p.direct_ratio != null && p.direct_ratio >= 0.5 ? `직거래 ${pct(p.direct_ratio)}` : null,
     p.corp_ratio != null && p.corp_ratio >= 0.2 ? `법인 매수 ${pct(p.corp_ratio)}` : null,
@@ -193,6 +209,8 @@ const UNIT_BASIS: Record<string, string> = { apt: "전용", officetel: "전용",
 function stubPoint(c: { id: number; name: string; lng: number; lat: number }): MapPoint {
   return { key: `c${c.id}`, kind: "complex", complex_id: c.id, name: c.name, lng: c.lng, lat: c.lat, n: 0, median_price: 0, median_ppy: null, last_date: "", build_year: null, households: null, jeonse_ratio: null, change_1y: null, loc_score: null };
 }
+
+const NO_POINTS: MapPoint[] = [];
 
 /** 라벨 앞 1년 변동 화살표(아실·호갱노노식 상승 빨강/하락 파랑). ±1% 미만은 표시하지 않는다 */
 function changeArrow(chg: number | null): string {
@@ -292,6 +310,8 @@ export function RealtyMap({
     [rawPoints, locCache],
   );
   const [truncated, setTruncated] = useState(false);
+  // 수집 전 지역 미리보기(공공데이터 바로 조회) — 이 화면에 수집된 거래가 없을 때만 받는다
+  const [live, setLive] = useState<{ key: string; coverage: Coverage | null; points: MapPoint[]; info: LiveInfo } | null>(null);
   // 화면 이동·조건 변경마다 다시 조회한다. 진행·실패를 보여 줘야 이전 결과가 남아 있는 것과 구분된다
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -308,6 +328,9 @@ export function RealtyMap({
   const [labelMode, setLabelMode] = useState<"unit" | "total">(prefs0.labelMode);
   const [filterOpen, setFilterOpen] = useState(false);
   const filterCount = activeFilterCount(filters, type, effKind);
+  // 수집된 거래가 없을 때 지도·목록에 대신 보일 미리보기 점(조건을 걸면 쓰지 않는다 — 미리보기는 조건 계산을 하지 않는다)
+  const livePoints = rawPoints.length === 0 && !filterCount && live ? live.points : NO_POINTS;
+  const labelPoints = rawPoints.length ? points : livePoints;
   // 유형을 바꿨는데 그 유형에 없는 정렬(입지·신축)이면 기본으로
   const typeSorts = sortsFor(type, effKind);
   const sortKey: SortKey = typeSorts.some((x) => x.key === sort) ? sort : "n";
@@ -449,18 +472,7 @@ export function RealtyMap({
       const map = handle;
       mapRef.current = map;
 
-      // 관심 부동산 핀(누르면 선택 → 옆 목록에 요약·주변 거래)
-      for (const it of items) {
-        const price = it.estimate ?? it.last_price;
-        map.addHtmlMarker({
-          lng: it.lng,
-          lat: it.lat,
-          zIndex: 1000,
-          title: it.label,
-          onClick: () => onPinClick(it.id),
-          html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:999px;background:#2563eb;color:#fff;font-size:13px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;cursor:pointer">★ ${escapeHtml(pinLabel(it.label, 14))}${price ? `<span style="font-weight:500;opacity:.9">${formatManwon(price, { short: true })}</span>` : ""}</div>`,
-        });
-      }
+      // 관심 부동산 핀은 가격 라벨과 함께 그린다(라벨 effect) — 내 단지 라벨이 보이면 핀을 따로 찍지 않는다
       // 청약 접수(입주 예정은 레이어로 따로)
       for (const ev of events.filter((e) => e.kind === "subscription")) {
         map.addHtmlMarker({
@@ -481,7 +493,7 @@ export function RealtyMap({
       markersRef.current = [];
       layerMarkersRef.current = [];
     };
-  }, [engine, keyId, vworldKey, lng0, lat0, items, events]);
+  }, [engine, keyId, vworldKey, lng0, lat0, events]);
 
   // /map?complex= 로 들어오면 그 단지 거래를 연다
   useEffect(() => {
@@ -555,6 +567,12 @@ export function RealtyMap({
     if (it?.complex_id) loadComplex(it.complex_id);
   }, [focusItemId, items, loadComplex]);
   const myComplexes = useMemo(() => new Set(items.map((i) => i.complex_id).filter((x): x is number => x !== null)), [items]);
+  // 단지 id → 내 관심 부동산(같은 단지에 여럿이면 첫 번째) — 라벨과 핀을 하나로 합칠 때
+  const itemByComplex = useMemo(() => {
+    const m = new Map<number, MapWatchItem>();
+    for (const it of items) if (it.complex_id !== null && !m.has(it.complex_id)) m.set(it.complex_id, it);
+    return m;
+  }, [items]);
 
   // 영역·필터 변경 시 집계 조회
   useEffect(() => {
@@ -650,33 +668,58 @@ export function RealtyMap({
     if (pan) moveTo(p.lng, p.lat);
   }, [moveTo]);
 
-  // 가격 라벨 마커
+  // 가격 라벨 마커 + 관심 부동산 핀
+  // 내 단지 라벨이 화면에 있으면 ★ 핀을 따로 찍지 않고 그 라벨을 파란 '내 부동산' 라벨로 바꿔 하나만 보인다(주소 좌표와 단지 좌표가
+  // 조금 달라 같은 곳에 두 개가 겹쳐 보였다). 필터·유형을 바꿔 라벨이 사라지면 핀이 다시 나온다. 단독·토지(동네 라벨)는 핀 그대로.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     for (const m of markersRef.current) m.remove();
     // 거래 많은 단지부터 놓고 겹치는 라벨은 뺀다(목록에는 모두 남는다). 내 단지·선택한 단지는 항상 보인다
     const shown = declutter(
-      sortPoints(points, sortKey),
+      sortPoints(labelPoints, sortKey),
       bbox,
       map.size(),
       { w: 112, h: 42, keep: (p) => selected?.key === p.key || (p.complex_id !== null && myComplexes.has(p.complex_id)) },
     );
-    markersRef.current = shown.map((p) => {
+    const merged = new Set<string>();
+    const labels = shown.map((p) => {
       const main = mainLabel(p, effKind, labelMode, unit);
       const active = selected?.key === p.key;
-      const mine = p.complex_id !== null && myComplexes.has(p.complex_id);
+      const mineItem = p.complex_id !== null ? itemByComplex.get(p.complex_id) : undefined;
+      if (mineItem) merged.add(mineItem.id);
+      const mine = Boolean(mineItem);
+      const est = mineItem ? (mineItem.estimate ?? mineItem.last_price) : null;
       // 지분거래가 많은 동네(토지)는 건수 옆에 경고 — 기획부동산 판매가 시세를 끌어올렸을 수 있다
       const sub = metricText(p, sortKey) ?? `${p.n}건${p.share_ratio != null && p.share_ratio >= SHARE_WARN ? ` · ⚠지분 ${Math.round(p.share_ratio * 100)}%` : ""}`;
+      const bg = active ? "#16191f" : mine ? "#2563eb" : "#ffffff";
+      const fg = active || mine ? "#fff" : "#16191f";
+      const border = p.live ? "1px dashed rgba(0,0,0,.45)" : mine ? "2px solid #fff" : "1px solid rgba(0,0,0,.12)";
       return map.addHtmlMarker({
         lng: p.lng,
         lat: p.lat,
-        zIndex: active ? 900 : 100,
-        onClick: () => select(p),
-        html: `<div style="position:relative;transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:4px 8px;border-radius:9px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:13px;line-height:1.3;white-space:nowrap;font-weight:600;cursor:pointer"><span>${mine ? "★ " : ""}${changeArrow(p.change_1y)}${main}</span><span style="font-weight:400;font-size:12px;opacity:.75">${escapeHtml(shortName(p.name))} · ${escapeHtml(sub)}</span>${p.talk ? `<span title="최근 7일 동네 이야기 새 글" style="position:absolute;top:-7px;right:-7px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:#f97316;color:#fff;font-size:11px;line-height:18px;text-align:center;font-weight:700">${p.talk > 9 ? "9+" : p.talk}</span>` : ""}</div>`,
+        zIndex: active ? 900 : mine ? 1000 : 100,
+        // 내 단지 라벨은 내 부동산 카드를 연다(핀을 누를 때와 같게)
+        onClick: () => (mineItem ? onPinClick(mineItem.id) : select(p)),
+        html: `<div style="position:relative;transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:4px 8px;border-radius:9px;background:${bg};color:${fg};border:${border};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:13px;line-height:1.3;white-space:nowrap;font-weight:600;cursor:pointer;opacity:${p.live ? 0.92 : 1}"><span>${mine ? "★ " : ""}${changeArrow(p.change_1y)}${main}</span><span style="font-weight:400;font-size:12px;opacity:.8">${escapeHtml(mine ? pinLabel(mineItem!.label, 12) : shortName(p.name))} · ${escapeHtml(sub)}</span>${est ? `<span style="font-weight:500;font-size:11px;opacity:.9">내 시세 ${formatManwon(est, { short: true })}</span>` : ""}${p.live ? `<span style="font-weight:400;font-size:10px;opacity:.7">미리보기</span>` : ""}${p.talk ? `<span title="최근 7일 동네 이야기 새 글" style="position:absolute;top:-7px;right:-7px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:#f97316;color:#fff;font-size:11px;line-height:18px;text-align:center;font-weight:700">${p.talk > 9 ? "9+" : p.talk}</span>` : ""}</div>`,
       });
     });
-  }, [points, selected, select, mapVersion, unit, myComplexes, bbox, sortKey, labelMode, effKind]);
+    // 관심 부동산 핀(누르면 선택 → 옆 목록에 요약·주변 거래) — 라벨로 합친 것은 빼고
+    const pins = items
+      .filter((it) => !merged.has(it.id))
+      .map((it) => {
+        const price = it.estimate ?? it.last_price;
+        return map.addHtmlMarker({
+          lng: it.lng,
+          lat: it.lat,
+          zIndex: 1000,
+          title: it.label,
+          onClick: () => onPinClick(it.id),
+          html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:999px;background:#2563eb;color:#fff;font-size:13px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;cursor:pointer">★ ${escapeHtml(pinLabel(it.label, 14))}${price ? `<span style="font-weight:500;opacity:.9">${formatManwon(price, { short: true })}</span>` : ""}</div>`,
+        });
+      });
+    markersRef.current = [...labels, ...pins];
+  }, [labelPoints, selected, select, mapVersion, unit, myComplexes, itemByComplex, items, bbox, sortKey, labelMode, effKind]);
 
   // POI 레이어 조회(수집된 시설 + 없으면 OpenStreetMap 에서 보충)
   useEffect(() => {
@@ -951,7 +994,7 @@ export function RealtyMap({
     if (!layers.has("cadastral")) mapRef.current?.setCadastral(false);
   }, [layers]);
 
-  const sorted = useMemo(() => sortPoints(points, sortKey), [points, sortKey]);
+  const sorted = useMemo(() => sortPoints(labelPoints, sortKey), [labelPoints, sortKey]);
 
   const toggleFullscreen = useCallback(async () => {
     if (fullscreen !== "off") {
@@ -1026,7 +1069,7 @@ export function RealtyMap({
   const isFull = fullscreen !== "off";
 
   // 검색·링크로 고른 단지는 집계가 오면 그 값(거래 수·중위·지표)으로 보여 준다
-  const sel = selected ? (points.find((p) => p.key === selected.key) ?? selected) : null;
+  const sel = selected ? (labelPoints.find((p) => p.key === selected.key) ?? selected) : null;
   // 고른 단지의 입지(항목별 막대까지): 확대 단계와 상관없이 바로 묻는다
   const selCid = sel?.complex_id ?? null;
   const [locFailed, setLocFailed] = useState<Record<number, true>>({});
@@ -1124,6 +1167,41 @@ export function RealtyMap({
   // 화면에 거래가 하나도 없고 동네 수준으로 확대했으면, 그 시군구가 아직 수집 전인지 확인한다
   const viewCenter: [number, number] | null = bbox ? [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2] : null;
   const emptyArea = Boolean(bbox && bbox[2] - bbox[0] < 0.3 && !searching && !searchError && points.length === 0 && !filterCount);
+  // 빈 화면이면 미리보기를 묻는다(수집 중이고 거래가 있는 곳이면 서버가 빈 목록). 단지 위치를 다 못 찾았으면 몇 번 이어서 묻는다
+  const liveKey = emptyArea && bbox ? `${bbox.map((v) => v.toFixed(4)).join(",")}|${type}|${effKind}` : null;
+  const [liveRound, setLiveRound] = useState(0);
+  useEffect(() => {
+    if (!liveKey) return;
+    const [box, t, k] = liveKey.split("|");
+    const ctl = new AbortController();
+    const timer = setTimeout(
+      () => {
+        setLive((prev) => (prev && prev.key === liveKey ? prev : { key: liveKey, coverage: prev?.coverage ?? null, points: prev?.points ?? [], info: { n: 0, total: 0, level: "emd", limited: false, pending: 0, loading: true } }));
+        fetch(`/api/map/live?bbox=${box}&type=${t}&kind=${k}`, { signal: ctl.signal })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d: { coverage: Coverage | null; points: MapPoint[]; level?: "emd" | "complex"; limited?: boolean; pending?: number; total?: number } | null) => {
+            if (!d) return;
+            const info: LiveInfo = { n: d.points.length, total: d.total ?? 0, level: d.level ?? "emd", limited: Boolean(d.limited), pending: d.pending ?? 0, loading: false };
+            setLive({ key: liveKey, coverage: d.coverage, points: d.points, info });
+            if (info.pending > 0 && liveRound < 4) setTimeout(() => setLiveRound((n) => n + 1), 1500);
+          })
+          .catch(() => {});
+      },
+      liveRound ? 0 : 600,
+    );
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [liveKey, liveRound]);
+  const [prevLiveKey, setPrevLiveKey] = useState(liveKey);
+  if (prevLiveKey !== liveKey) {
+    // 화면이 바뀌면 이어 묻기 횟수를 처음부터
+    setPrevLiveKey(liveKey);
+    if (liveRound) setLiveRound(0);
+  }
+  const liveCov = live && emptyArea ? live.coverage : null;
+  const liveInfo = live && emptyArea ? live.info : null;
 
   return (
     <div
@@ -1341,6 +1419,38 @@ export function RealtyMap({
                     ) : null}
                   </div>
                 ) : null}
+                {sel.live ? (
+                  <div className="mt-3">
+                    <p className="text-xs leading-relaxed text-muted">
+                      아직 매일 수집하지 않는 지역이라 국토부 실거래를 바로 불러온 미리보기입니다(최근 3개월 · 저장 전). 지표·추정 시세·알림은 수집을 시작한 뒤 채워집니다.
+                    </p>
+                    <ul className="mt-2 divide-y divide-border text-sm">
+                      {(sel.recent ?? []).map((t, i) => (
+                        <li key={i} className="flex items-center justify-between gap-2 py-1.5">
+                          <span className="min-w-0 truncate">
+                            <span className="tabular text-muted">{t.date.slice(2).replaceAll("-", ".")}</span> {t.name}
+                            <span className="text-xs text-muted">
+                              {t.area ? ` · ${Math.round(t.area)}㎡` : ""}
+                              {t.floor ? ` · ${t.floor}층` : ""}
+                            </span>
+                          </span>
+                          <b className="tabular shrink-0">
+                            {formatManwon(t.price, { short: true })}
+                            {t.rent ? `/${t.rent}` : ""}
+                          </b>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                      <a href={naverLandHref(sel.name, "")} target="_blank" rel="noreferrer" className="rounded-full border border-border px-3.5 py-2 hover:bg-surface-2">
+                        매물 보기
+                      </a>
+                      <Link href="/items/new" className="rounded-full border border-border px-3.5 py-2 hover:bg-surface-2">
+                        ★ 주소로 관심 등록
+                      </Link>
+                    </div>
+                  </div>
+                ) : null}
                 {selLawd && isRegionType(type) ? (
                   <>
                     <p className="mt-2 text-xs leading-relaxed text-muted">
@@ -1376,7 +1486,7 @@ export function RealtyMap({
               </div>
             ) : (
               <>
-              {sorted.length === 0 ? <CoverageNote center={viewCenter} active={emptyArea} /> : null}
+              {rawPoints.length === 0 ? <CoverageNote cov={liveCov} live={liveInfo} center={viewCenter} /> : null}
               {items.length === 0 && missingItems.length === 0 ? <MapIntro /> : null}
               <ul className={clsx("divide-y divide-border transition-opacity", searching && "opacity-50")} aria-busy={searching}>
                 {filterCount ? (
@@ -1394,7 +1504,7 @@ export function RealtyMap({
                     </span>
                   </li>
                 ) : null}
-                {sorted.length === 0 ? (
+                {sorted.length === 0 && !liveInfo?.loading ? (
                   <li className="p-4 text-sm text-muted">
                     {filterCount ? "이 화면에는 조건에 맞는 곳이 없습니다. 지도를 옮기거나 축소하고, 조건을 넓혀 보세요." : "이 영역에 해당 기간 거래가 없습니다."}
                   </li>
@@ -1628,6 +1738,12 @@ export function RealtyMap({
                       ))}
                     </span>
                   ) : null}
+                  {projectInfo.candidate ? (
+                    <span className="mt-1 block text-xs leading-relaxed text-muted">
+                      토지이용계획의 &lsquo;정비사업 후보지 행위제한&rsquo; 필지로 찾은 구역 지정 전 단계
+                      {projectInfo.area_m2 ? ` · 약 ${(projectInfo.area_m2 / 10_000).toFixed(1)}ha` : ""}. 이름은 위치로 표시하고, 공고·시스템에 오르면 그 이름으로 바뀝니다.
+                    </span>
+                  ) : null}
                   {projectInfo.kind === "road" ? (
                     <span className="mt-1 block text-xs text-muted">
                       도시계획 결정 도로{projectInfo.notice_date ? ` · 고시 ${projectInfo.notice_date}` : ""} · 개통 시기는 자료에 없어요
@@ -1674,8 +1790,9 @@ export function RealtyMap({
             </div>
           ) : null}
           {sheet === "peek" && !sel && emptyArea ? (
+            // 데스크톱은 옆 목록 맨 위에 같은 안내가 있다
             <div className={clsx("absolute left-2 right-16 z-[510] lg:hidden", aboveSheet)}>
-              <CoverageNote center={viewCenter} active compact />
+              <CoverageNote cov={liveCov} live={liveInfo} center={viewCenter} compact />
             </div>
           ) : null}
           {notice ? (

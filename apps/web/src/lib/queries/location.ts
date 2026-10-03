@@ -18,7 +18,7 @@ export type Development = {
   nearest_planned_station: Development["infra"][number] | null;
   months_to_open?: number;
   rebuild?: { age: number; eligible: boolean; years_left: number };
-  far?: { current: number; cap: number; headroom: number };
+  far?: { current: number; cap: number; headroom: number; basis?: "seoul" | "law" };
 };
 
 export type LocationScore = { total: number | null; scores: Record<string, LocCategory>; development: Development | null; computed_at: string };

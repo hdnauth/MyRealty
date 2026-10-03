@@ -56,6 +56,7 @@ export default async function MapPage(props: PageProps<"/map">) {
     ? await sql<MapFocusProject[]>`
         select 'zone' as type, id::int as id, name, kind, stage as status, stage_order as step, null::text as expected_open,
           ST_X(ST_PointOnSurface(geom)) as lng, ST_Y(ST_PointOnSurface(geom)) as lat,
+          coalesce((attrs->>'candidate')::boolean, false) as candidate, area_m2::float8 as area_m2,
           case when GeometryType(geom) like '%POLYGON' then ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(geom, 0.00002)), 6) end as shape
         from redevelopment_zones where id = ${zoneId} and geom is not null`
     : Number.isInteger(infraId)

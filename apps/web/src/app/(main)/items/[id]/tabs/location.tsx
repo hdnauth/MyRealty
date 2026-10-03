@@ -1,3 +1,4 @@
+import { FAR_BASIS_LABEL } from "@/lib/far";
 import Link from "next/link";
 import { Badge, Card, CardHeader, EmptyState, Stat } from "@/components/ui";
 import { formatDate, formatPct } from "@/lib/format";
@@ -132,7 +133,7 @@ export async function LocationTab({ item, mode }: { item: WatchItem; mode: ViewM
             <Stat
               label="용적률 여유"
               value={dev.far ? `${dev.far.headroom > 0 ? "+" : ""}${Math.round(dev.far.headroom)}%p` : "-"}
-              sub={dev.far ? <span className="text-muted">현재 {Math.round(dev.far.current)}% / 상한 {dev.far.cap}%(서울 조례 기준 참고)</span> : <span className="text-muted">건축물대장·용도지역 필요</span>}
+              sub={dev.far ? <span className="text-muted">현재 {Math.round(dev.far.current)}% / 상한 {dev.far.cap}%({FAR_BASIS_LABEL[dev.far.basis ?? "seoul"]} 참고)</span> : <span className="text-muted">건축물대장·용도지역 필요</span>}
             />
           </div>
           {dev.zones.length ? (

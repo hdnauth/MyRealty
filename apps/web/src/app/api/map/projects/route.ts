@@ -22,7 +22,8 @@ export async function GET(req: NextRequest) {
     layers.has("zones")
       ? sql<MapProject[]>`
           select 'zone' as type, id::int as id, name, kind, stage as status, stage_order as step, null::text as expected_open,
-            ST_X(ST_PointOnSurface(geom)) as lng, ST_Y(ST_PointOnSurface(geom)) as lat
+            ST_X(ST_PointOnSurface(geom)) as lng, ST_Y(ST_PointOnSurface(geom)) as lat,
+            coalesce((attrs->>'candidate')::boolean, false) as candidate, area_m2::float8 as area_m2
           from redevelopment_zones where geom && ${env} and stage_order is distinct from 9
           limit 600`
       : [],

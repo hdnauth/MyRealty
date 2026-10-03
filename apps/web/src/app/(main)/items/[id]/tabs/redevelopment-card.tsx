@@ -1,3 +1,4 @@
+import { FAR_BASIS_LABEL } from "@/lib/far";
 import Link from "next/link";
 import { Badge, Card, CardHeader, Stat } from "@/components/ui";
 import { type AreaUnit, formatDate, formatManwon, formatNumber, fromPerPyeong, unitPriceLabel } from "@/lib/format";
@@ -50,7 +51,7 @@ export function RedevelopmentCard({ info, price, unit, itemId }: { info: Redevel
         <Stat
           label="용적률 여유"
           value={info.far ? `${info.far.cap - info.far.current > 0 ? "+" : ""}${Math.round(info.far.cap - info.far.current)}%p` : "-"}
-          sub={info.far ? <span className="text-muted">현재 {Math.round(info.far.current)}% / {info.far.zone} {info.far.cap}%</span> : <span className="text-muted">건축물대장·용도지역 필요</span>}
+          sub={info.far ? <span className="text-muted">현재 {Math.round(info.far.current)}% / {info.far.zone} {info.far.cap}%({FAR_BASIS_LABEL[info.far.basis]})</span> : <span className="text-muted">건축물대장·용도지역 필요</span>}
         />
         <Stat
           label="대지지분"
@@ -82,7 +83,7 @@ export function RedevelopmentCard({ info, price, unit, itemId }: { info: Redevel
       </div>
       <p className="px-4 pb-4 text-[0.75rem] leading-relaxed text-muted">
         대지지분 평당가는 같은 구역 안 다른 매물과 비교할 때, 주변 신축·분양권 평당가는 완공 후 가치를 가늠할 때 씁니다. 실제 권리가액·분담금은 감정평가와
-        관리처분계획으로 정해지므로 조합 공지를 확인하세요. 용적률 상한은 서울시 조례 기준 참고값입니다.
+        관리처분계획으로 정해지므로 조합 공지를 확인하세요. 용적률 상한은 서울은 서울시 조례, 그 밖은 국토계획법 상한(시·군 조례는 대개 더 낮음) 참고값입니다.
       </p>
     </Card>
   );

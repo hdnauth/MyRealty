@@ -12,7 +12,7 @@ export function StageBar({ order, labels = false, className }: { order: number |
         <div key={s} className="min-w-0 flex-1">
           <div className={clsx("h-1.5 rounded-sm", i < o ? (done ? "bg-muted/60" : "bg-accent") : "bg-surface-2")} />
           {labels ? (
-            <div className={clsx("mt-1 hidden truncate text-center text-[10px] sm:block", i + 1 === o ? "font-semibold text-accent" : "text-muted")}>{s}</div>
+            <div className={clsx("mt-1 hidden truncate text-center text-[0.75rem] sm:block", i + 1 === o ? "font-semibold text-accent" : "text-muted")}>{s}</div>
           ) : null}
         </div>
       ))}
@@ -57,7 +57,7 @@ export function StageDistribution({ counts, hrefFor, activePhase }: {
           </Link>
         );
       })}
-      {unknown ? <p className="px-1 pt-1 text-[11px] text-muted">단계 미상 {unknown}곳</p> : null}
+      {unknown ? <p className="px-1 pt-1 text-[0.75rem] text-muted">단계 미상 {unknown}곳</p> : null}
     </div>
   );
 }
@@ -68,7 +68,7 @@ export function Chip({ href, active, children }: { href: string; active: boolean
       href={href}
       scroll={false}
       className={clsx(
-        "shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-[13px]",
+        "shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-sm",
         active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text",
       )}
     >

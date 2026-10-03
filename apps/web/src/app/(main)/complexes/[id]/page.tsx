@@ -7,6 +7,8 @@ import { LineSeriesChart } from "@/components/charts/series-chart";
 import { BoardTeaser } from "@/components/community/board-teaser";
 import { TypeIcon } from "@/components/items/item-card";
 import { TxTable } from "@/components/items/tx-table";
+import { LocBars } from "@/components/map/loc-bars";
+import { LocationLoader } from "@/components/map/location-loader";
 import { MiniMap } from "@/components/map/mini-map";
 import { Badge, Card, CardHeader, Change, LinkButton, Stat } from "@/components/ui";
 import { getAreaUnit } from "@/lib/area-unit";
@@ -17,6 +19,7 @@ import { floorPremiums, jeonseCheck, monthlyRollingMedian } from "@/lib/item-ana
 import { mapComplexHref, registerComplexHref } from "@/lib/links";
 import { isPropertyType, PROPERTY_TYPES } from "@/lib/property";
 import { complexLocation, complexTransactions, getComplex } from "@/lib/queries/complexes";
+import { ensureComplexScores } from "@/lib/queries/location-live";
 import { complexZones } from "@/lib/queries/projects";
 import { ZONE_STAGES } from "@/lib/projects";
 import { myComplexItems, summarize } from "@/lib/queries/items";
@@ -47,7 +50,8 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
   if (!c) notFound();
   const [txs, loc, zones, mkt, permit, [rate]] = await Promise.all([
     complexTransactions(id, 5),
-    complexLocation(id),
+    // 점수가 없고 시설이 갖춰진 단지면 여기서 바로 계산한다(수십 ms). 간이 점수(OSM 보충)는 느려서 화면에서 따로(LocationLoader)
+    complexLocation(id).then(async (l) => (l ? l : (await ensureComplexScores([id], { maxFull: 1, maxQuick: 0 }), complexLocation(id)))),
     complexZones(id),
     marketBrief(c.sgg_cd),
     pointPermit(c.lng, c.lat, c.pnu),
@@ -154,7 +158,7 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
               key={t.area}
               href={`/complexes/${id}?area=${t.area.toFixed(2)}`}
               scroll={false}
-              className={`rounded-full border px-3 py-1 text-xs ${t === pick ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border bg-surface text-muted hover:border-accent"}`}
+              className={`rounded-full border px-3.5 py-1.5 text-sm ${t === pick ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border bg-surface text-muted hover:border-accent"}`}
             >
               {formatArea(t.area, unit).split(" ")[0]} · {t.trades}건
             </Link>
@@ -213,31 +217,40 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
         </Card>
 
         <Card className="p-4">
-          <div className="text-xs text-muted">생활편의 점수</div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-muted">생활편의 점수</span>
+            {loc?.basis === "quick" ? <Badge>간이</Badge> : null}
+          </div>
           {loc?.total != null ? (
             <>
-              <div className="mt-0.5 flex items-baseline gap-2">
+              <div className="mt-0.5 flex flex-wrap items-baseline gap-2">
                 <span className="tabular text-3xl font-bold">{Math.round(loc.total)}</span>
                 <span className="text-sm text-muted">/ 100</span>
                 {loc.percentile !== null ? <Badge tone="accent">주변 {loc.peers}곳 중 상위 {Math.max(1, Math.round((1 - loc.percentile) * 100))}%</Badge> : null}
               </div>
-              <ul className="mt-3 space-y-1.5 text-[13px]">
-                {ORDER.filter((k) => loc.scores[k]).map((k) => {
-                  const cat = loc.scores[k];
-                  return (
-                    <li key={k} className="flex items-start justify-between gap-3">
-                      <span className="min-w-0">
-                        <span className="font-medium">{cat.label}</span>
-                        {cat.details?.[0] ? <span className="block truncate text-xs text-muted">{detailText(cat.details[0])}</span> : null}
-                      </span>
-                      <span className="tabular shrink-0 font-semibold">{cat.score === null ? "-" : Math.round(cat.score)}</span>
+              <LocBars className="mt-3" cats={Object.fromEntries(ORDER.filter((k) => loc.scores[k]).map((k) => [k, loc.scores[k].score]))} />
+              <details className="mt-3">
+                <summary className="cursor-pointer text-xs font-medium text-accent">근거 보기</summary>
+                <ul className="mt-2 space-y-1.5 text-xs">
+                  {ORDER.filter((k) => loc.scores[k]?.details?.[0]).map((k) => (
+                    <li key={k}>
+                      <span className="font-medium">{loc.scores[k].label}</span>
+                      <span className="block text-muted">{detailText(loc.scores[k].details![0])}</span>
                     </li>
-                  );
-                })}
-              </ul>
+                  ))}
+                </ul>
+              </details>
+              {loc.basis === "quick" ? (
+                <p className="mt-2 text-xs leading-relaxed text-muted">역·학교·공원·병원·마트와 업무지구 거리로 낸 간이 점수예요. 학원·음식점 등은 다음 매일 수집 뒤 반영됩니다.</p>
+              ) : null}
             </>
+          ) : loc ? (
+            <p className="mt-2 text-sm text-muted">주변 시설 자료가 없어 점수를 내지 못했어요. 매일 아침 수집 뒤 다시 계산합니다.</p>
+          ) : c.lng !== null && c.lat !== null ? (
+            // 저장된 점수가 없을 때만 — 계산 뒤 다시 그리면 위 분기로 간다
+            <LocationLoader complexId={id} />
           ) : (
-            <p className="mt-2 text-sm text-muted">아직 계산되지 않았습니다. 주변 시설 자료는 관심 부동산 근처만 모으므로, 관심 부동산에서 500m 안 단지만 계산됩니다.</p>
+            <p className="mt-2 text-sm text-muted">위치를 확인하지 못해 계산할 수 없습니다.</p>
           )}
         </Card>
 

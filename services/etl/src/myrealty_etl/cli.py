@@ -233,7 +233,7 @@ def _daily(ns):
             continue
         mod, fn = target.split(":")
         func = getattr(importlib.import_module(mod), fn)
-        if name == "backfill" and deadline is not None:
+        if name in ("backfill", "pois") and deadline is not None:
             func = partial(func, deadline=deadline)
         log.info("%s 시작", name)
         try:

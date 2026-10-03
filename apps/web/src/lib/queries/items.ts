@@ -81,6 +81,44 @@ export async function listItems(userId: string) {
     order by w.sort_order, w.created_at`;
 }
 
+export type ItemTrend = { points: [string, number][]; change1y: number | null };
+
+/**
+ * 관심 부동산 카드의 작은 추세: 같은 단지·평형(±3㎡) 매매의 최근 12개월 월 중위가와 1년 변화
+ * (최근 3개월 중위 ÷ 12~15개월 전 중위 − 1, 양쪽 모두 2건 이상일 때만). 단지가 없는 부동산은 빠진다.
+ */
+export async function itemTrends(userId: string): Promise<Map<string, ItemTrend>> {
+  const rows = await sql<{ item_id: string; m: string | null; p: number | null; recent: number | null; prev: number | null; n_recent: number; n_prev: number }[]>`
+    with t as (
+      select w.id as item_id, t.deal_date, t.price from watch_items w
+      join transactions t on t.complex_id = w.complex_id and t.deal_kind = 'sale' and not t.is_canceled
+        and t.deal_date >= date_trunc('month', current_date) - interval '15 months'
+        and (w.area_m2 is null or abs(t.area_m2 - w.area_m2) <= 3)
+      where w.user_id = ${userId} and w.complex_id is not null
+    )
+    select item_id, to_char(date_trunc('month', deal_date), 'YYYY-MM-01') as m,
+      percentile_cont(0.5) within group (order by price)::float8 as p,
+      null::float8 as recent, null::float8 as prev, 0 as n_recent, 0 as n_prev
+    from t where deal_date >= date_trunc('month', current_date) - interval '11 months'
+    group by item_id, 2
+    union all
+    select item_id, null, null,
+      percentile_cont(0.5) within group (order by price) filter (where deal_date >= current_date - interval '3 months')::float8,
+      percentile_cont(0.5) within group (order by price) filter (where deal_date < current_date - interval '12 months')::float8,
+      count(*) filter (where deal_date >= current_date - interval '3 months')::int,
+      count(*) filter (where deal_date < current_date - interval '12 months')::int
+    from t group by item_id
+    order by 1, 2`;
+  const out = new Map<string, ItemTrend>();
+  for (const r of rows) {
+    const cur = out.get(r.item_id) ?? { points: [], change1y: null };
+    if (r.m && r.p !== null) cur.points.push([r.m, r.p]);
+    else if (r.recent && r.prev && r.n_recent >= 2 && r.n_prev >= 2) cur.change1y = r.recent / r.prev - 1;
+    out.set(r.item_id, cur);
+  }
+  return out;
+}
+
 /** 요청 단위 캐시(generateMetadata 와 page 가 같은 요청에서 함께 부른다) */
 export const getItem = cache(async (userId: string, id: string): Promise<WatchItem | null> => {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;

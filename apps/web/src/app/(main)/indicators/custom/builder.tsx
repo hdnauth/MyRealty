@@ -50,7 +50,7 @@ export function Builder({ catalog, sgg }: { catalog: Meta[]; sgg: string | null 
           <div className="space-y-3 px-4 pb-4">
             <div className="flex flex-wrap gap-1.5">
               {EXAMPLES.map((e) => (
-                <button key={e.label} type="button" onClick={() => setExpr(sgg ? e.expr.replaceAll("{sgg}", sgg) : e.expr)} className="rounded-full border border-border px-2.5 py-1 text-xs text-muted hover:border-accent">
+                <button key={e.label} type="button" onClick={() => setExpr(sgg ? e.expr.replaceAll("{sgg}", sgg) : e.expr)} className="rounded-full border border-border px-3 py-1.5 text-sm text-muted hover:border-accent">
                   {e.label}
                 </button>
               ))}

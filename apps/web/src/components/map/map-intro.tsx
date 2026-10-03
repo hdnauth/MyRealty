@@ -33,14 +33,14 @@ export function MapIntro() {
       <button type="button" onClick={close} aria-label="안내 닫기" className="absolute right-2 top-2 p-1 text-muted hover:text-text">
         <X size={16} />
       </button>
-      <p className="pr-6 text-[15px] font-semibold leading-snug">단지를 누르면 시세와 함께 이런 것까지 보여 드려요</p>
-      <ul className="mt-2 space-y-1 text-[13px] text-muted">
+      <p className="pr-6 text-sm font-semibold leading-snug">단지를 누르면 시세와 함께 이런 것까지 보여 드려요</p>
+      <ul className="mt-2 space-y-1 text-xs text-muted">
         <li>· 비슷한 단지 대비 가격 위치 — 평소 격차와 비교</li>
         <li>· 층별 가격 차이, 신규·갱신 전세 차이, 등기 안 된 신고가 비율</li>
         <li>· 금리·거래·공급으로 본 시장 판정과 그 판정의 과거 적중률</li>
         <li>· 필요한 대출·월 상환, 깡통전세·역전세 점검</li>
       </ul>
-      <div className="mt-3 flex items-center gap-3 text-[13px]">
+      <div className="mt-3 flex items-center gap-3 text-xs">
         <Link href="/items/new" className="rounded-lg bg-accent px-3 py-2 font-medium text-white">관심 부동산 등록</Link>
         <span className="text-muted">로그인 없이 바로 쓸 수 있어요</span>
       </div>

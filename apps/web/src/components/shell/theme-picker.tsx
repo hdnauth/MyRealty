@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
+import { applyFontSize, FONT_SIZES, type FontSize, readFontCookie } from "@/lib/font-size";
 import { applyTheme, readThemeCookie, type Theme, THEMES } from "@/lib/theme";
 
 const ICON = { system: Monitor, light: Sun, dark: Moon } as const;
@@ -68,5 +69,39 @@ export function ThemeToggle({ className }: { className?: string }) {
     >
       <I size={18} />
     </button>
+  );
+}
+
+/** 설정 화면: 글자 크기 세 칸(보통·크게·더 크게) — 누르면 바로 바뀐다 */
+export function FontSizePicker() {
+  const [size, setSize] = useState<FontSize | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 브라우저 쿠키는 마운트 뒤에만 읽을 수 있다
+    setSize(readFontCookie());
+  }, []);
+  return (
+    <div className="grid grid-cols-3 gap-2 px-4 pb-4" role="radiogroup" aria-label="글자 크기">
+      {FONT_SIZES.map((f, i) => {
+        const on = size === f.value;
+        return (
+          <button
+            key={f.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => {
+              applyFontSize(f.value);
+              setSize(f.value);
+            }}
+            className={clsx("rounded-lg border px-3 py-2 text-left", on ? "border-accent bg-accent-soft" : "border-border hover:bg-surface-2")}
+          >
+            <span className={clsx("flex items-baseline gap-1.5 font-semibold", on && "text-accent")}>
+              <span aria-hidden style={{ fontSize: `${0.9 + i * 0.2}rem` }}>가</span> {f.label}
+            </span>
+            <span className="block text-xs text-muted">{f.desc}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }

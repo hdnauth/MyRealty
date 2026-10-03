@@ -61,7 +61,7 @@ export function TxTable({
                 {formatManwon(r.price)}
                 {r.monthly_rent ? <span className="text-muted"> / {r.monthly_rent}</span> : null}
                 {r.contract_type === "renewal" && r.prev_deposit ? (
-                  <span className="block text-[11px] font-normal text-muted">종전 {formatManwon(r.prev_deposit, { short: true })}</span>
+                  <span className="block text-[0.75rem] font-normal text-muted">종전 {formatManwon(r.prev_deposit, { short: true })}</span>
                 ) : null}
               </td>
               <td className="px-2 py-2 text-right">{r.area_m2 ? `${Number(r.area_m2).toFixed(1)}㎡` : "-"}</td>

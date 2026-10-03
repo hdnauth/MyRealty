@@ -23,12 +23,12 @@ export function AuthorLine({ author, at, edited, className }: { author: Author; 
     <div className={clsx("flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted", className)}>
       {author.isAi ? <Bot size={13} className="text-accent" /> : null}
       <span className={clsx("font-medium", author.isAi ? "text-accent" : "text-text")}>{author.nickname}</span>
-      {author.level ? <span className="rounded bg-surface-2 px-1 text-[10px]">{author.level}</span> : null}
+      {author.level ? <span className="rounded bg-surface-2 px-1 text-[0.75rem]">{author.level}</span> : null}
       {author.badges.map((b) => {
         const x = BADGE[b];
         const Icon = x.icon;
         return (
-          <span key={b} title={x.title} className={clsx("inline-flex items-center gap-0.5 text-[11px]", x.cls)}>
+          <span key={b} title={x.title} className={clsx("inline-flex items-center gap-0.5 text-[0.75rem]", x.cls)}>
             <Icon size={12} />
             {x.label}
           </span>
@@ -45,18 +45,18 @@ export function PostItem({ p, showBoard = true }: { p: PostRow; showBoard?: bool
   return (
     <li>
       <Link href={`/community/posts/${p.id}`} className="block px-4 py-3 hover:bg-surface-2">
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+        <div className="flex flex-wrap items-center gap-1.5 text-[0.75rem] text-muted">
           <CategoryBadge category={p.category} />
           {p.status === "held" ? <Badge tone="warn">검토 중</Badge> : null}
           {showBoard ? <span className="truncate">{p.complex_name ?? shortSgg(p.sgg_name)}</span> : null}
         </div>
-        <p className="mt-1 line-clamp-1 text-[15px] font-semibold leading-snug">
+        <p className="mt-1 line-clamp-1 text-sm font-semibold leading-snug">
           {p.title}
           {p.has_poll ? <BarChart3 size={14} className="ml-1 inline text-accent" aria-label="투표" /> : null}
           {p.image_count ? <ImageIcon size={14} className="ml-1 inline text-muted" aria-label="사진" /> : null}
           {p.attach_count > p.image_count ? <Paperclip size={13} className="ml-1 inline text-muted" aria-label="데이터 첨부" /> : null}
         </p>
-        {p.excerpt ? <p className="mt-0.5 line-clamp-2 text-[13px] text-muted">{p.excerpt}</p> : null}
+        {p.excerpt ? <p className="mt-0.5 line-clamp-2 text-xs text-muted">{p.excerpt}</p> : null}
         <div className="mt-1.5 flex items-center justify-between gap-2">
           <AuthorLine author={p.author} at={p.created_at} />
           <span className="flex shrink-0 items-center gap-2.5 text-xs text-muted">
@@ -85,7 +85,7 @@ export function PostList({ posts, showBoard = true, empty }: { posts: PostRow[];
 export function PostText({ text, className }: { text: string; className?: string }) {
   const parts = text.split(/(https?:\/\/[^\s]+)/g);
   return (
-    <div className={clsx("whitespace-pre-wrap break-words text-[15px] leading-relaxed", className)}>
+    <div className={clsx("whitespace-pre-wrap break-words text-sm leading-relaxed", className)}>
       {parts.map((s, i) =>
         /^https?:\/\//.test(s) ? (
           <a key={i} href={s} target="_blank" rel="noreferrer nofollow ugc" className="text-accent underline">

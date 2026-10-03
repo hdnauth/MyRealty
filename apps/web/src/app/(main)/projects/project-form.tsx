@@ -13,7 +13,7 @@ export function ProjectForm({ defaultType = "zone" }: { defaultType?: "zone" | "
       <input type="hidden" name="type" value={type} />
       <div className="flex gap-1.5">
         {(["zone", "infra"] as const).map((t) => (
-          <button key={t} type="button" onClick={() => setType(t)} className={`rounded-full border px-3 py-1 text-sm ${type === t ? "border-accent bg-accent-soft text-accent" : "border-border text-muted"}`}>
+          <button key={t} type="button" onClick={() => setType(t)} className={`rounded-full border px-3.5 py-1.5 text-sm ${type === t ? "border-accent bg-accent-soft text-accent" : "border-border text-muted"}`}>
             {t === "zone" ? "재개발·재건축" : "철도·도로"}
           </button>
         ))}

@@ -99,12 +99,12 @@ function SignupBars({ days }: { days: { d: string; n: number }[] }) {
       <div className="flex h-36 items-end gap-[3px]" role="img" aria-label={`최근 30일 가입 ${total}명`}>
         {days.map((x) => (
           <div key={x.d} className="flex h-full min-w-0 flex-1 flex-col justify-end" title={`${x.d} · ${x.n}명`}>
-            {x.n ? <span className="tabular mb-0.5 text-center text-[10px] text-muted">{x.n}</span> : null}
+            {x.n ? <span className="tabular mb-0.5 text-center text-[0.75rem] text-muted">{x.n}</span> : null}
             <div className="rounded-t-sm" style={{ height: `${(x.n / max) * 80}%`, minHeight: x.n ? 3 : 1, background: x.n ? "var(--series-1)" : "var(--chart-grid)" }} />
           </div>
         ))}
       </div>
-      <div className="mt-1 flex justify-between text-[11px] text-muted">
+      <div className="mt-1 flex justify-between text-[0.75rem] text-muted">
         <span>{days[0]?.d.slice(5).replace("-", ".")}</span>
         <span>30일 합계 {total}명</span>
         <span>오늘</span>

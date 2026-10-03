@@ -15,9 +15,10 @@ log = logging.getLogger(__name__)
 ENDPOINTS = ["https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
 
 
-def query(lng: float, lat: float, radius: int) -> str:
+def query(lng: float, lat: float, radius: int, small_radius: int | None = None) -> str:
+    """radius: 드문 시설(역·학교·병원·마트·공원), small_radius: 밀집 시설(의원·버스·편의점·음식점, 기본 700m)."""
     near = f"(around:{radius},{lat},{lng})"
-    small = f"(around:{min(radius, 700)},{lat},{lng})"
+    small = f"(around:{small_radius or min(radius, 700)},{lat},{lng})"
     return f"""[out:json][timeout:40];
 (
   nwr["railway"="station"]{near};
@@ -112,8 +113,8 @@ def parse(data: dict) -> list[dict]:
     return out
 
 
-def fetch(lng: float, lat: float, radius: int = 2000) -> list[dict]:
-    q = query(lng, lat, radius)
+def fetch(lng: float, lat: float, radius: int = 2000, small_radius: int | None = None) -> list[dict]:
+    q = query(lng, lat, radius, small_radius)
     last: Exception | None = None
     for url in ENDPOINTS:
         try:

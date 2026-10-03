@@ -51,7 +51,7 @@ export async function PriceTab({ item, all = false, nall = false, mode }: { item
     <div className="space-y-4">
       <nav className="-mx-4 flex gap-1.5 overflow-x-auto px-4 md:mx-0 md:px-0" aria-label="시세 탭 바로가기">
         {sections.map(([id, label]) => (
-          <a key={id} href={`#${id}`} className="shrink-0 rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">
+          <a key={id} href={`#${id}`} className="shrink-0 rounded-full border border-border bg-surface px-3.5 py-1.5 text-sm text-muted hover:border-accent hover:text-accent">
             {label}
           </a>
         ))}

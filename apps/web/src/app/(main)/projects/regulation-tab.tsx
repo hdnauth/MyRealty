@@ -31,14 +31,14 @@ export async function RegulationTab({ uid }: { uid: string }) {
                   {it.zone ? <Badge tone="ok">정비구역</Badge> : null}
                   {!it.permit && !it.district_plan && !it.zone ? <span className="text-xs text-muted">해당 없음</span> : null}
                 </div>
-                {it.uses.length ? <p className="mt-0.5 truncate text-[11px] text-muted">토지이용계획: {it.uses.join(" · ")}</p> : null}
+                {it.uses.length ? <p className="mt-0.5 truncate text-[0.75rem] text-muted">토지이용계획: {it.uses.join(" · ")}</p> : null}
               </li>
             ))}
           </ul>
         ) : (
           <EmptyState title="좌표가 있는 관심 부동산이 없습니다" />
         )}
-        <p className="px-4 pb-4 text-[11px] leading-relaxed text-muted">
+        <p className="px-4 pb-4 text-[0.75rem] leading-relaxed text-muted">
           토지거래허가구역에서는 일정 면적 이상 주택·토지를 살 때 시군구청 허가가 필요하고, 주택은 실거주(갭투자 제한) 조건이 붙습니다. 지정·해제는 수시로
           바뀌므로 계약 전 토지이음(eum.go.kr)에서 확인하세요.
         </p>
@@ -61,7 +61,7 @@ function RegionList({ title, rows }: { title: string; rows: { sido: string | nul
             <li key={i} className="flex items-center gap-2 py-1.5">
               <span className="min-w-0 flex-1 truncate">{shortSido(r.sido)} {r.sgg_name}</span>
               <span className="tabular shrink-0 text-xs">{r.area_km2.toLocaleString()}㎢</span>
-              <span className="w-20 shrink-0 whitespace-nowrap text-right text-[11px] text-muted">{r.n}곳{r.dyear ? ` · ${r.dyear}` : ""}</span>
+              <span className="w-20 shrink-0 whitespace-nowrap text-right text-[0.75rem] text-muted">{r.n}곳{r.dyear ? ` · ${r.dyear}` : ""}</span>
             </li>
           ))}
         </ul>

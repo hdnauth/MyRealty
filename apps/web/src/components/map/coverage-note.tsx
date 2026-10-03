@@ -40,7 +40,7 @@ export function CoverageNote({ center, active, compact = false }: { center: [num
     return (
       <div className={box} role="status">
         <p className="font-semibold">{c.name} 실거래를 모으기 시작했어요</p>
-        <p className="mt-0.5 text-[13px] text-muted">{result?.message ?? "다음 매일 수집(보통 다음 날 아침) 뒤 최근 거래부터 지도에 나타나요."}</p>
+        <p className="mt-0.5 text-xs text-muted">{result?.message ?? "다음 매일 수집(보통 다음 날 아침) 뒤 최근 거래부터 지도에 나타나요."}</p>
       </div>
     );
   }
@@ -48,13 +48,13 @@ export function CoverageNote({ center, active, compact = false }: { center: [num
   return (
     <div className={box} role="status">
       <p className="font-semibold">{c.name}은(는) 아직 실거래를 모으지 않은 지역이에요</p>
-      <p className="mt-0.5 text-[13px] text-muted">
+      <p className="mt-0.5 text-xs text-muted">
         마이리얼티는 사용자가 관심을 둔 지역부터 공공데이터를 모읍니다. 요청하면 다음 매일 수집 때 최근 거래부터 채워요.
       </p>
       {result ? (
-        <p className={`mt-2 text-[13px] ${result.ok ? "text-ok" : "text-up"}`}>{result.message}</p>
+        <p className={`mt-2 text-xs ${result.ok ? "text-ok" : "text-up"}`}>{result.message}</p>
       ) : c.pending ? (
-        <p className="mt-2 text-[13px] text-muted">이미 요청이 접수돼 운영자 확인을 기다리고 있어요.</p>
+        <p className="mt-2 text-xs text-muted">이미 요청이 접수돼 운영자 확인을 기다리고 있어요.</p>
       ) : null}
       {!done && !c.pending ? (
         <button

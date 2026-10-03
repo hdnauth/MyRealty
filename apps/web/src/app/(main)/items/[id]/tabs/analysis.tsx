@@ -31,7 +31,7 @@ export async function AiCard({ item }: { item: WatchItem }) {
       ) : null}
       {card ? (
         <div className="space-y-4 px-4 pb-4 text-sm">
-          <p className="text-[15px] font-medium">{card.one_liner}</p>
+          <p className="text-sm font-medium">{card.one_liner}</p>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <List title="강점" icon={<Check size={14} className="text-ok" />} items={card.strengths} />
             <List title="리스크" icon={<CircleAlert size={14} className="text-warn" />} items={card.risks} />

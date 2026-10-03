@@ -47,12 +47,12 @@ export function UsageCards({ u }: { u: UsageStats }) {
                     [w.active, "var(--series-2)"],
                   ].map(([v, color], i) => (
                     <div key={i} className="flex h-full w-1/2 max-w-4 flex-col justify-end" title={`${w.week} 주 · ${i ? "활성" : "새 사용자"} ${v}명`}>
-                      {v ? <span className="tabular text-center text-[10px] text-muted">{v}</span> : null}
+                      {v ? <span className="tabular text-center text-[0.75rem] text-muted">{v}</span> : null}
                       <div className="rounded-t-sm" style={{ height: `${((v as number) / maxWeek) * 75}%`, minHeight: v ? 3 : 1, background: v ? (color as string) : "var(--chart-grid)" }} />
                     </div>
                   ))}
                 </div>
-                <span className="mt-1 text-center text-[10px] text-muted">{w.week}</span>
+                <span className="mt-1 text-center text-[0.75rem] text-muted">{w.week}</span>
               </div>
             ))}
           </div>

@@ -187,10 +187,10 @@ export async function OverviewTab({ item, viewing = false, mode, profile }: { it
                 <Row k="DSR 40% 한도" v={afford.dsrCap !== null ? formatManwon(afford.dsrCap) : "연소득 필요"} />
                 <Row k="월 상환" v={formatManwon(Math.round(afford.monthly))} sub={afford.incomeShare !== null ? `소득의 ${formatPct(afford.incomeShare, 0, false)}` : undefined} />
               </div>
-              <p className={`mt-3 rounded-lg px-3 py-2 text-[13px] ${afford.ok ? "bg-ok/10 text-ok" : "bg-up/10 text-up"}`}>
+              <p className={`mt-3 rounded-lg px-3 py-2 text-xs ${afford.ok ? "bg-ok/10 text-ok" : "bg-up/10 text-up"}`}>
                 {afford.need === 0 ? "가진 현금으로 살 수 있어요." : afford.ok ? `대출 한도(약 ${formatManwon(afford.cap, { short: true })}) 안이에요.` : `한도보다 약 ${formatManwon(afford.short, { short: true })} 많이 필요해요. 이 조건이면 약 ${formatManwon(afford.maxPrice, { short: true })}까지 살 수 있어요.`}
               </p>
-              <p className="mt-2 text-[11px] text-muted">개략 계산입니다. 스트레스 DSR·지역별 대출 한도 규제·기존 대출은 반영하지 않았습니다. 실제 한도는 은행에서 확인하세요.</p>
+              <p className="mt-2 text-[0.75rem] text-muted">개략 계산입니다. 스트레스 DSR·지역별 대출 한도 규제·기존 대출은 반영하지 않았습니다. 실제 한도는 은행에서 확인하세요.</p>
             </div>
           ) : null}
           <div className="px-4 pb-4 pt-2">
@@ -220,7 +220,7 @@ export async function OverviewTab({ item, viewing = false, mode, profile }: { it
             ))}
           </tbody>
         </table>
-        <p className="px-4 py-2 text-[11px] text-muted">{loan?.amount ? "대출 금리" : "현재 주담대(신규) 평균 금리"} 기준. 변동금리는 보통 6~12개월마다 바뀝니다.</p>
+        <p className="px-4 py-2 text-[0.75rem] text-muted">{loan?.amount ? "대출 금리" : "현재 주담대(신규) 평균 금리"} 기준. 변동금리는 보통 6~12개월마다 바뀝니다.</p>
       </Card>
     ) : null,
     jeonse: jc ? (
@@ -244,7 +244,7 @@ export async function OverviewTab({ item, viewing = false, mode, profile }: { it
             </>
           ) : null}
           {jc.gap !== null ? (
-            <p className="border-t border-border pt-2 text-[13px] leading-relaxed">
+            <p className="border-t border-border pt-2 text-xs leading-relaxed">
               {jc.gap >= 0
                 ? `지금 시세가 보증금보다 ${formatManwon(jc.gap, { short: true })} 높습니다.`
                 : tenantRole
@@ -256,7 +256,7 @@ export async function OverviewTab({ item, viewing = false, mode, profile }: { it
               보증금을 입력하면 시세와 비교합니다. <Link href={`${base}/edit`} className="text-accent">보증금 입력 →</Link>
             </p>
           )}
-          {tenantRole ? <p className="text-[11px] text-muted">등기부등본의 선순위 채권(근저당)은 반영하지 않았습니다. 계약 전 반드시 확인하세요.</p> : null}
+          {tenantRole ? <p className="text-[0.75rem] text-muted">등기부등본의 선순위 채권(근저당)은 반영하지 않았습니다. 계약 전 반드시 확인하세요.</p> : null}
         </div>
       </Card>
     ) : null,
@@ -267,7 +267,7 @@ export async function OverviewTab({ item, viewing = false, mode, profile }: { it
           {reg.permit ? <Badge tone="up">토지거래허가구역</Badge> : null}
           {reg.district_plan ? <Badge tone="accent">지구단위계획구역</Badge> : null}
         </div>
-        <p className="px-4 pb-4 text-[13px] leading-relaxed">
+        <p className="px-4 pb-4 text-xs leading-relaxed">
           {reg.permit ? "토지거래허가구역입니다. 일정 면적 이상을 살 때 시군구청 허가가 필요하고, 주택은 실거주 목적만 허가돼 전세를 낀 매수가 어렵습니다. " : ""}
           {reg.district_plan ? "지구단위계획구역은 건축물 용도·높이·용적률이 계획으로 정해져 있어 재건축·신축 때 계획 내용을 확인해야 합니다." : ""}
         </p>

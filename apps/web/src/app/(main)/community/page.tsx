@@ -132,7 +132,7 @@ export default async function CommunityPage(props: PageProps<"/community">) {
               <>
                 <Markdown>{summary.content_md}</Markdown>
                 <div className="mt-1 flex flex-wrap items-center gap-3">
-                  <p className="text-[11px] text-muted">글 {summary.post_count}개 기준 · {timeAgo(summary.updated_at)} · AI 요약</p>
+                  <p className="text-[0.75rem] text-muted">글 {summary.post_count}개 기준 · {timeAgo(summary.updated_at)} · AI 요약</p>
                   <AiReportButton surface="community_summary" refId={`${complexId ? "complex_faq" : "sgg_week"}:${complexId ?? sgg}`} excerpt={summary.content_md} />
                 </div>
               </>
@@ -212,7 +212,7 @@ export default async function CommunityPage(props: PageProps<"/community">) {
 
 function BoardChip({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
   return (
-    <Link href={href} className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-[13px] ${active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text"}`}>
+    <Link href={href} className={`shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-sm ${active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text"}`}>
       {children}
     </Link>
   );
@@ -220,7 +220,7 @@ function BoardChip({ href, active, children }: { href: string; active: boolean; 
 
 function FilterChip({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
   return (
-    <Link href={href} scroll={false} className={`rounded-md px-2 py-1 text-[13px] ${active ? "bg-text text-surface" : "text-muted hover:bg-surface-2"}`}>
+    <Link href={href} scroll={false} className={`rounded-md px-2 py-1 text-xs ${active ? "bg-text text-surface" : "text-muted hover:bg-surface-2"}`}>
       {children}
     </Link>
   );

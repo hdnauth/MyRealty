@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { FONT_INIT_SCRIPT } from "@/lib/font-size";
 import { THEME_BG, THEME_INIT_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
@@ -21,10 +22,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // data-theme 은 첫 페인트 전 스크립트가 붙인다(설정 › 화면 테마) — 서버 HTML 과 달라도 경고하지 않게
+    // data-theme·data-font 는 첫 페인트 전 스크립트가 붙인다(설정 › 화면 테마·글자 크기) — 서버 HTML 과 달라도 경고하지 않게
     <html lang="ko" className="h-full antialiased" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT + FONT_INIT_SCRIPT }} />
       </head>
       <body className="min-h-full">{children}</body>
     </html>

@@ -20,7 +20,7 @@ export function FinanceProfileForm({ profile, compact = false }: { profile: Fina
         <MoneyField label="가구 연소득(세전)" name="income" defaultValue={profile?.income} placeholder="예) 8000만" />
       </div>
       <div>
-        <span className="mb-1 block text-[13px] font-medium text-muted">대출 비율(LTV) — 집값의 몇 %까지 빌릴 수 있나</span>
+        <span className="mb-1 block text-xs font-medium text-muted">대출 비율(LTV) — 집값의 몇 %까지 빌릴 수 있나</span>
         <input type="hidden" name="ltv" value={ltv} />
         <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="LTV">
           {LTV_OPTIONS.map((v) => (
@@ -30,7 +30,7 @@ export function FinanceProfileForm({ profile, compact = false }: { profile: Fina
               role="radio"
               aria-checked={ltv === v}
               onClick={() => setLtv(v)}
-              className={`rounded-full border px-3 py-1 text-[13px] ${ltv === v ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text"}`}
+              className={`rounded-full border px-3.5 py-1.5 text-sm ${ltv === v ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text"}`}
             >
               {Math.round(v * 100)}%
             </button>

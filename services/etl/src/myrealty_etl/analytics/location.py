@@ -100,19 +100,41 @@ def park_size_factor(area_m2: float | None) -> float:
 FAR_CAP = {"제1종전용주거지역": 100, "제2종전용주거지역": 120, "제1종일반주거지역": 150, "제2종일반주거지역": 200,
            "제3종일반주거지역": 250, "준주거지역": 400}
 REBUILD_AGE = 30
-# 단지 점수(백분위 비교용)를 계산하는 범위: 관심 부동산에서 이 거리 안(시설 수집 반경 안쪽)
+# 관심 부동산에서 이 거리 안 단지는 그 부동산 주변 수집(상가 1.5km)으로 시설이 충분히 잡힌다
 COVER_M = 500
+# 단지 격자(도) — jobs/pois_job 이 이 칸 단위로 시설을 모으고 poi_cells 에 적는다
+CELL = 0.01
+# 개수만 세는 밀집 시설: 모든 구성요소의 반경이 DENSE_R 이하라 그보다 먼 곳은 읽지 않는다(음식점 등이 대부분이라 조회가 크게 준다)
+DENSE = ("food", "cafe", "convenience", "academy", "clinic", "bus")
+DENSE_R = 1000
+FAR_R = 5000
 
 # d: 영역이 있으면 경계까지(안에 있으면 0), 없으면 점까지. area_1km: 반경 1km 원과 겹치는 면적(영역 없으면 area_m2)
-POI_SQL = """
-with pt as (select ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326)::geography as g)
+# geom/shape 의 공간 인덱스를 타도록 먼저 상자(ST_Expand, 미터→도 환산)로 거른 뒤 거리를 잰다.
+# 웹(apps/web/src/lib/location-score.ts)이 같은 쿼리를 쓴다 — 바꾸면 함께 바꾼다.
+POI_SQL = f"""
+with pt as (select ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326) as p,
+                   ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326)::geography as g,
+                   1.0 / (111320 * cos(radians(%(lat)s))) as kx, 1.0 / 110574 as ky)
 select source, source_id, category, subcategory, name, area_m2::float8 as area_m2, attrs->>'line' as line,
        ST_Distance(coalesce(shape, geom)::geography, pt.g) as d,
        case when shape is not null and category = 'park'
             then ST_Area(ST_Intersection(shape::geography, ST_Buffer(pt.g, 1000)))
             else area_m2::float8 end as area_1km
 from pois, pt
-where ST_DWithin(coalesce(shape, geom)::geography, pt.g, 5000)
+where category in {DENSE!r}
+  and geom && ST_Expand(pt.p, {DENSE_R} * pt.kx, {DENSE_R} * pt.ky)
+  and ST_DWithin(geom::geography, pt.g, {DENSE_R})
+union all
+select source, source_id, category, subcategory, name, area_m2::float8 as area_m2, attrs->>'line' as line,
+       ST_Distance(coalesce(shape, geom)::geography, pt.g) as d,
+       case when shape is not null and category = 'park'
+            then ST_Area(ST_Intersection(shape::geography, ST_Buffer(pt.g, 1000)))
+            else area_m2::float8 end as area_1km
+from pois, pt
+where category not in {DENSE!r}
+  and (geom && ST_Expand(pt.p, {FAR_R} * pt.kx, {FAR_R} * pt.ky) or shape && ST_Expand(pt.p, {FAR_R} * pt.kx, {FAR_R} * pt.ky))
+  and ST_DWithin(coalesce(shape, geom)::geography, pt.g, {FAR_R})
 """
 
 
@@ -200,7 +222,8 @@ def best_station(cand: list[dict], walk: float) -> tuple[float, dict | None]:
     for p in cand:
         groups.setdefault(station_key(p["name"]), []).append(p)
     best, info = 0.0, None
-    for key, ps in groups.items():
+    # 가까운 역부터(동점이면 앞의 역) — 조회 순서와 상관없이 같은 결과
+    for key, ps in sorted(groups.items(), key=lambda kv: (min(p["d"] for p in kv[1]), kv[0])):
         d = min(p["d"] for p in ps)
         if d > walk:
             continue
@@ -212,10 +235,11 @@ def best_station(cand: list[dict], walk: float) -> tuple[float, dict | None]:
 
 
 def dedupe(cand: list[dict]) -> list[dict]:
-    """여러 원천(상가정보·심평원·OSM)에 같은 시설이 겹쳐 있으면 한 번만 센다: 이름(공백 제외)과 거리 50m 구간이 같으면 같은 곳."""
+    """여러 원천(상가정보·심평원·OSM)에 같은 시설이 겹쳐 있으면 한 번만 센다: 이름(공백 제외)과 거리 50m 구간이 같으면 같은 곳.
+    가까운 것부터 보아 조회 순서와 상관없이 같은 결과가 나오게 한다(웹 계산과 맞추기 위해서도)."""
     seen: set[tuple[str, int]] = set()
     out = []
-    for p in cand:
+    for p in sorted(cand, key=lambda p: (p["d"], p["name"] or "")):
         k = (re.sub(r"\s", "", p["name"] or ""), int(p["d"] // 50))
         if k[0] and k in seen:
             continue
@@ -243,7 +267,9 @@ def _subs_list(subs) -> list[str] | None:
 
 def score_point(pois: list[dict], available: set[str], lng: float | None = None, lat: float | None = None
                 ) -> tuple[float | None, dict]:
-    """→ (총점, 항목별 결과). lng/lat 이 없으면 직주근접은 계산하지 않는다(미수집)."""
+    """→ (총점, 항목별 결과). lng/lat 이 없으면 직주근접은 계산하지 않는다(미수집).
+    웹(apps/web/src/lib/location-score.ts)에 같은 계산이 있다 — 바꾸면 함께 바꾸고 tests/test_location_parity.py 로 맞춘다."""
+    pois = sorted(pois, key=lambda p: (p["d"], p["name"] or ""))
     result: dict = {}
     total_w = total = 0.0
     for key, (label, weight, comps) in SPECS.items():
@@ -349,16 +375,32 @@ def score_target(conn, target_type: str, target_id: str, lng: float, lat: float,
     total, scores = score_point(pois, avail, lng, lat)
     development = development_summary(conn, lng, lat, **dev)
     conn.execute(
-        """insert into location_scores (target_type, target_id, total, scores, development, computed_at)
-           values (%s, %s, %s, %s, %s, now())
+        """insert into location_scores (target_type, target_id, total, scores, development, computed_at, basis)
+           values (%s, %s, %s, %s, %s, now(), 'full')
            on conflict (target_type, target_id) do update set total = excluded.total, scores = excluded.scores,
-             development = excluded.development, computed_at = now()""",
+             development = excluded.development, computed_at = now(), basis = 'full'""",
         (target_type, target_id, total, jsonb(scores), jsonb(development)),
     )
     return total
 
 
-def compute_locations(conn, item_id: str | None = None) -> dict:
+# 시설이 충분히 모인 단지: 격자를 다 받았거나(poi_cells) 관심 부동산 COVER_M 안. 그 밖의 단지는 시설이 덜 잡혀 점수가 낮게 나온다.
+# 유형은 가리지 않는다 — 매일 계산은 아파트만 하지만, 웹이 지도에서 계산한 오피스텔·빌라 점수도 이 조건이면 남긴다.
+# 웹(apps/web/src/lib/queries/location-live.ts)이 같은 조건을 쓴다.
+COVERED_SQL = f"""
+select c.id, c.property_type, ST_X(c.geom) as lng, ST_Y(c.geom) as lat, c.build_year, pc.fetched_at as cell_at
+from complexes c
+left join poi_cells pc on pc.cx = floor(ST_X(c.geom) / {CELL})::int and pc.cy = floor(ST_Y(c.geom) / {CELL})::int
+where c.geom is not null
+  and (pc.cx is not null or exists (
+        select 1 from watch_items w where w.geom is not null and ST_DWithin(c.geom::geography, w.geom::geography, {COVER_M})))
+"""
+
+
+def compute_locations(conn, item_id: str | None = None, stale_days: int = 30) -> dict:
+    """관심 부동산 점수(전부 또는 item_id 하나)와 단지 점수.
+    단지: item_id 가 있으면 그 부동산 COVER_M 안 단지를 모두 다시 계산하고, 없으면 시설이 갖춰진 단지 중
+    점수가 없거나·간이(quick)거나·stale_days 지났거나·격자를 다시 받은 뒤로 계산하지 않은 것만 계산한다."""
     stats = {"items": 0, "complexes": 0}
     items = conn.execute(
         """select w.id, ST_X(w.geom) as lng, ST_Y(w.geom) as lat,
@@ -377,26 +419,33 @@ def compute_locations(conn, item_id: str | None = None) -> dict:
         score_target(conn, "item", str(it["id"]), it["lng"], it["lat"], avail, build_year=it["build_year"],
                      vl_rat=it["vl_rat"], zones=it["zones"])
         stats["items"] += 1
-    # 주변 단지도 계산해 백분위 비교에 쓴다. 시설은 관심 부동산 주변(상가 1.5km·OSM 2km)만 모으므로
-    # 그보다 먼 단지는 시설이 덜 잡혀 점수가 낮게 나온다 — 관심 부동산 COVER_M 안 단지만 계산하고, 밖의 예전 점수는 지운다
-    conn.execute(
-        """delete from location_scores s where s.target_type = 'complex' and not exists (
-             select 1 from complexes c join watch_items w on w.geom is not null
-             where c.id::text = s.target_id and c.geom is not null
-               and ST_DWithin(c.geom::geography, w.geom::geography, %s))""",
-        (COVER_M,),
-    )
-    cxs = conn.execute(
-        """select distinct c.id, ST_X(c.geom) as lng, ST_Y(c.geom) as lat, c.build_year from complexes c
-           join watch_items w on w.geom is not null and ST_DWithin(c.geom::geography, w.geom::geography, %(cover)s)
-           where c.geom is not null and c.property_type = 'apt'
-             and (%(id)s::uuid is null or w.id = %(id)s::uuid)""",
-        {"id": item_id, "cover": COVER_M},
-    ).fetchall()
+    if item_id is None:
+        # 시설이 갖춰지지 않은 곳의 예전 '전체' 점수는 지운다(간이 점수는 웹이 화면에서 계산한 것이라 남긴다)
+        conn.execute(
+            f"""delete from location_scores s where s.target_type = 'complex' and s.basis = 'full'
+                and not exists (select 1 from ({COVERED_SQL}) cv where cv.id::text = s.target_id)""")
+        cxs = conn.execute(
+            f"""select cv.* from ({COVERED_SQL}) cv
+                left join location_scores s on s.target_type = 'complex' and s.target_id = cv.id::text
+                where cv.property_type = 'apt'
+                  and (s.target_id is null or s.basis <> 'full' or s.computed_at < now() - %s::interval
+                       or (cv.cell_at is not null and s.computed_at < cv.cell_at))
+                order by s.computed_at nulls first""",
+            (f"{stale_days} days",),
+        ).fetchall()
+    else:
+        cxs = conn.execute(
+            f"""select distinct c.id, ST_X(c.geom) as lng, ST_Y(c.geom) as lat, c.build_year from complexes c
+               join watch_items w on w.geom is not null and ST_DWithin(c.geom::geography, w.geom::geography, {COVER_M})
+               where c.geom is not null and c.property_type = 'apt' and w.id = %s::uuid""",
+            (item_id,),
+        ).fetchall()
     for c in cxs:
         k = (round(c["lng"], 1), round(c["lat"], 1))
         avail = avail_cache.setdefault(k, available_categories(conn, c["lng"], c["lat"]))
         score_target(conn, "complex", str(c["id"]), c["lng"], c["lat"], avail, build_year=c["build_year"])
         stats["complexes"] += 1
+        if stats["complexes"] % 200 == 0:
+            conn.commit()
     conn.commit()
     return stats

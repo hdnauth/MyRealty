@@ -39,7 +39,7 @@ export function Sidebar({ viewer }: { viewer: ShellViewer }) {
       <nav className="flex-1 overflow-y-auto px-3 pb-3">
         {sections.map((s, i) => (
           <div key={i} className={i ? "mt-5" : ""}>
-            {s.title ? <p className="mb-1 px-3 text-[11px] font-semibold tracking-wide text-muted">{s.title}</p> : null}
+            {s.title ? <p className="mb-1 px-3 text-[0.75rem] font-semibold tracking-wide text-muted">{s.title}</p> : null}
             <div className="flex flex-col gap-0.5">
               {s.items.map((n) => (
                 <SideLink
@@ -103,16 +103,16 @@ function SideLink({ item, active, badge = 0, locked = false }: { item: NavItem; 
     <Link
       href={item.href}
       className={clsx(
-        "flex h-9 items-center gap-3 rounded-lg px-3 text-[14px]",
+        "flex h-11 items-center gap-3 rounded-lg px-3 text-[1rem]",
         active ? "bg-accent-soft font-semibold text-accent" : "text-text hover:bg-surface-2",
       )}
     >
-      <Icon size={17} strokeWidth={active ? 2.3 : 1.8} />
+      <Icon size={20} strokeWidth={active ? 2.3 : 1.8} />
       <span>{item.label}</span>
       {badge > 0 ? (
-        <span className="ml-auto rounded-full bg-up px-1.5 text-[11px] font-semibold text-white">{badge > 99 ? "99+" : badge}</span>
+        <span className="ml-auto rounded-full bg-up px-1.5 text-[0.75rem] font-semibold text-white">{badge > 99 ? "99+" : badge}</span>
       ) : locked ? (
-        <span className="ml-auto text-[10px] font-medium text-muted">가입</span>
+        <span className="ml-auto text-[0.75rem] font-medium text-muted">가입</span>
       ) : null}
     </Link>
   );
@@ -131,9 +131,9 @@ export function BottomTabs({ viewer }: { viewer: ShellViewer }) {
             <Link
               key={t.label}
               href={t.href}
-              className={clsx("relative flex flex-col items-center gap-0.5 py-2 text-[11px]", active ? "font-semibold text-accent" : "text-muted")}
+              className={clsx("relative flex min-h-14 flex-col items-center justify-center gap-0.5 py-1.5 text-xs", active ? "font-semibold text-accent" : "text-muted")}
             >
-              <Icon size={22} strokeWidth={active ? 2.4 : 1.8} />
+              <Icon size={24} strokeWidth={active ? 2.4 : 1.8} />
               {t.label}
             </Link>
           );
@@ -151,10 +151,10 @@ export function MobileTopBar({ viewer }: { viewer: ShellViewer }) {
       <Logo size={6} />
       <div className="flex items-center gap-1">
         {viewer ? (
-          <Link href="/notifications" aria-label="알림" className="relative rounded-lg p-2 text-muted hover:bg-surface-2">
-            <Bell size={20} />
+          <Link href="/notifications" aria-label="알림" className="relative rounded-lg p-2.5 text-muted hover:bg-surface-2">
+            <Bell size={22} />
             {unread > 0 ? (
-              <span className="absolute right-1 top-1 min-w-4 rounded-full bg-up px-1 text-center text-[10px] font-bold leading-4 text-white">
+              <span className="absolute right-1 top-1 min-w-4 rounded-full bg-up px-1 text-center text-[0.75rem] font-bold leading-4 text-white">
                 {unread > 9 ? "9+" : unread}
               </span>
             ) : null}
@@ -165,7 +165,7 @@ export function MobileTopBar({ viewer }: { viewer: ShellViewer }) {
             <Avatar email={member.email} />
           </Link>
         ) : (
-          <Link href="/login" className="ml-1 rounded-full border border-accent/40 px-3 py-1 text-[13px] font-medium text-accent hover:bg-accent-soft">
+          <Link href="/login" className="ml-1 rounded-full border border-accent/40 px-3.5 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft">
             간편 가입
           </Link>
         )}

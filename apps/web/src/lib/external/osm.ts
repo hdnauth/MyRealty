@@ -34,19 +34,23 @@ function tilesOf([minx, miny, maxx, maxy]: number[]) {
   return out;
 }
 
-async function overpass(bbox: [number, number, number, number]): Promise<Poi[]> {
+async function overpass(bbox: [number, number, number, number], timeoutMs = 40_000): Promise<Poi[]> {
+  // 미러마다 최대 20초, 전체는 timeoutMs 안에서(지도 즉석 계산은 짧게)
+  const deadline = Date.now() + timeoutMs;
   const [w, s, e, n] = bbox;
   const b = `(${s},${w},${n},${e})`;
   const q = `[out:json][timeout:20];(nwr["railway"="station"]${b};nwr["station"="subway"]${b};nwr["amenity"="school"]${b};nwr["leisure"="park"]${b};nwr["amenity"="hospital"]${b};nwr["shop"~"^(supermarket|department_store|mall)$"]${b};);out center tags;`;
   let last: unknown = null;
   for (const url of ENDPOINTS) {
+    const left = deadline - Date.now();
+    if (left < 1500) break;
     try {
       const res = await fetch(url, {
         method: "POST",
         body: new URLSearchParams({ data: q }),
         headers: { "User-Agent": "MyRealty/0.1" },
         cache: "no-store",
-        signal: AbortSignal.timeout(20_000),
+        signal: AbortSignal.timeout(Math.min(20_000, left)),
       });
       if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
       const data = (await res.json()) as { elements?: { type: string; id: number; lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> }[] };
@@ -69,7 +73,7 @@ async function overpass(bbox: [number, number, number, number]): Promise<Poi[]> 
 }
 
 /** 화면 범위에서 아직 받지 않은 격자를 OSM 에서 받아 저장한다. 결과 메모(화면 표시용)를 돌려준다 */
-export async function ensureOsmPois(bbox: [number, number, number, number]): Promise<string | null> {
+export async function ensureOsmPois(bbox: [number, number, number, number], { timeoutMs }: { timeoutMs?: number } = {}): Promise<string | null> {
   const tiles = tilesOf(bbox);
   if (tiles.length > MAX_TILES) return "넓은 범위에서는 주변 시설을 새로 불러오지 않습니다. 확대하면 보입니다.";
   const keys = tiles.map(([x, y]) => `osmweb:${x}:${y}`);
@@ -84,7 +88,7 @@ export async function ensureOsmPois(bbox: [number, number, number, number]): Pro
   const maxy = (Math.max(...need.map((t) => t[1])) + 1) * GRID;
   let rows: Poi[];
   try {
-    rows = await overpass([minx, miny, maxx, maxy]);
+    rows = await overpass([minx, miny, maxx, maxy], timeoutMs);
   } catch (e) {
     console.warn("[osm]", e instanceof Error ? e.message : e);
     return "주변 시설(OpenStreetMap)을 불러오지 못했습니다. 잠시 뒤 다시 시도합니다.";

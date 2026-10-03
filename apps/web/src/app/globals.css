@@ -109,6 +109,26 @@
     "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
 }
 
+/*
+ * 글자 크기 체계: 작은 글자(xs)·본문 보조(sm)를 한 단계씩 키운다(12→13px, 14→15px). 가장 작은 글자는 12px.
+ * 모든 글자·여백이 rem 이라 <html> 크기(설정 › 글자 크기)를 따라 함께 커진다 — 보통 15px · 크게(기본) 16px · 더 크게 18px.
+ */
+@theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.375rem;
+}
+html {
+  font-size: 100%;
+}
+html[data-font="normal"] {
+  font-size: 93.75%;
+}
+html[data-font="xlarge"] {
+  font-size: 112.5%;
+}
+
 html,
 body {
   background: var(--bg);
@@ -172,3 +192,13 @@ body {
 .legal th, .legal td { border: 1px solid var(--border); padding: 0.375rem 0.5rem; text-align: left; vertical-align: top; }
 .legal th { background: var(--surface-2); font-weight: 600; }
 .legal a { color: var(--accent); text-decoration: underline; }
+
+/* 작은 버튼·칩의 누르는 영역을 보이는 크기보다 넓힌다(손가락 기준 44px 안팎) */
+.hit {
+  position: relative;
+}
+.hit::after {
+  content: "";
+  position: absolute;
+  inset: -6px -2px;
+}

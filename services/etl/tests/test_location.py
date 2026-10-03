@@ -241,3 +241,70 @@ def test_avm_location_effect_follows_calibration(conn):
     assert abs(avm.loc_price_per_point(conn) - math.log(1.04) / 10) < 1e-9
     conn.execute("""insert into location_calibrations (n, result) values (50, '{"status": "ok", "total_per10_pct": 30.0}')""")
     assert avm.loc_price_per_point(conn) == avm.LOC_PER_POINT_MAX
+
+
+def test_dense_categories_only_counted_within_dense_radius():
+    """POI_SQL 은 밀집 시설을 DENSE_R 안에서만 읽는다 — 그 시설을 거리(near)·면적으로 쓰거나 더 넓게 세면 점수가 틀어진다."""
+    for _key, (_label, _w, comps) in loc.SPECS.items():
+        for kind, cats, _subs, prm, _share in comps:
+            dense = set(cats) & set(loc.DENSE)
+            if not dense:
+                continue
+            assert kind == "count" and prm["r"] <= loc.DENSE_R, (kind, cats, prm)
+            assert set(cats) <= set(loc.DENSE)
+
+
+def test_dedupe_is_order_independent():
+    a = {"name": "정류장", "d": 120.0}
+    b = {"name": "정류장", "d": 130.0}
+    assert loc.dedupe([a, b]) == loc.dedupe([b, a]) == [a]
+
+
+def _complex(conn, name, lng, lat):
+    return conn.execute(
+        """insert into complexes (complex_key, name, name_norm, property_type, sgg_cd, geom)
+           values (%s, %s, %s, 'apt', '11710', ST_SetSRID(ST_MakePoint(%s, %s), 4326)) returning id""",
+        (f"t|{name}", name, name, lng, lat)).fetchone()["id"]
+
+
+def test_compute_locations_scores_complexes_in_collected_cells(conn):
+    inside = _complex(conn, "격자 안", 127.0855, 37.5105)
+    outside = _complex(conn, "격자 밖", 127.2055, 37.6105)
+    pois.upsert_pois(conn, [{"source": "t", "source_id": "s1", "category": "subway", "subcategory": "2호선", "name": "잠실새내",
+                             "lng": 127.0860, "lat": 37.5110, "area_m2": None, "attrs": {}}])
+    conn.execute("insert into poi_cells (cx, cy, sources) values (%s, %s, '{osm}')", (int(127.0855 // 0.01), int(37.5105 // 0.01)))
+    # 시설이 갖춰지지 않은 곳의 예전 점수는 지워지고, 간이 점수는 남는다
+    conn.execute("insert into location_scores (target_type, target_id, total, scores, basis) values ('complex', %s, 90, '{}', 'full')", (str(outside),))
+    conn.commit()
+    stats = loc.compute_locations(conn)
+    assert stats["complexes"] == 1
+    rows = {r["target_id"]: r for r in conn.execute("select target_id, basis, total from location_scores where target_type = 'complex'")}
+    assert set(rows) == {str(inside)} and rows[str(inside)]["basis"] == "full"
+    # 다시 돌려도 신선한 점수는 건너뛴다
+    assert loc.compute_locations(conn)["complexes"] == 0
+    conn.execute("insert into location_scores (target_type, target_id, total, scores, basis) values ('complex', %s, 40, '{}', 'quick')", (str(outside),))
+    conn.commit()
+    loc.compute_locations(conn)
+    assert conn.execute("select basis from location_scores where target_id = %s", (str(outside),)).fetchone()["basis"] == "quick"
+
+
+def test_collect_cells_marks_complete_cells(conn, monkeypatch):
+    from myrealty_etl.collectors import osm
+    from myrealty_etl.jobs import pois_job
+
+    _complex(conn, "A", 127.0855, 37.5105)
+    _complex(conn, "B", 127.0858, 37.5101)  # 같은 칸
+    _complex(conn, "C", 127.1055, 37.5105)
+    conn.commit()
+    calls = []
+    import dataclasses
+
+    monkeypatch.setattr(pois_job, "settings", dataclasses.replace(pois_job.settings, data_go_kr_key=None))
+    monkeypatch.setattr(osm, "fetch", lambda lng, lat, r, small=None: calls.append((round(lng, 3), round(lat, 3), r, small)) or [])
+    stats = pois_job.collect_cells(conn, max_cells=1)
+    assert (stats["cells"], stats["pending"]) == (1, 1)
+    # 단지가 많은 칸부터, 칸 중심에서 OSM 2.5km(밀집 1.8km)
+    assert calls == [(127.085, 37.515, 2500, 1800)]
+    assert conn.execute("select count(*) n from poi_cells").fetchone()["n"] == 1
+    assert pois_job.collect_cells(conn)["cells"] == 1
+    assert pois_job.collect_cells(conn)["cells"] == 0  # 30일 안에는 다시 받지 않는다

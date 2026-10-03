@@ -25,8 +25,8 @@ export async function SentimentCard({ sgg, region }: { sgg: string; region: stri
               <span className="bg-border" style={{ width: `${(last.flat / last.votes) * 100}%` }} />
               <span className="bg-down" style={{ width: `${(last.down / last.votes) * 100}%` }} />
             </div>
-            <div className="mt-1 text-[11px] text-muted">오른다 {last.up} · 비슷하다 {last.flat} · 내린다 {last.down}</div>
-            {last.votes < 10 ? <p className="mt-2 text-[11px] text-warn">표가 적어 대표성이 낮습니다(10표 미만).</p> : null}
+            <div className="mt-1 text-[0.75rem] text-muted">오른다 {last.up} · 비슷하다 {last.flat} · 내린다 {last.down}</div>
+            {last.votes < 10 ? <p className="mt-2 text-[0.75rem] text-warn">표가 적어 대표성이 낮습니다(10표 미만).</p> : null}
           </div>
           <div className="sm:col-span-2">
             {rows.length >= 2 ? (

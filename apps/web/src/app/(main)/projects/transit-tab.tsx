@@ -70,7 +70,7 @@ export async function TransitTab({ uid, isAdmin, status, unit, href }: {
                       <li key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1">
                         <span className="min-w-0 flex-1 truncate">
                           {s.name.replace(`${line} `, "")}
-                          {s.precision === "dong" ? <span className="ml-1 text-[11px] text-warn">위치 대략</span> : null}
+                          {s.precision === "dong" ? <span className="ml-1 text-[0.75rem] text-warn">위치 대략</span> : null}
                           {s.status !== head.status ? <Badge tone={STATUS_TONE[s.status] ?? "neutral"} className="ml-1">{s.status}</Badge> : null}
                         </span>
                         <span className="shrink-0 text-xs text-muted">
@@ -85,7 +85,7 @@ export async function TransitTab({ uid, isAdmin, status, unit, href }: {
                           <form action={deleteProjectAction}>
                             <input type="hidden" name="id" value={s.id} />
                             <input type="hidden" name="type" value="infra" />
-                            <button className="text-[11px] text-up">삭제</button>
+                            <button className="text-[0.75rem] text-up">삭제</button>
                           </form>
                         ) : null}
                       </li>
@@ -101,7 +101,7 @@ export async function TransitTab({ uid, isAdmin, status, unit, href }: {
             desc={isAdmin ? "매일 ETL 의 rail 단계가 계획·착공·최근 개통 노선 시드를 넣습니다(uv run myrealty rail-seed)." : "GTX·신설 노선의 역과 개통 일정을 매일 아침 자동으로 정리합니다."}
           />
         )}
-        <p className="px-4 pb-4 text-[11px] leading-relaxed text-muted">
+        <p className="px-4 pb-4 text-[0.75rem] leading-relaxed text-muted">
           노선·개통 목표는 국가철도망 구축계획·사업자 발표를 정리한 참고 자료로, 일정은 자주 바뀝니다. 역 위치는 브이월드 역 정보이고 신설역은 법정동 중심(대략)입니다.
           {unitPriceLabel(unit)}는 수집된 지역 아파트의 최근 1년 실거래 중위, 개통 전후 변화는 반경 1km 단지(거래 6건 이상)만 계산합니다.
         </p>

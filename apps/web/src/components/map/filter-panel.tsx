@@ -40,7 +40,7 @@ function NumInput({ value, onChange, scale, placeholder }: { value: number | nul
         const n = Number(t);
         onChange(t.trim() === "" || t === "-" || !Number.isFinite(n) ? null : scale.fromView(n));
       }}
-      className="h-8 w-full min-w-0 rounded-md border border-border bg-surface px-2 text-sm tabular outline-none focus:border-accent"
+      className="h-10 w-full min-w-0 rounded-md border border-border bg-surface px-2 text-sm tabular outline-none focus:border-accent"
     />
   );
 }
@@ -66,7 +66,7 @@ function Quick({ items }: { items: QuickItem[] }) {
           key={q.label}
           type="button"
           onClick={q.onClick}
-          className={clsx("rounded-full border px-2.5 py-1 text-[13px]", q.active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-text hover:bg-surface-2")}
+          className={clsx("rounded-full border px-3 py-1.5 text-sm", q.active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-text hover:bg-surface-2")}
         >
           {q.label}
         </button>
@@ -358,7 +358,7 @@ export function FilterBar({ filters, onChange, onSort, type, unit, kind, months,
           }}
           aria-label="전체 조건"
           className={clsx(
-            "flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-[13px]",
+            "flex h-9 shrink-0 items-center gap-1 rounded-full border px-3 text-sm",
             count ? "border-accent bg-accent text-white" : "border-border text-text hover:bg-surface-2",
           )}
         >
@@ -373,7 +373,7 @@ export function FilterBar({ filters, onChange, onSort, type, unit, kind, months,
             <BarChip key={s.key} label={s.label} value={s.summary} open={open === s.key} onClick={(e) => toggle(s.key, e)} onClear={s.clear} />
           ))}
         {count ? (
-          <button type="button" onClick={() => onChange(EMPTY_FILTERS)} className="flex h-8 shrink-0 items-center gap-1 px-1.5 text-[13px] text-muted hover:text-text">
+          <button type="button" onClick={() => onChange(EMPTY_FILTERS)} className="flex h-9 shrink-0 items-center gap-1 px-2 text-sm text-muted hover:text-text">
             <RotateCcw size={13} />
             초기화
           </button>
@@ -445,7 +445,7 @@ function BarChip({
   return (
     <span
       className={clsx(
-        "flex h-8 shrink-0 items-center rounded-full border text-[13px]",
+        "flex h-9 shrink-0 items-center rounded-full border text-sm",
         on ? "border-accent bg-accent-soft font-semibold text-accent" : open ? "border-text text-text" : "border-border text-text",
       )}
     >

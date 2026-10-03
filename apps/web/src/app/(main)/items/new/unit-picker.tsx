@@ -70,7 +70,7 @@ export function UnitPicker({
 
       {/* 버튼 묶음이라 <label>(Field) 대신 div: 라벨 클릭이 첫 버튼을 누르지 않도록 */}
       <div>
-        <span className="mb-1 block text-[13px] font-medium text-muted">평형(전용면적)</span>
+        <span className="mb-1 block text-xs font-medium text-muted">평형(전용면적)</span>
         {areaTypes.length > 0 ? (
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
             {areaTypes.map((t) => {
@@ -94,12 +94,12 @@ export function UnitPicker({
                   <span className={clsx("block text-sm font-semibold", active && "text-accent")}>
                     {Math.floor(t.area)}㎡ <span className="font-normal">· {areaTypeLabel(t)}</span>
                   </span>
-                  <span className="block text-[11px] text-muted">
+                  <span className="block text-[0.75rem] text-muted">
                     {[t.units ? `${t.units.toLocaleString()}세대` : null, t.trades ? `거래 ${t.trades}건` : null, `전용 ${t.area}㎡`]
                       .filter(Boolean)
                       .join(" · ")}
                   </span>
-                  {t.medianPrice ? <span className="block text-[11px] font-medium text-text">최근 1년 매매 {formatManwon(t.medianPrice, { short: true })}</span> : null}
+                  {t.medianPrice ? <span className="block text-[0.75rem] font-medium text-text">최근 1년 매매 {formatManwon(t.medianPrice, { short: true })}</span> : null}
                 </button>
               );
             })}
@@ -117,7 +117,7 @@ export function UnitPicker({
             ) : null}
           </div>
         ) : null}
-        {!allowManual ? <p className="mt-1 text-[11px] text-muted">건축물대장에 있는 평형입니다. 호를 고르면 그 호의 전용면적으로 맞춥니다.</p> : null}
+        {!allowManual ? <p className="mt-1 text-[0.75rem] text-muted">건축물대장에 있는 평형입니다. 호를 고르면 그 호의 전용면적으로 맞춥니다.</p> : null}
         {manualArea ? (
           <Input
             className={areaTypes.length ? "mt-2" : undefined}
@@ -131,7 +131,7 @@ export function UnitPicker({
       </div>
 
       <div className="space-y-2">
-        <p className="text-[13px] font-medium text-muted">
+        <p className="text-xs font-medium text-muted">
           동·호 <span className="font-normal">(선택 — 보유·거주 중이면 공시가격·층 비교가 정확해집니다)</span>
         </p>
         {dongs.length > 0 ? (
@@ -145,7 +145,7 @@ export function UnitPicker({
                   setHo("");
                 }}
                 className={clsx(
-                  "shrink-0 rounded-full border px-3 py-1 text-[13px]",
+                  "shrink-0 rounded-full border px-3.5 py-1.5 text-sm",
                   d === dong ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted",
                 )}
               >
@@ -191,7 +191,7 @@ export function UnitPicker({
 function Mini({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
   return (
     <label className={clsx("block", className)}>
-      <span className="mb-0.5 block text-[11px] text-muted">{label}</span>
+      <span className="mb-0.5 block text-[0.75rem] text-muted">{label}</span>
       {children}
     </label>
   );

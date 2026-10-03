@@ -34,11 +34,11 @@ export async function SupplyTab({ uid }: { uid: string }) {
                   <tr key={r.sgg_cd} className="border-b border-border/60 last:border-0">
                     <td className="py-2">
                       <span className={r.mine ? "font-semibold" : ""}>{r.name.replace(/^(\S+)\s/, (_, sido: string) => `${shortSido(sido)} `)}</span>
-                      {r.mine ? <span className="ml-1 text-[11px] text-accent">내 지역</span> : null}
+                      {r.mine ? <span className="ml-1 text-[0.75rem] text-accent">내 지역</span> : null}
                     </td>
-                    <td className="tabular py-2 text-right">{r.move_in ? r.move_in.toLocaleString() : "-"} <span className="text-[11px] text-muted">{r.move_in_n ? `(${r.move_in_n}단지)` : ""}</span></td>
-                    <td className="tabular py-2 text-right">{r.near_term ? r.near_term.toLocaleString() : "-"} <span className="text-[11px] text-muted">{r.near_term_zones ? `(${r.near_term_zones}구역)` : ""}</span></td>
-                    <td className="tabular py-2 text-right">{r.mid_term ? r.mid_term.toLocaleString() : "-"} <span className="text-[11px] text-muted">{r.mid_term_zones ? `(${r.mid_term_zones}구역)` : ""}</span></td>
+                    <td className="tabular py-2 text-right">{r.move_in ? r.move_in.toLocaleString() : "-"} <span className="text-[0.75rem] text-muted">{r.move_in_n ? `(${r.move_in_n}단지)` : ""}</span></td>
+                    <td className="tabular py-2 text-right">{r.near_term ? r.near_term.toLocaleString() : "-"} <span className="text-[0.75rem] text-muted">{r.near_term_zones ? `(${r.near_term_zones}구역)` : ""}</span></td>
+                    <td className="tabular py-2 text-right">{r.mid_term ? r.mid_term.toLocaleString() : "-"} <span className="text-[0.75rem] text-muted">{r.mid_term_zones ? `(${r.mid_term_zones}구역)` : ""}</span></td>
                     <td className="py-2 pl-3" title={`입주 예정 + 정비 2~4년: ${near.toLocaleString()}세대`}>
                       <span className="block h-2.5 rounded-r bg-surface-2">
                         <span className="block h-2.5 rounded-r bg-accent" style={{ width: `${Math.max(near ? 2 : 0, (near / max) * 100)}%` }} />
@@ -53,7 +53,7 @@ export async function SupplyTab({ uid }: { uid: string }) {
       ) : (
         <EmptyState title="공급 자료가 없습니다" desc="정비구역(세대수)과 청약홈 입주 예정이 수집되면 채워집니다." />
       )}
-      <p className="px-4 pb-4 text-[11px] leading-relaxed text-muted">
+      <p className="px-4 pb-4 text-[0.75rem] leading-relaxed text-muted">
         정비사업 세대수는 국토교통부 전국 도시정비사업 통합 데이터·시군구 자료의 공급 예정 세대수입니다. 세대수가 없는 구역은 물량에 빠지므로
         구역 수를 함께 보세요. 입주 예정은 청약홈 분양 단지 기준. 자세한 구역은 <Link href="/projects?phase=building" className="text-accent">정비사업 → 이주·착공</Link>.
       </p>

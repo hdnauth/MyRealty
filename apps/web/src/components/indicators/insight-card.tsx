@@ -34,11 +34,11 @@ export function InsightCard({ insights, region, record }: { insights: Insight[];
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-semibold">{x.title}</span>
-                <span className="block text-[13px] leading-relaxed text-muted">{x.detail}</span>
+                <span className="block text-xs leading-relaxed text-muted">{x.detail}</span>
                 {(() => {
                   const r = x.tone === "neutral" ? undefined : record?.get(`${x.key}:${x.tone}`);
                   return r && r.n >= 6 ? (
-                    <span className="mt-0.5 block text-[11px] text-muted">
+                    <span className="mt-0.5 block text-[0.75rem] text-muted">
                       이 지역 과거 {r.n}개월 신호 · 6개월 뒤 {x.tone === "up" ? "상승" : "하락"} 적중 {(r.hitRate * 100).toFixed(0)}%
                     </span>
                   ) : null;
@@ -48,7 +48,7 @@ export function InsightCard({ insights, region, record }: { insights: Insight[];
           );
         })}
       </ul>
-      <p className="border-t border-border px-4 py-2 text-[11px] text-muted">
+      <p className="border-t border-border px-4 py-2 text-[0.75rem] text-muted">
         금리 → 대출 부담 → 거래 → 가격으로 이어지는 흐름을 규칙으로 판단한 참고 정보입니다. 투자 권유가 아닙니다.
       </p>
     </Card>
@@ -93,7 +93,7 @@ export function BacktestCard({ bt }: { bt: { horizon: number; months: number; ba
           </tbody>
         </table>
       </div>
-      <p className="border-t border-border px-4 py-2 text-[11px] text-muted">
+      <p className="border-t border-border px-4 py-2 text-[0.75rem] text-muted">
         이웃한 달의 신호는 기간이 겹치고, 지역 데이터가 짧으면 표본이 적습니다. 기준값을 조정할 때 참고하는 자료입니다.
       </p>
     </Card>
@@ -112,7 +112,12 @@ export function MarketVerdictCard({
   signal,
   temp,
   band,
+  compact = false,
+  className,
 }: {
+  /** 차트 옆에 둘 때: 이유는 제목만, 설명·과거 성적은 펼쳐서 */
+  compact?: boolean;
+  className?: string;
   insights: Insight[];
   ranked: Insight[];
   region: string | null;
@@ -127,7 +132,7 @@ export function MarketVerdictCard({
   const rest = insights.length - top.length;
   const tone = b.up - b.down >= 2 ? "text-up" : b.down - b.up >= 2 ? "text-down" : "";
   return (
-    <Card className="p-4">
+    <Card className={clsx("p-4", className)}>
       <div className="text-xs text-muted">{region ? `${region} 시장 판정` : "시장 판정"}</div>
       <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className={clsx("text-2xl font-bold tracking-tight", tone)}>{b.verdict}</span>
@@ -152,9 +157,9 @@ export function MarketVerdictCard({
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold">{x.title}</span>
-                  <span className="block text-[13px] leading-relaxed text-muted">{x.detail}</span>
-                  {r && r.n >= 6 ? (
-                    <span className="mt-0.5 block text-[11px] text-muted">
+                  {compact ? null : <span className="block text-xs leading-relaxed text-muted">{x.detail}</span>}
+                  {!compact && r && r.n >= 6 ? (
+                    <span className="mt-0.5 block text-[0.75rem] text-muted">
                       이 지역에서 이 신호가 났던 {r.n}개월 중 6개월 뒤 {x.tone === "up" ? "올랐던" : "내렸던"} 비율 {(r.hitRate * 100).toFixed(0)}%
                     </span>
                   ) : null}
@@ -167,20 +172,20 @@ export function MarketVerdictCard({
         <p className="mt-3 text-sm text-muted">뚜렷하게 가격을 밀거나 당기는 요인이 없습니다.</p>
       )}
       {signal ? (
-        <p className="mt-4 rounded-lg bg-surface-2 px-3 py-2 text-[12px] leading-relaxed text-muted">
+        <p className="mt-4 rounded-lg bg-surface-2 px-3 py-2 text-xs leading-relaxed text-muted">
           이 판정은 얼마나 맞았나: 지금 켜진 신호 {signal.signals}개는 이 지역 과거 {signal.months}개월 동안 6개월 뒤 방향을{" "}
           <b className="text-text">{(signal.hitRate * 100).toFixed(0)}%</b> 맞혔습니다(아무 때나 같은 방향으로 찍으면 {(signal.base * 100).toFixed(0)}%).
         </p>
       ) : null}
-      {rest > 0 ? (
+      {rest > 0 || compact ? (
         <details className="mt-3">
-          <summary className="cursor-pointer text-sm font-medium text-accent">요인 모두 보기 ({insights.length})</summary>
+          <summary className="cursor-pointer text-sm font-medium text-accent">{compact ? `이유 자세히 보기 (${insights.length})` : `요인 모두 보기 (${insights.length})`}</summary>
           <div className="mt-3">
             <InsightCard insights={insights} region={region} record={record} />
           </div>
         </details>
       ) : null}
-      <p className="mt-3 text-[11px] text-muted">금리 → 대출 부담 → 거래 → 가격 흐름을 규칙으로 판단한 참고 정보입니다. 투자 권유가 아닙니다.</p>
+      <p className="mt-3 text-[0.75rem] text-muted">금리 → 대출 부담 → 거래 → 가격 흐름을 규칙으로 판단한 참고 정보입니다. 투자 권유가 아닙니다.</p>
     </Card>
   );
 }

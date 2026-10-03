@@ -34,11 +34,11 @@ export function RedevelopmentCard({ info, price, unit, itemId }: { info: Redevel
             {ZONE_STAGES.map((s, i) => (
               <div key={s} className="flex-1">
                 <div className={`h-1.5 rounded-sm ${i < (z.stage_order ?? 0) ? "bg-accent" : "bg-surface-2"}`} />
-                <div className={`mt-1 hidden text-center text-[10px] sm:block ${i + 1 === z.stage_order ? "font-semibold text-accent" : "text-muted"}`}>{s}</div>
+                <div className={`mt-1 hidden text-center text-[0.75rem] sm:block ${i + 1 === z.stage_order ? "font-semibold text-accent" : "text-muted"}`}>{s}</div>
               </div>
             ))}
           </div>
-          <p className="mt-2 text-[13px] leading-relaxed">{stageGuide(z.stage_order)}</p>
+          <p className="mt-2 text-xs leading-relaxed">{stageGuide(z.stage_order)}</p>
         </div>
       ) : null}
       <div className="grid grid-cols-2 gap-4 border-t border-border px-4 py-3 sm:grid-cols-4">
@@ -80,7 +80,7 @@ export function RedevelopmentCard({ info, price, unit, itemId }: { info: Redevel
           sub={<span className="text-muted">{info.presale ? `최근 1년 ${info.presale.n}건` : "주변 거래 없음"}</span>}
         />
       </div>
-      <p className="px-4 pb-4 text-[11px] leading-relaxed text-muted">
+      <p className="px-4 pb-4 text-[0.75rem] leading-relaxed text-muted">
         대지지분 평당가는 같은 구역 안 다른 매물과 비교할 때, 주변 신축·분양권 평당가는 완공 후 가치를 가늠할 때 씁니다. 실제 권리가액·분담금은 감정평가와
         관리처분계획으로 정해지므로 조합 공지를 확인하세요. 용적률 상한은 서울시 조례 기준 참고값입니다.
       </p>

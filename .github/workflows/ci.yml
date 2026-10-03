@@ -50,9 +50,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      # postgis 이미지에는 pgvector 가 없어 설치한다
-      - run: |
-          docker exec ${{ job.services.postgres.id }} sh -c "apt-get update -qq && apt-get install -y -qq postgresql-16-pgvector"
+      # postgis 이미지에는 pgvector 가 없어 공식 pgvector 이미지에서 확장 파일을 복사한다.
+      # (postgis 이미지는 Debian bullseye 기반인데 apt.postgresql.org 에서 bullseye 가 빠져 apt 설치가 실패한다)
+      - name: Install pgvector
+        run: |
+          src=$(docker create pgvector/pgvector:0.8.7-pg16-bookworm)
+          docker cp "$src:/usr/lib/postgresql/16/lib/vector.so" /tmp/vector.so
+          docker cp "$src:/usr/share/postgresql/16/extension" /tmp/pgext
+          docker rm "$src"
+          pg=${{ job.services.postgres.id }}
+          docker cp /tmp/vector.so "$pg:/usr/lib/postgresql/16/lib/vector.so"
+          for f in /tmp/pgext/vector*; do docker cp "$f" "$pg:/usr/share/postgresql/16/extension/"; done
       - run: uv sync
       - run: uv run ruff check src tests
       - run: uv run pytest -q

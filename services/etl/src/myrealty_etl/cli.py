@@ -172,9 +172,10 @@ _simple("cleanup", "myrealty_etl.jobs.cleanup_job:cleanup_auth", "보관 기간�
 
 
 # 매일 파이프라인: 각 단계는 키가 없으면 건너뛰고, 실패해도 다음 단계를 계속한다.
+# collect(수집·분석) → notify(알림·발송·정리). 워크플로는 둘을 따로 실행해 수집이 시간을 넘겨도 알림은 나가게 한다.
+# backfill 은 남는 시간만 쓰도록 수집 단계 맨 끝에 둔다(DAILY_BUDGET_MIN 마감까지, 다음 실행에서 이어서).
 DAILY_STEPS: list[tuple[str, str]] = [
     ("rtms", "myrealty_etl.jobs.rtms_job:collect_recent"),
-    ("backfill", "myrealty_etl.jobs.rtms_job:backfill"),
     ("geocode", "myrealty_etl.transforms.geocode:geocode_pending"),
     ("link", "myrealty_etl.transforms.complexes:link_watch_items"),
     ("item_geom", "myrealty_etl.transforms.geocode:geocode_items"),
@@ -192,27 +193,53 @@ DAILY_STEPS: list[tuple[str, str]] = [
     ("location_check", "myrealty_etl.analytics.location_calibration:calibrate_locations"),
     ("avm", "myrealty_etl.analytics.avm:compute_valuations"),
     ("community", "myrealty_etl.community:run_community"),
+    ("backfill", "myrealty_etl.jobs.rtms_job:backfill"),
     ("alerts", "myrealty_etl.alerts.rules:detect_alerts"),
     ("push", "myrealty_etl.alerts.notify:send_push"),
     ("digest", "myrealty_etl.alerts.notify:send_digest"),
     ("cleanup", "myrealty_etl.jobs.cleanup_job:cleanup_auth"),
 ]
+# notify 단계: 시간 예산과 상관없이 항상 실행
+NOTIFY_STEPS = {"alerts", "push", "digest", "cleanup"}
 
 
-@command("daily", "매일 파이프라인 전체 실행", lambda p: p.add_argument("--only", nargs="*", help="실행할 단계만"))
+def _daily_args(p):
+    p.add_argument("--only", nargs="*", help="실행할 단계만")
+    p.add_argument("--stage", choices=["all", "collect", "notify"], default="all",
+                   help="collect: 수집·분석(시간 예산 적용) / notify: 알림·발송·정리 / all: 전부")
+
+
+@command("daily", "매일 파이프라인 전체 실행", _daily_args)
 def _daily(ns):
     import importlib
+    import time
+    from functools import partial
 
+    from .config import settings
+
+    log = logging.getLogger("daily")
+    budget = settings.daily_budget_min
+    deadline = time.monotonic() + budget * 60 if budget else None
     results = {}
     for name, target in DAILY_STEPS:
         if ns.only and name not in ns.only:
             continue
+        notify = name in NOTIFY_STEPS
+        if ns.stage != "all" and notify != (ns.stage == "notify"):
+            continue
+        if not notify and deadline is not None and time.monotonic() >= deadline:
+            log.warning("%s 건너뜀: 시간 예산(%g분) 소진 — 다음 실행으로 이월", name, budget)
+            results[name] = {"skipped": f"시간 예산({budget:g}분) 소진 — 다음 실행으로 이월"}
+            continue
         mod, fn = target.split(":")
         func = getattr(importlib.import_module(mod), fn)
+        if name == "backfill" and deadline is not None:
+            func = partial(func, deadline=deadline)
+        log.info("%s 시작", name)
         try:
             results[name] = _with_job(name, func)
         except Exception as e:  # 한 단계 실패가 전체를 막지 않도록
-            logging.getLogger("daily").exception("%s 실패", name)
+            log.exception("%s 실패", name)
             from .http import explain_error
 
             results[name] = {"error": explain_error(e)}

@@ -82,6 +82,8 @@ class Settings:
     vapid_subject: str = field(default_factory=lambda: _env("VAPID_SUBJECT", "mailto:admin@example.com"))
     # 일일 호출 한도(개발계정 기본값). 운영계정 전환 시 늘린다.
     daily_quota_data_go_kr: int = field(default_factory=lambda: int(_env("QUOTA_DATA_GO_KR", "900")))
+    # 매일 파이프라인 수집 단계의 시간 예산(분). 지나면 남은 수집 단계는 다음 실행으로 넘긴다(알림 단계는 항상 실행). 비우면 무제한
+    daily_budget_min: float | None = field(default_factory=lambda: float(v) if (v := _env("DAILY_BUDGET_MIN")) else None)
 
 
 settings = Settings()

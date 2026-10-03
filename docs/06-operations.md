@@ -72,7 +72,7 @@ uv run myrealty import-geo rail.geojson --kind infra
 
 | 워크플로 | 시각(KST) | 내용 |
 |---|---|---|
-| `etl-daily.yml` | 매일 05:50 | `myrealty daily` — 아래 단계 전체 |
+| `etl-daily.yml` | 매일 05:50 | `myrealty daily --stage collect`(수집·분석, 45분 제한) → `--stage notify`(알림·발송·정리, 수집이 실패·시간 초과여도 실행) |
 | `reports.yml` | 월 07:40 / 매월 1일 07:50 | `GET /api/cron/reports?kind=weekly|monthly` |
 | `ci.yml` | push·PR | 웹 lint·typecheck·test·build, ETL ruff·pytest(PostGIS) |
 | `migrate.yml` | main 에 `db/migrations/**` 변경이 들어올 때 · 수동 | `myrealty migrate` — 운영 DB 스키마를 배포와 함께 맞춘다(매일 ETL 도 시작 전에 한 번 더 확인) |
@@ -84,7 +84,6 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 | 단계 | 하는 일 | 필요 키 |
 |---|---|---|
 | `rtms` | 수집 대상 시군구 × 최근 3개월 × 11종 실거래 재수집(해제 반영) | DATA_GO_KR |
-| `backfill` | 과거 월 백필(시군구당 기본 36개월, 실행당 6개월) | DATA_GO_KR |
 | `geocode` | 단지·읍면동 좌표, 거래 좌표 전파 | NCP 또는 VWORLD |
 | `link` | 관심 부동산 ↔ 단지 자동 연결 | - |
 | `macro` | ECOS·KOSIS·R-ONE 시계열 | 각 키 |
@@ -95,9 +94,10 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 | `pois` | 주변 편의시설 수집 → 생활편의 점수 | DATA_GO_KR(없으면 CSV 데이터로 점수만) |
 | `location_check` | 입지 점수 검증(단지 평당가 회귀 → 설명력·항목별 효과·권장 가중, AVM 입지 보정 계수) — `myrealty location-check` | - |
 | `avm` | 추정 시세 | - |
+| `backfill` | 과거 월 백필(시군구당 기본 36개월, 실행당 최대 6개월). 지역을 한 달씩 번갈아 수집하고, 시간 예산이 끝나면 멈췄다가 다음 실행에서 이어서 | DATA_GO_KR |
 | `alerts` / `push` / `digest` | 알림 규칙 → 웹푸시(중요) / 이메일 다이제스트 | VAPID / SMTP |
 
-각 단계는 키가 없으면 `skipped` 로 넘어가고, 실패해도 다음 단계를 계속한다. 실행 기록은 `job_runs` 테이블과 설정 화면 "데이터 수집(ETL) 최근 실행"에서 본다.
+각 단계는 키가 없으면 `skipped` 로 넘어가고, 실패해도 다음 단계를 계속한다. 수집 단계는 `DAILY_BUDGET_MIN`(Actions Variables, 기본 38분)이 지나면 남은 단계를 다음 실행으로 넘긴다 — `backfill` 은 남는 시간만 쓰도록 수집 단계 맨 끝에 있다. `alerts`·`push`·`digest`·`cleanup` 은 예산과 상관없이 항상 실행된다. 실행 기록은 `job_runs` 테이블과 설정 화면 "데이터 수집(ETL) 최근 실행"에서 본다.
 
 ### 개별 수집 (등록 직후 바로 채우기)
 

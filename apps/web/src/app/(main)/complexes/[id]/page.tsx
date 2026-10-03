@@ -17,6 +17,8 @@ import { monthlyRollingMedian } from "@/lib/item-analytics";
 import { mapComplexHref, registerComplexHref } from "@/lib/links";
 import { isPropertyType, PROPERTY_TYPES } from "@/lib/property";
 import { complexLocation, complexTransactions, getComplex } from "@/lib/queries/complexes";
+import { complexZones } from "@/lib/queries/projects";
+import { ZONE_STAGES } from "@/lib/projects";
 import { myComplexItems, summarize } from "@/lib/queries/items";
 import { clusterAreas } from "@/lib/units";
 import { detailText, ORDER } from "../../items/[id]/tabs/location";
@@ -35,7 +37,7 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
   const id = Number(raw);
   const [, c, unit, mine] = await Promise.all([requireUser(), getComplex(id), getAreaUnit(), myComplexItems(uid)]);
   if (!c) notFound();
-  const [txs, loc] = await Promise.all([complexTransactions(id, 5), complexLocation(id)]);
+  const [txs, loc, zones] = await Promise.all([complexTransactions(id, 5), complexLocation(id), complexZones(id)]);
   const myItemId = mine[id] ?? null;
 
   // 평형(전용면적) 목록: 거래 많은 순 최대 6개. 기본은 가장 많이 거래된 평형
@@ -168,6 +170,26 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
             <p className="mt-2 text-sm text-muted">아직 계산되지 않았습니다. 주변 시설 자료는 관심 부동산 근처만 모으므로, 관심 부동산에서 500m 안 단지만 계산됩니다.</p>
           )}
         </Card>
+
+        {zones.length ? (
+          <Card className="lg:col-span-3">
+            <CardHeader title="정비사업" sub="이 단지가 속하거나 같은 이름인 정비구역" action={<Link href="/projects" className="text-accent">개발·테마</Link>} />
+            <ul className="divide-y divide-border px-4 pb-2 text-sm">
+              {zones.map((z) => (
+                <li key={z.id} className="flex flex-wrap items-center gap-2 py-2">
+                  <Badge tone="accent">{z.kind}</Badge>
+                  <Link href={`/projects?zone=${z.id}`} className="min-w-0 flex-1 truncate text-accent">{z.name}</Link>
+                  <span className="text-xs">{z.stage ?? "단계 미상"}</span>
+                  <span className="flex gap-0.5" aria-label={`${z.stage_order ?? 0}/9 단계`}>
+                    {ZONE_STAGES.map((st, i) => (
+                      <span key={st} title={st} className={`h-2 w-2 rounded-sm ${i < (z.stage_order ?? 0) ? "bg-accent" : "bg-surface-2"}`} />
+                    ))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
 
         <Card className="lg:col-span-3">
           <CardHeader title="실거래가 추이" sub={pick ? `전용 ${formatArea(pick.area, unit).split(" ")[0]} ±3㎡` : "전체 평형"} />

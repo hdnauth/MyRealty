@@ -26,6 +26,8 @@ RELAY_HOSTS: dict[str, tuple[str, ...]] = {
     "apis.data.go.kr": ("serviceKey",),
     "api.odcloud.kr": ("serviceKey",),
     "api.vworld.kr": ("key", "domain"),
+    "cleanup.seoul.go.kr": (),  # 서울 정비사업 정보몽땅(키 없음, 해외 접속 차단 대비)
+    "dynamice.busan.go.kr": (),  # 부산 정비사업 통합홈페이지(키 없음)
 }
 # 직접 호출이 실패해 중계로 바꾼 호스트(프로세스 동안 유지)
 _relayed: set[str] = set()

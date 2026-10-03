@@ -144,6 +144,45 @@ def rule_subscriptions(conn, since: datetime, radius_m: int = 5000) -> int:
     return n
 
 
+def rule_zone_stages(conn, since: datetime, radius_m: int = 1000) -> int:
+    """관심 부동산 반경 안·팔로우한 정비구역의 진행단계 변화(정비구역 수집이 남긴 이력)."""
+    rows = conn.execute(
+        """select distinct on (h.id, w.user_id) h.id, h.stage, h.prev_stage, h.stage_order, z.id as zone_id, z.name, z.kind,
+             w.id as item_id, w.user_id, w.label, ST_Distance(z.geom::geography, w.geom::geography)::int as dist
+           from zone_stage_history h join redevelopment_zones z on z.id = h.zone_id
+           join watch_items w on w.geom is not null and z.geom is not null
+             and ST_DWithin(z.geom::geography, w.geom::geography, %s)
+           where h.changed_at > %s
+           order by h.id, w.user_id, dist""",
+        (radius_m, since),
+    ).fetchall()
+    n = 0
+    for r in rows:
+        inside = r["dist"] == 0
+        # 관리처분·착공처럼 사업이 확정되는 단계는 즉시 푸시
+        n += notify(conn, user_id=r["user_id"], item_id=r["item_id"], kind="zone_stage",
+                    priority=2 if (r["stage_order"] or 0) in (5, 6, 8) else 1,
+                    title=f"{r['name']} {r['kind']}: {r['stage'] or '단계 변경'}",
+                    body=f"{r['prev_stage'] or '이전 단계 미상'} → {r['stage'] or '-'} · "
+                         + (f"{r['label']} 위치" if inside else f"{r['label']}에서 {r['dist']:,}m"),
+                    url=f"/projects?zone={r['zone_id']}", dedupe_key=f"zone:{r['id']}")
+    # 팔로우한 구역(거리 무관). 같은 변화를 이미 주변 알림으로 받았으면 dedupe_key 로 건너뛴다
+    follows = conn.execute(
+        """select h.id, h.stage, h.prev_stage, h.stage_order, z.id as zone_id, z.name, z.kind, f.user_id
+           from zone_stage_history h join redevelopment_zones z on z.id = h.zone_id
+           join zone_follows f on f.zone_id = z.id
+           where h.changed_at > %s""",
+        (since,),
+    ).fetchall()
+    for r in follows:
+        n += notify(conn, user_id=r["user_id"], item_id=None, kind="zone_stage",
+                    priority=2 if (r["stage_order"] or 0) in (5, 6, 8) else 1,
+                    title=f"{r['name']} {r['kind']}: {r['stage'] or '단계 변경'}",
+                    body=f"{r['prev_stage'] or '이전 단계 미상'} → {r['stage'] or '-'} · 팔로우한 구역",
+                    url=f"/projects?zone={r['zone_id']}", dedupe_key=f"zone:{r['id']}")
+    return n
+
+
 def rule_maturities(conn, today: date | None = None) -> int:
     today = today or date.today()
     n = 0
@@ -198,6 +237,7 @@ def detect_alerts(conn, since: datetime | None = None) -> dict:
         stats["trades"] += rule_trades(conn, it, since)
     stats["news"] = rule_news(conn, since)
     stats["subscriptions"] = rule_subscriptions(conn, since)
+    stats["zone_stages"] = rule_zone_stages(conn, since)
     stats["maturities"] = rule_maturities(conn)
     stats["calendar"] = rule_calendar(conn)
     conn.commit()

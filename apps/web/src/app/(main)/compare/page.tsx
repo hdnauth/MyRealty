@@ -170,12 +170,13 @@ export default async function ComparePage(props: PageProps<"/compare">) {
           ) : null}
           <Card>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] whitespace-nowrap text-sm">
+              {/* 항목 열은 고정, 값 열은 부동산 수만큼만 넓힌다(2개면 휴대폰 폭에 그대로 들어간다) */}
+              <table className="w-full text-sm" style={{ minWidth: 104 + rows.length * 132 }}>
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="sticky left-0 bg-surface px-4 py-2 text-left text-xs font-medium text-muted">항목</th>
+                    <th className="sticky left-0 z-10 w-26 bg-surface px-3 py-2 text-left text-xs font-medium text-muted md:px-4">항목</th>
                     {rows.map((r) => (
-                      <th key={r.it.id} className="px-3 py-2 text-right font-semibold">
+                      <th key={r.it.id} className="px-3 py-2 text-right align-bottom font-semibold leading-snug">
                         <Link href={`/items/${r.it.id}`} className="hover:text-accent">{r.it.label}</Link>
                       </th>
                     ))}
@@ -184,9 +185,9 @@ export default async function ComparePage(props: PageProps<"/compare">) {
                 <tbody className="tabular">
                   {metrics.map((m) => (
                     <tr key={m.label} className="border-b border-border/60 last:border-0">
-                      <td className="sticky left-0 bg-surface px-4 py-2 text-muted">{m.label}</td>
+                      <td className="sticky left-0 z-10 w-26 bg-surface px-3 py-2 text-[13px] leading-snug text-muted md:px-4">{m.label}</td>
                       {rows.map((r) => (
-                        <td key={r.it.id} className="px-3 py-2 text-right">{m.get(r)}</td>
+                        <td key={r.it.id} className="px-3 py-2 text-right leading-snug">{m.get(r)}</td>
                       ))}
                     </tr>
                   ))}

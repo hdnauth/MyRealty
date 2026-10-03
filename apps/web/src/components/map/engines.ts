@@ -119,6 +119,8 @@ export interface MapHandle {
   addCircle(o: { lng: number; lat: number; radius: number; color: string }): Removable;
   /** 다각형(필지 경계 등). coordinates 는 GeoJSON MultiPolygon 좌표([경도, 위도]) */
   addPolygon(o: PolygonOptions): Removable;
+  /** 선(노선 등). coordinates 는 GeoJSON LineString 좌표 */
+  addPolyline(o: { coordinates: number[][]; color: string; weight?: number; dashed?: boolean }): Removable;
   panTo(lng: number, lat: number): void;
   /** 좌표로 이동하며 확대 단계 지정 */
   setCenter(lng: number, lat: number, zoom?: number): void;
@@ -324,6 +326,19 @@ export function createNaverMap(el: HTMLElement, center: [number, number], zoom: 
       );
       return safe(() => shapes.forEach((p) => p.setMap(null)));
     },
+    addPolyline(o) {
+      const line = new naver.maps.Polyline({
+        map,
+        path: o.coordinates.map(([x, y]) => new naver.maps.LatLng(y, x)),
+        strokeColor: o.color,
+        strokeOpacity: 0.85,
+        strokeWeight: o.weight ?? 3,
+        strokeStyle: o.dashed ? "shortdash" : "solid",
+        clickable: false,
+        zIndex: 15,
+      });
+      return safe(() => line.setMap(null));
+    },
     panTo(lng, lat) {
       map.panTo(new naver.maps.LatLng(lat, lng));
     },
@@ -479,6 +494,16 @@ export function createLeafletMap(
         interactive: false,
       }).addTo(map);
       return safe(() => p.remove());
+    },
+    addPolyline(o) {
+      const line = L.polyline(o.coordinates.map(([x, y]) => [y, x] as [number, number]), {
+        color: o.color,
+        weight: o.weight ?? 3,
+        opacity: 0.85,
+        dashArray: o.dashed ? "6 6" : undefined,
+        interactive: false,
+      }).addTo(map);
+      return safe(() => line.remove());
     },
     panTo(lng, lat) {
       map.panTo([lat, lng]);

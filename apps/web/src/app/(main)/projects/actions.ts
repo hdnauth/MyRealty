@@ -1,14 +1,14 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { requireAdmin, requireUser } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
+import { ensureUser, requireAdmin, requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { geocode } from "@/lib/external/geocode";
+import { INFRA_STATUS, ZONE_STAGES } from "@/lib/projects";
+import { setZoneFollow } from "@/lib/queries/projects";
 
 export type ProjectFormState = { error?: string; ok?: string };
-
-const ZONE_STAGES = ["기본계획", "정비구역지정", "추진위", "조합설립", "사업시행인가", "관리처분인가", "이주·철거", "착공", "준공"];
-const INFRA_STATUS = ["계획", "예타", "설계", "착공", "개통예정", "개통"];
 
 function str(v: FormDataEntryValue | null) {
   const s = v === null ? "" : String(v).trim();
@@ -51,6 +51,19 @@ export async function deleteProjectAction(form: FormData) {
   await requireAdmin();
   const id = Number(form.get("id"));
   if (form.get("type") === "infra") await sql`delete from infra_projects where id = ${id}`;
-  else await sql`delete from redevelopment_zones where id = ${id}`;
+  else {
+    await sql`delete from redevelopment_zones where id = ${id}`;
+    redirect("/projects"); // 상세(?zone=)에서 지웠으므로 목록으로
+  }
+  refresh();
+}
+
+/** 구역 팔로우 켜기·끄기(단계 변화 알림) */
+export async function toggleZoneFollowAction(form: FormData) {
+  // 로그인 없이도 이 기기에서 구역을 지켜볼 수 있다(기기 게스트)
+  const user = await ensureUser();
+  const id = Number(form.get("zone"));
+  if (!Number.isInteger(id) || id <= 0) return;
+  await setZoneFollow(user.id, id, form.get("on") === "1");
   refresh();
 }

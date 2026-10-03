@@ -39,12 +39,12 @@ export default async function MapPage(props: PageProps<"/map">) {
     sql<MapProject[]>`
       select 'zone' as type, id, name, kind, stage as status, stage_order as step, null::text as expected_open,
         ST_X(ST_PointOnSurface(geom)) as lng, ST_Y(ST_PointOnSurface(geom)) as lat
-      from redevelopment_zones where geom is not null
+      from redevelopment_zones where geom is not null and stage_order is distinct from 9
       union all
       select 'infra', id, name, kind, status, status_order, expected_open::text,
         ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom))
       from infra_projects where geom is not null
-      limit 1000`,
+      limit 3000`,
     getAreaUnit(),
   ]);
   const focus = typeof sp.item === "string" ? items.find((i) => i.id === sp.item) : undefined;
@@ -75,6 +75,7 @@ export default async function MapPage(props: PageProps<"/map">) {
       focusComplex={focusComplex ?? null}
       atPoint={atPoint}
       initialType={initialType}
+      initialLayers={typeof sp.layers === "string" ? sp.layers.split(",").filter((l) => ["permit", "district_plan", "zoning", "cadastral", "movein"].includes(l)) : null}
       complexItems={myComplexes}
       unit={unit}
       missingItems={missing}

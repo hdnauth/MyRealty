@@ -48,14 +48,13 @@
 | 메뉴는 "시장 지표", 화면 제목은 "지표" / 헤더 버튼이 긴 부제에 밀려 두 줄 | 같은 곳인지 헷갈림, 깨져 보임 | 제목 통일, 헤더 버튼 줄바꿈 방지 | `indicators/page.tsx`, `components/ui` `PageHeader` |
 | 주소 없는 부동산 머리에 "· 84.8㎡" | 표기 깨짐 | 빈 값은 빼고 잇기 | `items/[id]/page.tsx` |
 
-그대로 둔 것(판단)
-- 비교 표는 모바일에서 가로로 민다(5개까지 나란히 보는 표의 성격상). 첫 열 고정은 다음 과제.
-- 회원에게 "본인 AI 키 연결"은 남긴다(서버 AI 가 꺼진 배포에서 유일한 사용 경로).
+이어서 반영
+- 비교 표: 항목 열 고정·값 열은 부동산 수만큼만 넓혀, 2개 비교는 휴대폰 폭에 그대로 들어간다(`compare/page.tsx`).
+- 개발·테마(`feat/projects-theme`) 병합: 방문자 열람(`getUser`), 구역 팔로우는 기기 게스트도(`ensureUser`), 지도 덮개 API 공개,
+  빈 화면 수집 안내는 관리자에게만, 가입 시 `zone_follows` 도 옮김(`mergeGuest`).
 
-다른 브랜치(`feat/projects-theme`, 개발·테마) 병합 체크리스트
-- `projects/page.tsx` 의 `requireUser()` → `getUser()`(방문자 열람), 팔로우 액션은 `ensureUser()`.
-- 빈 화면 문구의 `ETL zones/rail/regulations 단계`, `uv run myrealty …`, `브이월드 키 필요` → 위와 같은 일반 문구(관리자에게만 수집 안내).
-- `mergeGuest`(`lib/auth/otp.ts`)에 `zone_follows` 옮기기 추가.
+그대로 둔 것(판단)
+- 회원에게 "본인 AI 키 연결"은 남긴다(서버 AI 가 꺼진 배포에서 유일한 사용 경로).
 
 ---
 

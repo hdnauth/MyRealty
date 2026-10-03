@@ -167,6 +167,9 @@ export async function mergeGuest(from: string, to: string) {
     await tx`
       insert into community_follows (user_id, scope, scope_id, created_at)
       select ${to}, scope, scope_id, created_at from community_follows where user_id = ${from} on conflict do nothing`;
+    await tx`
+      insert into zone_follows (user_id, zone_id, created_at)
+      select ${to}, zone_id, created_at from zone_follows where user_id = ${from} on conflict do nothing`;
     await tx`delete from users where id = ${from}`;
   });
 }

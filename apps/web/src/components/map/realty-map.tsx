@@ -7,8 +7,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { type AreaUnit, formatDate, formatManwon, formatPct, fromPerPyeong, shortAddress, unitPriceLabel } from "@/lib/format";
 import { complexHref, type MyComplexes, registerComplexHref } from "@/lib/links";
+import type { MapOverlays } from "@/app/api/map/overlays/route";
 import type { MapSearchResult } from "@/app/api/map/search/route";
 import { activeFilterCount, COMPLEX_TYPES, EMPTY_FILTERS, type MapFilters, type MapPoint, normalizeFilters, SORTS, type SortKey, filtersToQuery, sortPoints } from "@/lib/map-filters";
+import { PHASE_COLOR, ZONE_STAGES, zonePhase } from "@/lib/projects";
 import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
 import { ComplexTrades, type Trade } from "./complex-trades";
 import { FilterBar, FilterPanel } from "./filter-panel";
@@ -50,7 +52,7 @@ const LAYER_GROUPS = [
   {
     title: "개발 · 공급",
     layers: [
-      { key: "projects", label: "🏗 정비구역·철도/도로 사업" },
+      { key: "projects", label: "🏗 정비구역(숫자=단계 1~9)·철도/도로" },
       { key: "movein", label: "🏠 입주 예정" },
     ],
   },
@@ -59,6 +61,8 @@ const LAYER_GROUPS = [
     layers: [
       { key: "cadastral", label: "지적도(필지 경계)" },
       { key: "zoning", label: "용도지역" },
+      { key: "permit", label: "토지거래허가구역" },
+      { key: "district_plan", label: "지구단위계획구역" },
     ],
   },
   { title: "교통", layers: [{ key: "traffic", label: "실시간 교통정보(네이버 지도)" }] },
@@ -157,6 +161,7 @@ export function RealtyMap({
   focusComplex = null,
   atPoint = null,
   initialType = null,
+  initialLayers = null,
   complexItems = {},
 }: {
   /** 처음 골라 둘 단지(/map?complex=) */
@@ -165,6 +170,8 @@ export function RealtyMap({
   atPoint?: [number, number] | null;
   /** 처음 거래 유형 필터(/map?type=) */
   initialType?: string | null;
+  /** ?layers= 로 켜고 시작할 레이어(기본 레이어에 더한다) */
+  initialLayers?: string[] | null;
   /** 단지 id → 내 관심 부동산 id(선택 카드의 '상세' 링크) */
   complexItems?: MyComplexes;
   /** 좌표를 못 찾은 관심 부동산(목록에만 안내) */
@@ -244,10 +251,11 @@ export function RealtyMap({
   const [bbox, setBbox] = useState<BBox | null>(null);
   const [selected, setSelected] = useState<MapPoint | null>(() => (focusComplex ? stubPoint(focusComplex) : null));
   const [detail, setDetail] = useState<{ complex: { name: string; build_year: number | null; households: number | null }; trades: Trade[]; talk?: { total: number; recent: number } } | null>(null);
-  const [layers, setLayers] = useState<Set<string>>(() => new Set(["projects", "subway", "school"]));
+  const [layers, setLayers] = useState<Set<string>>(() => new Set(["projects", "subway", "school", ...(initialLayers ?? [])]));
   const [pois, setPois] = useState<MapPoi[]>([]);
   const [poiNote, setPoiNote] = useState<string | null>(null);
   const [poiInfo, setPoiInfo] = useState<MapPoi | null>(null);
+  const [projectInfo, setProjectInfo] = useState<MapProject | null>(null);
   const [layerOpen, setLayerOpen] = useState(false);
   const [baseMap, setBaseMap] = useState<BaseMap>("normal");
   const [locating, setLocating] = useState(false);
@@ -609,15 +617,25 @@ export function RealtyMap({
     for (const m of layerMarkersRef.current) m.remove();
     const ms: Removable[] = [];
     if (layers.has("projects")) {
-      for (const p of projects) {
+      // 서울 정비구역만 해도 천 곳 가까이라 화면 안만 그리고, 넓게 보거나 많으면 단계 색 점으로
+      const inView = bbox ? projects.filter((p) => p.lng >= bbox[0] && p.lng <= bbox[2] && p.lat >= bbox[1] && p.lat <= bbox[3]) : projects;
+      const compact = map.zoom() < 15 || inView.length > 60;
+      for (const p of inView.slice(0, 400)) {
+        const color = p.type === "zone" ? PHASE_COLOR[zonePhase(p.step) ?? "none"] : "#16191f";
         const label = p.type === "zone" ? `${p.kind} · ${p.status ?? ""}` : `${p.status ?? ""}${p.expected_open ? ` ${p.expected_open.slice(0, 4)}` : ""}`;
         ms.push(
           map.addHtmlMarker({
             lng: p.lng,
             lat: p.lat,
             zIndex: 300,
-            title: p.name,
-            html: `<div style="transform:translate(-50%,-50%);display:inline-block;padding:3px 6px;border-radius:6px;background:${p.type === "zone" ? "#4a3aa7" : "#16191f"};color:#fff;font-size:11px;white-space:nowrap">${p.type === "zone" ? "🏗" : "🚉"} ${escapeHtml(p.name.slice(0, 14))}<br><span style="opacity:.8">${escapeHtml(label)}</span></div>`,
+            title: `${p.name} · ${label}`,
+            onClick: () => {
+              setPoiInfo(null);
+              setProjectInfo(p);
+            },
+            html: compact
+              ? `<div style="transform:translate(-50%,-50%);width:16px;height:16px;border-radius:5px;background:${color};color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${p.type === "zone" ? (p.step ?? "") : "🚉"}</div>`
+              : `<div style="transform:translate(-50%,-50%);display:inline-block;padding:3px 6px;border-radius:6px;background:${color};color:#fff;font-size:11px;white-space:nowrap">${p.type === "zone" ? "🏗" : "🚉"} ${escapeHtml(p.name.slice(0, 14))}<br><span style="opacity:.8">${escapeHtml(label)}</span></div>`,
           }),
         );
       }
@@ -631,13 +649,16 @@ export function RealtyMap({
           lat: p.lat,
           zIndex: 50,
           title: p.name,
-          onClick: () => setPoiInfo(p),
+          onClick: () => {
+            setProjectInfo(null);
+            setPoiInfo(p);
+          },
           html: `<div title="${escapeHtml(p.name)}" style="transform:translate(-50%,-50%);width:22px;height:22px;border-radius:999px;background:${st.bg};display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${st.icon}</div>`,
         }),
       );
     }
     layerMarkersRef.current = ms;
-  }, [layers, projects, pois, mapVersion]);
+  }, [layers, projects, pois, bbox, mapVersion]);
 
   // 입주 예정 레이어
   useEffect(() => {
@@ -684,6 +705,38 @@ export function RealtyMap({
       overlays.forEach((o) => o.remove());
     };
   }, [layers, bbox, vworldKey, vworldDomain, mapVersion]);
+
+  // 정비구역 경계·노선(개발사업 레이어)과 규제 구역: 화면이 멈출 때마다 그 범위만 받아 그린다
+  useEffect(() => {
+    const map = mapRef.current;
+    const want = [
+      layers.has("projects") ? "zones,rail" : null,
+      layers.has("permit") ? "permit" : null,
+      layers.has("district_plan") ? "district_plan" : null,
+    ].filter(Boolean);
+    if (!map || !bbox || !want.length) return;
+    const ctrl = new AbortController();
+    const drawn: Removable[] = [];
+    fetch(`/api/map/overlays?bbox=${bbox.map((v) => v.toFixed(5)).join(",")}&layers=${want.join(",")}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? (r.json() as Promise<MapOverlays & { tooWide?: boolean }>) : null))
+      .then((o) => {
+        if (!o || ctrl.signal.aborted) return;
+        for (const r of o.regulations) {
+          drawn.push(map.addPolygon({ coordinates: r.coordinates, color: r.kind === "permit" ? "#d9480f" : "#0b7285", weight: 1.5, fillOpacity: r.kind === "permit" ? 0.08 : 0.05, zIndex: 8 }));
+        }
+        for (const z of o.zones) {
+          drawn.push(map.addPolygon({ coordinates: z.coordinates, color: PHASE_COLOR[zonePhase(z.step) ?? "none"], weight: 1.5, fillOpacity: 0.15, zIndex: 12 }));
+        }
+        for (const l of o.rails) {
+          drawn.push(map.addPolyline({ coordinates: l.coordinates, color: l.status === "개통" ? "#495057" : "#7048e8", weight: 3, dashed: l.status !== "개통" }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      ctrl.abort();
+      drawn.forEach((d) => d.remove());
+    };
+  }, [layers, bbox, mapVersion]);
 
   // 지적도를 끄면 네이버 자체 레이어도 끈다
   useEffect(() => {
@@ -1202,6 +1255,26 @@ export function RealtyMap({
               ))}
               <p className="mt-2 text-[11px] text-muted">라벨의 <span className="text-up">▲</span>/<span className="text-down">▼</span> 는 1년 가격 변동(±1% 이상)입니다.</p>
               {poiNote ? <p className="mt-1 text-[11px] text-muted">{poiNote}</p> : null}
+            </div>
+          ) : null}
+          {projectInfo ? (
+            <div className={clsx("absolute left-2 z-[550] max-w-[80%] rounded-lg border border-border bg-surface px-3 py-2 text-sm shadow", aboveSheet)}>
+              <div className="flex items-start gap-2">
+                <span className="min-w-0">
+                  <b className="block truncate">{projectInfo.name}</b>
+                  <span className="text-xs text-muted">
+                    {projectInfo.kind} · {projectInfo.status ?? "단계 미상"}
+                    {projectInfo.type === "zone" && projectInfo.step ? ` (${projectInfo.step}/${ZONE_STAGES.length})` : ""}
+                    {projectInfo.expected_open ? ` · 개통 ${projectInfo.expected_open.slice(0, 7)}` : ""}
+                  </span>
+                  <Link href={projectInfo.type === "zone" ? `/projects?zone=${projectInfo.id}` : "/projects?tab=infra"} className="mt-0.5 block text-xs font-semibold text-accent">
+                    사업 상세 보기
+                  </Link>
+                </span>
+                <button type="button" aria-label="닫기" onClick={() => setProjectInfo(null)} className="text-muted">
+                  <X size={14} />
+                </button>
+              </div>
             </div>
           ) : null}
           {poiInfo ? (

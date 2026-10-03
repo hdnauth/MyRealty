@@ -3,12 +3,12 @@ import { Badge, Card, CardHeader, EmptyState, Stat } from "@/components/ui";
 import { formatDate, formatPct } from "@/lib/format";
 import type { WatchItem } from "@/lib/queries/items";
 import { itemLocation, type LocationCalibration, type LocCategory, locationCalibration, type LocDetail, openingEffects } from "@/lib/queries/location";
+import { ZONE_STAGES } from "@/lib/projects";
 
 const CAT_LABEL: Record<string, string> = {
   subway: "지하철역", bus: "버스정류장", school: "학교", academy: "학원", hospital: "종합병원", clinic: "의원",
   mart: "대형마트·백화점", convenience: "편의점", food: "음식점", cafe: "카페", park: "공원",
 };
-const ZONE_STAGES = ["기본계획", "정비구역지정", "추진위", "조합설립", "사업시행인가", "관리처분인가", "이주·철거", "착공", "준공"];
 
 export const ORDER = ["transit", "jobs", "school", "shopping", "park", "academy", "medical", "food"];
 
@@ -111,7 +111,7 @@ export async function LocationTab({ item }: { item: WatchItem }) {
 
       {dev ? (
         <Card className="lg:col-span-3">
-          <CardHeader title="개발 요인" sub="정비사업(반경 1.5km) · 철도·도로 사업(반경 3km)" action={<Link href="/projects" className="text-accent">사업 등록</Link>} />
+          <CardHeader title="개발 요인" sub="정비사업(반경 1.5km) · 철도·도로 사업(반경 3km)" action={<Link href={`/projects?near=${item.id}`} className="text-accent">개발사업</Link>} />
           <div className="grid grid-cols-2 gap-4 px-4 pb-2 sm:grid-cols-4">
             <Stat label="주변 정비구역" value={`${dev.zones_count}곳`} sub={<span className="text-muted">사업시행인가 이후 {dev.zones_advanced}곳</span>} />
             <Stat
@@ -145,7 +145,7 @@ export async function LocationTab({ item }: { item: WatchItem }) {
                 <tbody>
                   {dev.zones.map((z) => (
                     <tr key={z.id} className="border-b border-border/60 last:border-0">
-                      <td className="py-2">{z.name}</td>
+                      <td className="py-2"><Link href={`/projects?zone=${z.id}`} className="text-accent">{z.name}</Link></td>
                       <td className="py-2"><Badge>{z.kind}</Badge></td>
                       <td className="py-2">
                         <div className="flex items-center gap-2">

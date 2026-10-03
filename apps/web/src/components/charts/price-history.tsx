@@ -4,14 +4,8 @@ import type { EChartsOption } from "echarts";
 import { useCallback, useMemo, useState } from "react";
 import { formatManwon } from "@/lib/format";
 import type { TxPoint } from "@/lib/queries/items";
-import { baseAxes, EChart, type ChartTokens } from "./echart";
-
-const RANGES = [
-  { key: "1y", label: "1년", months: 12 },
-  { key: "3y", label: "3년", months: 36 },
-  { key: "5y", label: "5년", months: 60 },
-  { key: "all", label: "전체", months: 1200 },
-] as const;
+import { baseAxes, EChart, periodLabel, type ChartTokens } from "./echart";
+import { defaultRange, rangeOptions, rangeSince, RangeChips, type RangeKey } from "./range-chips";
 
 function monthKey(d: string) {
   return d.slice(0, 7);
@@ -34,13 +28,16 @@ function monthlyMedian(points: TxPoint[]) {
 
 /** 실거래 산점도(매매·전세) + 매매 월 중위선. y축 하나(만원→억 표시). */
 export function PriceHistoryChart({ points, height = 280 }: { points: TxPoint[]; height?: number }) {
-  const [range, setRange] = useState<(typeof RANGES)[number]["key"]>("3y");
+  const options = useMemo(() => {
+    const first = points.reduce<string | null>((m, p) => (!m || p.deal_date < m ? p.deal_date : m), null);
+    // 거래가 1년치뿐이어도 1년·전체는 고를 수 있게(최근 거래만 보고 싶을 때)
+    const o = rangeOptions(first);
+    return o.length ? o : (["1y", "all"] as RangeKey[]);
+  }, [points]);
+  const [range, setRange] = useState<RangeKey>(() => defaultRange(options, "3y"));
   const { filtered, sinceDay } = useMemo(() => {
-    const months = RANGES.find((r) => r.key === range)!.months;
-    const since = new Date();
-    since.setMonth(since.getMonth() - months);
-    const s = since.toISOString().slice(0, 10);
-    return { filtered: points.filter((p) => !p.is_canceled && p.price && p.deal_date >= s), sinceDay: s };
+    const s = rangeSince(range);
+    return { filtered: points.filter((p) => !p.is_canceled && p.price && (!s || p.deal_date >= s)), sinceDay: s };
   }, [points, range]);
   // 거래가 드물면(1~2건) 시간축이 며칠 단위로 좁아져 '15 16 17…'처럼 보인다 — 고른 기간 전체를 축으로 쓴다
   const sparse = filtered.length > 0 && filtered.length < 6;
@@ -60,15 +57,15 @@ export function PriceHistoryChart({ points, height = 280 }: { points: TxPoint[];
           formatter: (param: unknown) => {
             const d = (param as { data: { tx?: TxPoint; value: [string, number] }; seriesName: string }).data;
             const s = (param as { seriesName: string }).seriesName;
-            if (!d.tx) return `${s}<br/>${d.value[0].slice(0, 7)} · <b>${formatManwon(d.value[1])}</b>`;
+            if (!d.tx) return `${s}<br/>${periodLabel(d.value[0])} · <b>${formatManwon(d.value[1])}</b>`;
             const p = d.tx;
-            return `${s} · ${p.deal_date}<br/><b>${formatManwon(p.price)}</b>${p.area_m2 ? ` · ${p.area_m2}㎡` : ""}${p.floor ? ` · ${p.floor}층` : ""}${p.is_direct ? " · 직거래" : ""}`;
+            return `${s} · ${periodLabel(p.deal_date, true)}<br/><b>${formatManwon(p.price)}</b>${p.area_m2 ? ` · ${p.area_m2}㎡` : ""}${p.floor ? ` · ${p.floor}층` : ""}${p.is_direct ? " · 직거래" : ""}`;
           },
         },
         xAxis: {
           type: "time",
-          ...b.xAxisStyle,
-          ...(sparse ? { min: range === "all" ? filtered[0].deal_date : sinceDay, max: new Date().toISOString().slice(0, 10) } : {}),
+          ...b.timeAxisStyle,
+          ...(sparse ? { min: sinceDay ?? filtered.reduce((m, p) => (p.deal_date < m ? p.deal_date : m), filtered[0].deal_date), max: new Date().toISOString().slice(0, 10) } : {}),
         },
         yAxis: {
           type: "value",
@@ -80,14 +77,14 @@ export function PriceHistoryChart({ points, height = 280 }: { points: TxPoint[];
           {
             name: "매매",
             type: "scatter",
-            symbolSize: 8,
+            symbolSize: 9,
             itemStyle: { color: t.s1, opacity: 0.55, borderColor: t.surface, borderWidth: 1 },
             data: sale.map(dot),
           },
           {
             name: "전세",
             type: "scatter",
-            symbolSize: 8,
+            symbolSize: 9,
             itemStyle: { color: t.s2, opacity: 0.55, borderColor: t.surface, borderWidth: 1 },
             data: jeonse.map(dot),
           },
@@ -104,23 +101,12 @@ export function PriceHistoryChart({ points, height = 280 }: { points: TxPoint[];
         ],
       };
     },
-    [filtered, sparse, sinceDay, range],
+    [filtered, sparse, sinceDay],
   );
 
   return (
     <div>
-      <div className="mb-2 flex justify-end gap-1">
-        {RANGES.map((r) => (
-          <button
-            key={r.key}
-            type="button"
-            onClick={() => setRange(r.key)}
-            className={`rounded-md px-2 py-1 text-xs ${range === r.key ? "bg-accent-soft font-semibold text-accent" : "text-muted hover:bg-surface-2"}`}
-          >
-            {r.label}
-          </button>
-        ))}
-      </div>
+      <RangeChips options={options} value={range} onChange={setRange} />
       {filtered.length ? (
         <EChart build={build} height={height} ariaLabel="실거래가 추이 차트" />
       ) : (

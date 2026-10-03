@@ -18,8 +18,8 @@ export function NotableCard({ signals, className }: { signals: Signal[]; classNa
           <li key={x.key} className="bg-surface px-4 py-3" data-signal={x.key}>
             <div className="text-xs text-muted">{x.label}</div>
             <div className={clsx("tabular mt-0.5 text-lg font-semibold", VALUE[x.tone])}>{x.value}</div>
-            <p className="mt-0.5 text-[13px] leading-relaxed text-muted">{x.note}</p>
-            <p className="mt-1 text-[11px] text-muted/80">출처 · {x.source}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted">{x.note}</p>
+            <p className="mt-1 text-[0.75rem] text-muted/80">출처 · {x.source}</p>
           </li>
         ))}
       </ul>

@@ -44,16 +44,16 @@ export async function complexTransactions(id: number, years = 5): Promise<TxPoin
 
 /** 단지 생활편의 점수 + 반경 1km 안 점수가 있는 단지들 중 백분위(itemLocation 과 같은 기준) */
 export async function complexLocation(id: number) {
-  const [row] = await sql<(LocationScore & { below: number | null; n: number | null })[]>`
-    select l.total, l.scores, l.development, l.computed_at::text, p.below, p.n
+  const [row] = await sql<(LocationScore & { basis: string; below: number | null; n: number | null })[]>`
+    select l.total, l.scores, l.development, l.computed_at::text, l.basis, p.below, p.n
     from location_scores l
     join complexes me on me.id::text = l.target_id
     left join lateral (
       select count(*) filter (where s.total < l.total)::int as below, count(*)::int as n
       from location_scores s join complexes c on c.id::text = s.target_id
-      where s.target_type = 'complex' and s.total is not null and c.id <> me.id and c.geom is not null
+      where s.target_type = 'complex' and s.total is not null and s.basis = 'full' and c.id <> me.id and c.geom is not null
         and ST_DWithin(c.geom::geography, me.geom::geography, ${PEER_RADIUS_M})
-    ) p on l.total is not null and me.geom is not null
+    ) p on l.total is not null and l.basis = 'full' and me.geom is not null
     where l.target_type = 'complex' and l.target_id = ${String(id)}`;
   if (!row) return null;
   const { below, n, ...score } = row;

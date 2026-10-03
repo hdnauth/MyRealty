@@ -12,6 +12,9 @@ import {
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef, useState } from "react";
+import { timeLabel } from "@/lib/chart-range";
+
+export { periodLabel } from "@/lib/chart-range";
 
 echarts.use([LineChart, ScatterChart, BarChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, MarkLineComponent, CanvasRenderer]);
 
@@ -102,20 +105,33 @@ export function baseAxes(t: ChartTokens) {
     tooltip: {
       backgroundColor: t.surface,
       borderColor: t.grid,
-      textStyle: { color: t.text, fontSize: 12 },
+      textStyle: { color: t.text, fontSize: 13 },
       extraCssText: "box-shadow:0 4px 16px rgba(0,0,0,.12);border-radius:10px;",
     },
-    legend: { top: 0, left: 0, icon: "circle", itemWidth: 8, itemHeight: 8, textStyle: { color: t.ink, fontSize: 12 } },
+    legend: { top: 0, left: 0, icon: "circle", itemWidth: 9, itemHeight: 9, textStyle: { color: t.ink, fontSize: 13 } },
     xAxisStyle: {
       axisLine: { lineStyle: { color: t.axis } },
       axisTick: { show: false },
-      axisLabel: { color: t.muted, fontSize: 11, hideOverlap: true },
+      axisLabel: { color: t.muted, fontSize: 12, hideOverlap: true },
+      splitLine: { show: false },
+    },
+    /** type: "time" 축 — 연·월이 늘 분명하게 */
+    timeAxisStyle: {
+      axisLine: { lineStyle: { color: t.axis } },
+      axisTick: { show: false },
+      axisLabel: {
+        color: t.muted,
+        fontSize: 12,
+        hideOverlap: true,
+        formatter: timeLabel,
+        rich: { y: { color: t.ink, fontSize: 12, fontWeight: "bold" as const } },
+      },
       splitLine: { show: false },
     },
     yAxisStyle: {
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: t.muted, fontSize: 11 },
+      axisLabel: { color: t.muted, fontSize: 12 },
       splitLine: { lineStyle: { color: t.grid, width: 1 } },
     },
   };

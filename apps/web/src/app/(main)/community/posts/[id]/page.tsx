@@ -71,7 +71,7 @@ export default async function PostPage(props: PageProps<"/community/posts/[id]">
         </div>
         <h1 className="mt-2 text-lg font-bold leading-snug md:text-xl">{post.title}</h1>
         <AuthorLine author={post.author} at={post.created_at} edited={post.edited_at} className="mt-1.5" />
-        {post.kind === "system" ? <p className="mt-1 text-[11px] text-muted">실거래·청약 데이터로 자동 작성된 글입니다. 이 소식에 대한 생각을 댓글로 나눠 보세요.</p> : null}
+        {post.kind === "system" ? <p className="mt-1 text-[0.75rem] text-muted">실거래·청약 데이터로 자동 작성된 글입니다. 이 소식에 대한 생각을 댓글로 나눠 보세요.</p> : null}
 
         {post.blocked ? (
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -173,7 +173,7 @@ function Comment({ c, postId, canReply, isAdmin }: { c: CommentRow; postId: numb
       {c.status === "hidden" ? <Badge tone="warn" className="mt-1">가려짐</Badge> : null}
       <PostText text={c.body} className="mt-1 text-sm" />
       {c.kind === "ai" ? (
-        <p className="mt-1 flex items-center gap-1 text-[11px] text-muted"><Bot size={11} />앱의 실거래·지표 데이터로 AI가 작성한 답변입니다. 생활 정보는 이웃의 답을 참고하세요.</p>
+        <p className="mt-1 flex items-center gap-1 text-[0.75rem] text-muted"><Bot size={11} />앱의 실거래·지표 데이터로 AI가 작성한 답변입니다. 생활 정보는 이웃의 답을 참고하세요.</p>
       ) : null}
       <div className="mt-1.5 flex flex-wrap items-center gap-3">
         {c.kind === "user" ? <LikeButton target="comment" id={c.id} liked={c.liked} count={c.like_count} disabled={c.status !== "visible"} /> : null}

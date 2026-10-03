@@ -91,7 +91,7 @@ GitHub → Settings → Secrets and variables → Actions 에 `.env` 항목을 *
 | `events` | 청약·입주 예정, 공시·세금 일정 | DATA_GO_KR |
 | `news` / `classify` | 키워드 뉴스 수집 → Claude 분류(소량 동기, 대량 Batch) | NAVER, ANTHROPIC |
 | `indicators` | 자체 지수·조합 지표·온도계, 금리 변경·온도 구간 알림 | - |
-| `pois` | 주변 편의시설 수집 → 생활편의 점수 | DATA_GO_KR(없으면 CSV 데이터로 점수만) |
+| `pois` | 주변 편의시설 수집(관심 부동산 주변 + 수집 지역 단지 격자, 하루 30칸) → 생활편의 점수(시설이 갖춰진 모든 단지) | DATA_GO_KR(없으면 OSM·CSV 로) |
 | `location_check` | 입지 점수 검증(단지 평당가 회귀 → 설명력·항목별 효과·권장 가중, AVM 입지 보정 계수) — `myrealty location-check` | - |
 | `avm` | 추정 시세 | - |
 | `backfill` | 과거 월 백필(시군구당 기본 36개월, 실행당 최대 6개월). 지역을 한 달씩 번갈아 수집하고, 시간 예산이 끝나면 멈췄다가 다음 실행에서 이어서 | DATA_GO_KR |

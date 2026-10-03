@@ -85,7 +85,7 @@ export default async function AiPage(props: PageProps<"/ai">) {
                 <li key={c.id}>
                   <Link href={`/ai?c=${c.id}`} className={`block truncate rounded-lg px-2 py-1.5 text-sm ${c.id === cid ? "bg-accent-soft text-accent" : "hover:bg-surface-2"}`}>
                     {c.title ?? "대화"}
-                    <span className="block text-[11px] text-muted">{formatDate(c.updated_at)}</span>
+                    <span className="block text-[0.75rem] text-muted">{formatDate(c.updated_at)}</span>
                   </Link>
                 </li>
               ))}
@@ -99,7 +99,7 @@ export default async function AiPage(props: PageProps<"/ai">) {
             ) : convs.length ? (
               <div className="mb-2 flex gap-1.5 overflow-x-auto lg:hidden">
                 {convs.slice(0, 6).map((c) => (
-                  <Link key={c.id} href={`/ai?c=${c.id}`} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-muted">
+                  <Link key={c.id} href={`/ai?c=${c.id}`} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-3 py-1.5 text-sm text-muted">
                     <FileText size={12} /> {(c.title ?? "대화").slice(0, 14)}
                   </Link>
                 ))}

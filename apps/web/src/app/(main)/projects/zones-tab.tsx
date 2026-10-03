@@ -157,7 +157,7 @@ export async function ZonesTab({ uid, isAdmin, f, limit, zoneId, unit, href }: {
                           <span className="shrink-0 text-xs">{z.stage ?? "단계 미상"}</span>
                         </div>
                         <StageBar order={z.stage_order} className="mt-1.5" />
-                        <div className="mt-1 flex gap-2 text-[11px] text-muted">
+                        <div className="mt-1 flex gap-2 text-[0.75rem] text-muted">
                           <span className="truncate">
                             {f.sido ? "" : `${shortSido(z.sido)} `}{z.gu ?? ""}
                             {z.households_plan ? ` · ${z.households_plan.toLocaleString()}세대` : ""}
@@ -195,11 +195,11 @@ export async function ZonesTab({ uid, isAdmin, f, limit, zoneId, unit, href }: {
                       <span className="w-16 shrink-0 text-xs text-muted">{ZONE_PHASES.find((x) => x.key === p.phase)?.label}</span>
                       <span className="tabular min-w-0 flex-1 truncate">{p.ppy ? formatManwon(fromPerPyeong(p.ppy, unit), { short: true }) : "-"}</span>
                       <Change value={p.ppy && p.base ? p.ppy / p.base - 1 : null} />
-                      <span className="w-10 shrink-0 text-right text-[11px] text-muted">{p.complexes}단지</span>
+                      <span className="w-10 shrink-0 text-right text-[0.75rem] text-muted">{p.complexes}단지</span>
                     </li>
                   ))}
                 </ul>
-                <p className="px-4 pb-3 text-[11px] text-muted">구역에 연결된 단지(경계 안·같은 이름)의 실거래만. 지역·연식 차이가 섞인 단순 비교라 참고용입니다.</p>
+                <p className="px-4 pb-3 text-[0.75rem] text-muted">구역에 연결된 단지(경계 안·같은 이름)의 실거래만. 지역·연식 차이가 섞인 단순 비교라 참고용입니다.</p>
               </Card>
             ) : null}
             <Card>
@@ -239,7 +239,7 @@ function ZoneDetailCard({ d, unit, closeHref, isAdmin }: { d: ZoneDetail; unit: 
       />
       <div className="px-4 pb-3">
         <StageBar order={d.stage_order} labels />
-        <p className="mt-2 text-[13px] leading-relaxed">
+        <p className="mt-2 text-xs leading-relaxed">
           {zonePhase(d.stage_order) === "done" ? (d.stage?.includes("해제") ? "정비구역이 해제된 곳입니다." : "사업이 끝난(준공·해산·청산) 구역입니다.") : stageGuide(d.stage_order)}
         </p>
       </div>
@@ -331,7 +331,7 @@ function ZoneDetailCard({ d, unit, closeHref, isAdmin }: { d: ZoneDetail; unit: 
           </form>
         ) : null}
       </div>
-      <p className="px-4 pb-3 text-[11px] text-muted">
+      <p className="px-4 pb-3 text-[0.75rem] text-muted">
         출처: {src.url ? <a href={src.url} target="_blank" rel="noreferrer" className="underline">{src.label}</a> : src.label}
         {d.molit && d.source !== "molit" ? " · 세대수·시행자: 국토교통부 전국 도시정비사업 통합 데이터" : ""}. 위치: {d.lng === null ? "미상" : GEO_LABEL[d.geo ?? ""] ?? "출처 좌표"}
         {d.followers ? ` · 팔로우 ${d.followers}명` : ""}. 권리가액·분담금은 조합 공지를 확인하세요.

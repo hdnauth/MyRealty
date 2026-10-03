@@ -99,7 +99,7 @@ export function LandMarketCard({ m, item }: { m: LandMarket; item: WatchItem }) 
           </div>
         ) : null}
       </div>
-      <p className="px-4 pb-4 text-[11px] text-muted">토지는 도로 접면·형상·경사에 따라 같은 지목이라도 가격 차이가 큽니다. 큰 필지일수록 ㎡당 가격이 낮은 편이라, 추정 시세(분석 탭)는 비슷한 크기(1/5~5배) 거래만으로 계산합니다.</p>
+      <p className="px-4 pb-4 text-[0.75rem] text-muted">토지는 도로 접면·형상·경사에 따라 같은 지목이라도 가격 차이가 큽니다. 큰 필지일수록 ㎡당 가격이 낮은 편이라, 추정 시세(분석 탭)는 비슷한 크기(1/5~5배) 거래만으로 계산합니다.</p>
     </Card>
   );
 }

@@ -42,7 +42,7 @@ export function KeyTable({ web, github }: { web: KeyCheck[]; github: KeyCheck[] 
               <tr key={k} className="align-top">
                 <td className="px-4 py-2">
                   {w?.label ?? g?.label}
-                  <span className="block font-mono text-[11px] text-muted">{k}</span>
+                  <span className="block font-mono text-[0.75rem] text-muted">{k}</span>
                 </td>
                 <td className="px-2 py-2">{w ? <Cell c={w} /> : <span className="text-xs text-muted">웹에서 쓰지 않음</span>}</td>
                 <td className="px-2 py-2">
@@ -55,7 +55,7 @@ export function KeyTable({ web, github }: { web: KeyCheck[]; github: KeyCheck[] 
                     <span className={clsx("font-medium", same ? "text-ok" : "text-up")}>{same ? "같음" : "다름"}</span>
                   )}
                   {w?.fp || g?.fp ? (
-                    <span className="block font-mono text-[11px] text-muted">
+                    <span className="block font-mono text-[0.75rem] text-muted">
                       {w?.fp ?? "-"} / {g?.fp ?? "-"}
                     </span>
                   ) : null}

@@ -36,7 +36,7 @@ export function LikeButton({ target, id, liked, count, disabled }: { target: "po
       }
       title={error ?? "좋아요"}
       className={clsx(
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs",
+        "inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm",
         optimistic.liked ? "border-up/40 bg-up/10 text-up" : "border-border text-muted hover:text-text",
       )}
     >
@@ -207,7 +207,7 @@ export function FollowButton({ scope, id, following, auto }: { scope: "sgg" | "c
       disabled={pending}
       onClick={() => start(() => followAction(scope, id, !following))}
       className={clsx(
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs",
+        "inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm",
         following ? "border-accent bg-accent-soft text-accent" : "border-border text-muted hover:text-text",
       )}
     >

@@ -83,12 +83,12 @@ export async function LocationTab({ item, mode }: { item: WatchItem; mode: ViewM
           </p>
         ) : null}
         {mode === "pro" ? (
-          <p className="mt-3 text-[11px] text-muted">
+          <p className="mt-3 text-[0.75rem] text-muted">
             {weightText(loc.scores)} 가중. 개수 항목은 거리 가중 후 포화 곡선(수도권 주거지 보통 수준 ≈ 63점)이라 도심 상권·학원가와 한적한 곳이
             구별됩니다. 거리는 직선거리(공원은 경계까지, 규모 반영), 미수집 항목은 제외. 계산 {formatDate(loc.computed_at)}
           </p>
         ) : (
-          <p className="mt-3 text-[11px] text-muted">역·직장·학교·마트·공원 등 8개 항목을 거리와 개수로 점수화했어요(수도권 주거지 보통 ≈ 63점). 계산 {formatDate(loc.computed_at)}</p>
+          <p className="mt-3 text-[0.75rem] text-muted">역·직장·학교·마트·공원 등 8개 항목을 거리와 개수로 점수화했어요(수도권 주거지 보통 ≈ 63점). 계산 {formatDate(loc.computed_at)}</p>
         )}
       </Card>
 
@@ -185,7 +185,7 @@ export async function LocationTab({ item, mode }: { item: WatchItem; mode: ViewM
                   </li>
                 ))}
               </ul>
-              <p className="mt-1 text-[11px] text-muted">단순 전후 비교로 다른 요인(금리·공급)이 섞여 있을 수 있습니다.</p>
+              <p className="mt-1 text-[0.75rem] text-muted">단순 전후 비교로 다른 요인(금리·공급)이 섞여 있을 수 있습니다.</p>
             </div>
           ) : null}
           {dev.infra.length ? (
@@ -271,7 +271,7 @@ function CalibrationCard({ calib, scores }: { calib: LocationCalibration; scores
               ))}
             </tbody>
           </table>
-          <p className="mt-1 text-[11px] text-muted">
+          <p className="mt-1 text-[0.75rem] text-muted">
             데이터 권장 가중은 회귀 결과를 표본 수만큼만 반영(적으면 현재 가중 쪽)한 참고값이며 자동으로 바꾸지 않습니다. 가격에는 학군 평판·브랜드·향 등 점수에 없는 요인도 섞여 있습니다.
           </p>
         </div>

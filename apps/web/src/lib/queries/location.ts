@@ -24,8 +24,8 @@ export type Development = {
 export type LocationScore = { total: number | null; scores: Record<string, LocCategory>; development: Development | null; computed_at: string };
 
 /**
- * 입지 점수 + 백분위. 백분위는 반경 1km 안에서 점수를 계산한 단지들과 비교한다 — 시설 자료는 관심 부동산 주변만
- * 모으므로(ETL analytics/location.py COVER_M) 멀리 있는 단지와 비교하면 순위가 부풀려진다.
+ * 입지 점수 + 백분위. 백분위는 반경 1km 안에서 시설이 갖춰진 상태로(basis = full) 계산한 단지들과 비교한다 —
+ * 지도에서 즉석으로 낸 간이 점수(밀집 시설 빠짐)와 섞으면 순위가 틀어진다.
  */
 export async function itemLocation(itemId: string) {
   // 점수·백분위·내 관심 부동산 중 순위를 한 쿼리로(왕복 1회)
@@ -36,7 +36,7 @@ export async function itemLocation(itemId: string) {
     left join lateral (
       select count(*) filter (where s.total < l.total)::int as below, count(*)::int as n
       from location_scores s join complexes c on c.id::text = s.target_id
-      where s.target_type = 'complex' and s.total is not null and c.geom is not null and w.geom is not null
+      where s.target_type = 'complex' and s.total is not null and s.basis = 'full' and c.geom is not null and w.geom is not null
         and ST_DWithin(c.geom::geography, w.geom::geography, ${PEER_RADIUS_M})
         and (w.complex_id is null or c.id <> w.complex_id)
     ) p on l.total is not null

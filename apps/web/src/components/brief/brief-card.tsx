@@ -66,9 +66,9 @@ export function BriefCard({
                       </Link>
                     ) : null}
                   </div>
-                  <p className={clsx("mt-0.5 text-[15px] font-semibold leading-snug", HEAD[a.tone])}>{a.headline}</p>
-                  {a.detail ? <p className="mt-0.5 text-[13px] leading-relaxed text-muted">{a.detail}</p> : null}
-                  {a.trust ? <p className="mt-1 text-[11px] leading-relaxed text-muted">ⓘ {a.trust}</p> : null}
+                  <p className={clsx("mt-0.5 text-sm font-semibold leading-snug", HEAD[a.tone])}>{a.headline}</p>
+                  {a.detail ? <p className="mt-0.5 text-xs leading-relaxed text-muted">{a.detail}</p> : null}
+                  {a.trust ? <p className="mt-1 text-[0.75rem] leading-relaxed text-muted">ⓘ {a.trust}</p> : null}
                   {slot ? <div className="mt-2">{slot}</div> : null}
                 </div>
               </div>
@@ -76,7 +76,7 @@ export function BriefCard({
           );
         })}
       </ul>
-      {footer ? <div className="border-t border-border px-4 py-2 text-[11px] text-muted">{footer}</div> : null}
+      {footer ? <div className="border-t border-border px-4 py-2 text-[0.75rem] text-muted">{footer}</div> : null}
     </Card>
   );
 }

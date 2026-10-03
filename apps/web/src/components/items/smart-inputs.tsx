@@ -107,7 +107,7 @@ export function ChoiceChips({
   const opts = options.some((o) => o.value === defaultValue) ? options : [...options, { value: defaultValue, label: defaultValue }];
   return (
     <div>
-      <span className="mb-1 block text-[13px] font-medium text-muted">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-muted">{label}</span>
       <input type="hidden" name={name} value={v} />
       <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={label}>
         {opts.map((o) => (
@@ -120,7 +120,7 @@ export function ChoiceChips({
               setV(o.value);
               onChange?.(o.value);
             }}
-            className={`rounded-full border px-3 py-1.5 text-[13px] ${v === o.value ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text"}`}
+            className={`rounded-full border px-3 py-1.5 text-xs ${v === o.value ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text"}`}
           >
             {o.label}
           </button>

@@ -47,15 +47,15 @@ export default async function MenuPage() {
 
       {sections.map((s, i) => (
         <section key={i}>
-          <h2 className="mb-2 px-1 text-[13px] font-semibold text-muted">{s.title ?? "바로가기"}</h2>
+          <h2 className="mb-2 px-1 text-xs font-semibold text-muted">{s.title ?? "바로가기"}</h2>
           <Card className="grid grid-cols-2 gap-px overflow-hidden bg-border sm:grid-cols-3">
             {s.items.map(({ href, label, icon: Icon, desc, member: needs }) => (
               <Link key={href + label} href={href} className="flex items-start gap-3 bg-surface p-3.5 hover:bg-surface-2">
                 <Icon size={20} className="mt-0.5 shrink-0 text-accent" strokeWidth={1.9} />
                 <span className="min-w-0">
-                  <span className="flex items-center gap-1 text-[15px] font-medium">
+                  <span className="flex items-center gap-1 text-sm font-medium">
                     {label}
-                    {needs && !member ? <span className="rounded bg-surface-2 px-1 text-[10px] font-medium text-muted">가입</span> : null}
+                    {needs && !member ? <span className="rounded bg-surface-2 px-1 text-[0.75rem] font-medium text-muted">가입</span> : null}
                   </span>
                   {desc ? <span className="block truncate text-xs text-muted">{desc}</span> : null}
                 </span>

@@ -45,14 +45,14 @@ export function NotificationRow({ n, showItem = true }: { n: Notification; showI
         <Icon size={16} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+        <div className="flex flex-wrap items-center gap-1.5 text-[0.75rem] text-muted">
           <Badge tone={k.tone}>{k.label}</Badge>
           {showItem && n.item_label ? <span className="truncate">{n.item_label}</span> : null}
           <span>· {timeAgo(n.created_at)}</span>
           {n.priority >= 2 ? <span className="font-semibold text-up">중요</span> : null}
         </div>
         <p className={clsx("mt-1 text-sm leading-snug", !n.read_at && "font-semibold")}>{n.title}</p>
-        {n.body ? <p className="mt-0.5 line-clamp-2 text-[13px] text-muted">{n.body}</p> : null}
+        {n.body ? <p className="mt-0.5 line-clamp-2 text-xs text-muted">{n.body}</p> : null}
       </div>
     </div>
   );

@@ -24,7 +24,7 @@ export async function NotesTab({ item }: { item: WatchItem }) {
         <ul className="divide-y divide-border px-4 pb-2">
           {memo.map((n) => (
             <li key={n.id} className="py-3">
-              <p className="whitespace-pre-wrap text-[15px]">{n.body}</p>
+              <p className="whitespace-pre-wrap text-sm">{n.body}</p>
               <div className="mt-1 flex items-center gap-3 text-xs text-muted">
                 <span>{timeAgo(n.created_at)}</span>
                 <form action={deleteNoteAction.bind(null, n.id)}><button className="text-up">삭제</button></form>

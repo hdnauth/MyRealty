@@ -11,11 +11,13 @@ import type { MapOverlays } from "@/app/api/map/overlays/route";
 import type { MapSearchResult } from "@/app/api/map/search/route";
 import { activeFilterCount, COMPLEX_TYPES, EMPTY_FILTERS, type MapFilters, type MapPoint, normalizeFilters, SORTS, type SortKey, filtersToQuery, sortPoints } from "@/lib/map-filters";
 import { PHASE_COLOR, ZONE_STAGES, zonePhase } from "@/lib/projects";
+import type { LocSummary } from "@/lib/location-score";
 import { DEAL_KIND_LABEL, GROUP_TAGS, isPropertyType, PROPERTY_TYPES } from "@/lib/property";
 import { ComplexTrades, type Trade } from "./complex-trades";
 import { CoverageNote } from "./coverage-note";
 import { MapIntro } from "./map-intro";
 import { FilterBar, FilterPanel } from "./filter-panel";
+import { LocBars } from "./loc-bars";
 import { MapSearch } from "./map-search";
 import { type BaseMap, type BBox, clusterByDistance, createLeafletMap, distanceKm, createNaverMap, loadLeaflet, loadNaver, type MapHandle, type Removable, declutter, pinLabel, satelliteSources, shortName, tileSources, vworldWmsUrl } from "./engines";
 
@@ -110,6 +112,12 @@ function escapeHtml(s: string) {
 }
 
 const FILTER_STORE = "map-filters-v1";
+/** 이 확대 단계(약 1.5km 폭) 이상에서만 화면 안 단지 입지 점수를 즉석으로 채운다 — 넓은 화면에서 수백 곳을 계산하지 않게 */
+const LOC_ZOOM = 15;
+/** 한 번에 묻는 단지 수(화면 가운데에 가까운 순) */
+const LOC_BATCH = 30;
+/** 한 화면에서 '남은 단지' 다시 묻기 횟수 */
+const LOC_ROUNDS = 4;
 
 /** 라벨·목록 보조 지표: 정렬 기준에 맞춰 보여 준다 */
 function metricText(p: MapPoint, sort: SortKey): string | null {
@@ -214,7 +222,21 @@ export function RealtyMap({
   });
   const [kind, setKind] = useState<"sale" | "jeonse">("sale");
   const [months, setMonths] = useState(6);
-  const [points, setPoints] = useState<MapPoint[]>([]);
+  const [rawPoints, setPoints] = useState<MapPoint[]>([]);
+  // 즉석으로 받은 입지 점수(단지 id → 요약). 집계에 점수가 없던 단지는 이 값으로 채워 라벨·정렬·필터 표시에 쓴다
+  const [locCache, setLocCache] = useState<Record<number, LocSummary>>({});
+  const locRef = useRef(locCache);
+  useEffect(() => {
+    locRef.current = locCache;
+  }, [locCache]);
+  const points = useMemo(
+    () =>
+      rawPoints.map((p) => {
+        const l = p.complex_id !== null ? locCache[p.complex_id] : undefined;
+        return l && p.loc_score === null && l.total !== null ? { ...p, loc_score: l.total } : p;
+      }),
+    [rawPoints, locCache],
+  );
   const [truncated, setTruncated] = useState(false);
   // 화면 이동·조건 변경마다 다시 조회한다. 진행·실패를 보여 줘야 이전 결과가 남아 있는 것과 구분된다
   const [searching, setSearching] = useState(false);
@@ -351,7 +373,7 @@ export function RealtyMap({
           zIndex: 1000,
           title: it.label,
           onClick: () => onPinClick(it.id),
-          html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;cursor:pointer">★ ${escapeHtml(pinLabel(it.label, 14))}${price ? `<span style="font-weight:500;opacity:.9">${formatManwon(price, { short: true })}</span>` : ""}</div>`,
+          html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:999px;background:#2563eb;color:#fff;font-size:13px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap;cursor:pointer">★ ${escapeHtml(pinLabel(it.label, 14))}${price ? `<span style="font-weight:500;opacity:.9">${formatManwon(price, { short: true })}</span>` : ""}</div>`,
         });
       }
       // 청약 접수(입주 예정은 레이어로 따로)
@@ -361,7 +383,7 @@ export function RealtyMap({
           lat: ev.lat,
           zIndex: 500,
           title: ev.title,
-          html: `<div title="${escapeHtml(ev.title)}" style="transform:translate(-10px,-50%);display:inline-block;padding:3px 6px;border-radius:6px;background:#eb6834;color:#fff;font-size:11px;font-weight:600;white-space:nowrap">청약 · ${escapeHtml(ev.title.slice(0, 10))}</div>`,
+          html: `<div title="${escapeHtml(ev.title)}" style="transform:translate(-10px,-50%);display:inline-block;padding:4px 7px;border-radius:6px;background:#eb6834;color:#fff;font-size:12px;font-weight:600;white-space:nowrap">청약 · ${escapeHtml(ev.title.slice(0, 10))}</div>`,
         });
       }
       map.onIdle(setBbox);
@@ -389,7 +411,7 @@ export function RealtyMap({
       lat: atPoint[1],
       zIndex: 950,
       title: "거래 위치(읍면동 중심일 수 있음)",
-      html: `<div style="transform:translate(-50%,-100%);padding:3px 8px;border-radius:999px;background:#e8590c;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap">📍 거래 위치</div>`,
+      html: `<div style="transform:translate(-50%,-100%);padding:4px 9px;border-radius:999px;background:#e8590c;color:#fff;font-size:13px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap">📍 거래 위치</div>`,
     });
     return () => m.remove();
   }, [atPoint, mapVersion]);
@@ -480,6 +502,55 @@ export function RealtyMap({
     };
   }, [bbox, type, kind, months, filters, retry]);
 
+  // 화면 안 단지 입지 점수 즉석 채우기(확대 LOC_ZOOM 이상, 지도가 멈추고 0.6초 뒤, 가운데에 가까운 순).
+  // 지도를 다시 움직이면 요청을 끊는다(서버도 남은 계산을 멈춘다). 한도 때문에 남은 단지(pending)는 조금 뒤 다시 묻는다.
+  const locAsked = useRef(new Set<number>());
+  const locRounds = useRef({ key: "", n: 0 });
+  const [locRound, setLocRound] = useState(0);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !bbox || map.zoom() < LOC_ZOOM || !COMPLEX_TYPES.has(type)) return;
+    const key = bbox.map((v) => v.toFixed(4)).join(",");
+    if (locRounds.current.key !== key) locRounds.current = { key, n: 0 };
+    if (locRounds.current.n >= LOC_ROUNDS) return;
+    const [cx, cy] = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
+    const ids = rawPoints
+      .filter(
+        (p) =>
+          p.complex_id !== null &&
+          p.loc_score === null &&
+          !locRef.current[p.complex_id] &&
+          !locAsked.current.has(p.complex_id) &&
+          p.lng >= bbox[0] && p.lng <= bbox[2] && p.lat >= bbox[1] && p.lat <= bbox[3],
+      )
+      .sort((a, b) => (a.lng - cx) ** 2 + (a.lat - cy) ** 2 - ((b.lng - cx) ** 2 + (b.lat - cy) ** 2))
+      .slice(0, LOC_BATCH)
+      .map((p) => p.complex_id as number);
+    if (!ids.length) return;
+    const ctl = new AbortController();
+    let again: ReturnType<typeof setTimeout> | undefined;
+    const t = setTimeout(() => {
+      locRounds.current.n++;
+      ids.forEach((id) => locAsked.current.add(id));
+      fetch(`/api/map/location?ids=${ids.join(",")}`, { signal: ctl.signal })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((d: { scores: Record<number, LocSummary>; pending: number[] }) => {
+          setLocCache((prev) => ({ ...prev, ...d.scores }));
+          d.pending.forEach((id) => locAsked.current.delete(id));
+          if (d.pending.length) again = setTimeout(() => setLocRound((x) => x + 1), 1500);
+        })
+        .catch(() => {
+          // 끊겼거나 실패: 다음에 다시 물을 수 있게
+          ids.forEach((id) => locAsked.current.delete(id));
+        });
+    }, 600);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(again);
+      ctl.abort();
+    };
+  }, [rawPoints, bbox, type, locRound]);
+
   const select = useCallback((p: MapPoint, pan = true) => {
     setSelected(p);
     setDetail(null);
@@ -504,7 +575,7 @@ export function RealtyMap({
       sortPoints(points, sortKey),
       bbox,
       map.size(),
-      { w: 96, h: 34, keep: (p) => selected?.key === p.key || (p.complex_id !== null && myComplexes.has(p.complex_id)) },
+      { w: 112, h: 42, keep: (p) => selected?.key === p.key || (p.complex_id !== null && myComplexes.has(p.complex_id)) },
     );
     markersRef.current = shown.map((p) => {
       const main = labelMode === "unit" && p.median_ppy && COMPLEX_TYPES.has(type) ? `${formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}/${unit === "pyeong" ? "평" : "㎡"}` : formatManwon(p.median_price, { short: true });
@@ -516,7 +587,7 @@ export function RealtyMap({
         lat: p.lat,
         zIndex: active ? 900 : 100,
         onClick: () => select(p),
-        html: `<div style="position:relative;transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:11px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:pointer"><span>${mine ? "★ " : ""}${changeArrow(p.change_1y)}${main}</span><span style="font-weight:400;opacity:.7">${escapeHtml(shortName(p.name))} · ${escapeHtml(sub)}</span>${p.talk ? `<span title="최근 7일 동네 이야기 새 글" style="position:absolute;top:-7px;right:-7px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#f97316;color:#fff;font-size:10px;line-height:16px;text-align:center;font-weight:700">${p.talk > 9 ? "9+" : p.talk}</span>` : ""}</div>`,
+        html: `<div style="position:relative;transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:4px 8px;border-radius:9px;background:${active ? "#16191f" : "#ffffff"};color:${active ? "#fff" : "#16191f"};border:${mine ? "2px solid #2563eb" : "1px solid rgba(0,0,0,.12)"};box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:13px;line-height:1.3;white-space:nowrap;font-weight:600;cursor:pointer"><span>${mine ? "★ " : ""}${changeArrow(p.change_1y)}${main}</span><span style="font-weight:400;font-size:12px;opacity:.75">${escapeHtml(shortName(p.name))} · ${escapeHtml(sub)}</span>${p.talk ? `<span title="최근 7일 동네 이야기 새 글" style="position:absolute;top:-7px;right:-7px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:#f97316;color:#fff;font-size:11px;line-height:18px;text-align:center;font-weight:700">${p.talk > 9 ? "9+" : p.talk}</span>` : ""}</div>`,
       });
     });
   }, [points, selected, type, select, mapVersion, unit, myComplexes, bbox, sortKey, labelMode]);
@@ -636,8 +707,8 @@ export function RealtyMap({
               setProjectInfo(p);
             },
             html: compact
-              ? `<div style="transform:translate(-50%,-50%);width:16px;height:16px;border-radius:5px;background:${color};color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${p.type === "zone" ? (p.step ?? "") : "🚉"}</div>`
-              : `<div style="transform:translate(-50%,-50%);display:inline-block;padding:3px 6px;border-radius:6px;background:${color};color:#fff;font-size:11px;white-space:nowrap">${p.type === "zone" ? "🏗" : "🚉"} ${escapeHtml(p.name.slice(0, 14))}<br><span style="opacity:.8">${escapeHtml(label)}</span></div>`,
+              ? `<div style="transform:translate(-50%,-50%);width:20px;height:20px;border-radius:6px;background:${color};color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${p.type === "zone" ? (p.step ?? "") : "🚉"}</div>`
+              : `<div style="transform:translate(-50%,-50%);display:inline-block;padding:4px 7px;border-radius:6px;background:${color};color:#fff;font-size:12px;white-space:nowrap">${p.type === "zone" ? "🏗" : "🚉"} ${escapeHtml(p.name.slice(0, 14))}<br><span style="opacity:.8">${escapeHtml(label)}</span></div>`,
           }),
         );
       }
@@ -655,7 +726,7 @@ export function RealtyMap({
             setProjectInfo(null);
             setPoiInfo(p);
           },
-          html: `<div title="${escapeHtml(p.name)}" style="transform:translate(-50%,-50%);width:22px;height:22px;border-radius:999px;background:${st.bg};display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${st.icon}</div>`,
+          html: `<div title="${escapeHtml(p.name)}" style="transform:translate(-50%,-50%);width:26px;height:26px;border-radius:999px;background:${st.bg};display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${st.icon}</div>`,
         }),
       );
     }
@@ -674,7 +745,7 @@ export function RealtyMap({
           lat: ev.lat,
           zIndex: 400,
           title: ev.title,
-          html: `<div title="${escapeHtml(ev.title)}" style="transform:translate(-50%,-50%);display:inline-block;padding:3px 6px;border-radius:6px;background:#1baf7a;color:#fff;font-size:11px;white-space:nowrap">🏠 ${ev.starts_on ? `${ev.starts_on.slice(2, 4)}.${ev.starts_on.slice(5, 7)}` : ""} 입주${ev.households ? ` · ${ev.households.toLocaleString()}세대` : ""}<br><span style="opacity:.85">${escapeHtml(ev.title.replace(/ 입주 예정$/, "").slice(0, 14))}</span></div>`,
+          html: `<div title="${escapeHtml(ev.title)}" style="transform:translate(-50%,-50%);display:inline-block;padding:4px 7px;border-radius:6px;background:#1baf7a;color:#fff;font-size:12px;white-space:nowrap">🏠 ${ev.starts_on ? `${ev.starts_on.slice(2, 4)}.${ev.starts_on.slice(5, 7)}` : ""} 입주${ev.households ? ` · ${ev.households.toLocaleString()}세대` : ""}<br><span style="opacity:.85">${escapeHtml(ev.title.replace(/ 입주 예정$/, "").slice(0, 14))}</span></div>`,
         }),
       );
     return () => ms.forEach((m) => m.remove());
@@ -800,6 +871,24 @@ export function RealtyMap({
 
   // 검색·링크로 고른 단지는 집계가 오면 그 값(거래 수·중위·지표)으로 보여 준다
   const sel = selected ? (points.find((p) => p.key === selected.key) ?? selected) : null;
+  // 고른 단지의 입지(항목별 막대까지): 확대 단계와 상관없이 바로 묻는다
+  const selCid = sel?.complex_id ?? null;
+  const [locFailed, setLocFailed] = useState<Record<number, true>>({});
+  useEffect(() => {
+    if (selCid === null || locRef.current[selCid]) return;
+    const ctl = new AbortController();
+    fetch(`/api/map/location?ids=${selCid}&priority=1`, { signal: ctl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { scores: Record<number, LocSummary> }) => {
+        if (d.scores[selCid]) setLocCache((prev) => ({ ...prev, ...d.scores }));
+        else setLocFailed((prev) => ({ ...prev, [selCid]: true }));
+      })
+      .catch(() => {
+        if (!ctl.signal.aborted) setLocFailed((prev) => ({ ...prev, [selCid]: true }));
+      });
+    return () => ctl.abort();
+  }, [selCid]);
+  const selLoc = selCid !== null ? locCache[selCid] : undefined;
 
   // 검색 결과로 이동: 단지면 그 유형으로 바꾸고 단지를 연다, 동네·주소면 그 위치로
   const onSearchPick = useCallback(
@@ -941,11 +1030,11 @@ export function RealtyMap({
             className="shrink-0 cursor-grab touch-none select-none border-b border-border lg:cursor-auto lg:touch-auto lg:select-auto"
           >
             <div className="mx-auto mt-1.5 h-1 w-10 rounded-full bg-border lg:hidden" />
-            <div className="flex h-11 items-center gap-2 px-4 text-sm lg:h-12">
+            <div className="flex h-12 items-center gap-2 px-4 text-sm">
               {sel ? (
                 <>
-                  <button type="button" aria-label="목록으로" onClick={() => setSelected(null)} className="-ml-1.5 shrink-0 p-1 text-muted hover:text-text">
-                    <ChevronLeft size={18} />
+                  <button type="button" aria-label="목록으로" onClick={() => setSelected(null)} className="-ml-2 shrink-0 p-2 text-muted hover:text-text">
+                    <ChevronLeft size={22} />
                   </button>
                   <b className="min-w-0 flex-1 truncate">{sel.name}</b>
                   {sel.n ? (
@@ -969,7 +1058,7 @@ export function RealtyMap({
                     value={sortKey}
                     onChange={(e) => setSort(e.target.value as SortKey)}
                     aria-label="정렬"
-                    className="h-7 shrink-0 rounded-full border border-border bg-surface px-2 text-xs"
+                    className="h-9 shrink-0 rounded-full border border-border bg-surface px-3 text-sm"
                   >
                     {SORTS.filter((x) => COMPLEX_TYPES.has(type) || !x.complexOnly).map((x) => (
                       <option key={x.key} value={x.key}>
@@ -999,7 +1088,7 @@ export function RealtyMap({
                     <X size={16} />
                   </button>
                 </div>
-                <div className="mt-2 flex gap-3 text-sm">
+                <div className="mt-2 flex gap-4 text-sm">
                   <Link href={`/items/${focus.id}`} className="text-accent">상세</Link>
                   <Link href={`/items/${focus.id}?tab=price#nearby`} className="text-accent">비슷한 주변 거래</Link>
                   <Link href={`/items/${focus.id}?tab=location`} className="text-accent">입지</Link>
@@ -1018,23 +1107,52 @@ export function RealtyMap({
                 {indicatorBits(sel).length ? (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {indicatorBits(sel).map((b) => (
-                      <span key={b} className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">
+                      <span key={b} className="rounded-md bg-surface-2 px-2 py-0.5 text-xs text-muted">
                         {b}
                       </span>
                     ))}
                   </div>
                 ) : null}
                 {sel.complex_id ? (
-                  <div className="mt-2.5 flex gap-2 text-sm">
-                    <Link href={complexHref(sel.complex_id, complexItems)} className="rounded-full border border-border px-3 py-1 hover:bg-surface-2">
+                  <div className="mt-3 rounded-xl bg-surface-2/60 p-3">
+                    <div className="mb-2 flex items-baseline gap-1.5">
+                      <span className="text-xs text-muted">생활편의</span>
+                      {selLoc?.total != null ? (
+                        <>
+                          <b className="tabular text-xl">{Math.round(selLoc.total)}</b>
+                          <span className="text-xs text-muted">/ 100</span>
+                          {selLoc.basis === "quick" ? (
+                            <span className="ml-auto rounded-md bg-surface px-1.5 py-0.5 text-xs text-muted" title="역·학교·공원·병원·마트와 업무지구 거리로 낸 점수 — 학원·음식점 등은 다음 매일 수집 뒤 반영">간이</span>
+                          ) : null}
+                        </>
+                      ) : selLoc || locFailed[sel.complex_id] ? (
+                        <span className="text-xs text-muted">— 주변 시설 자료를 아직 모으지 못했어요</span>
+                      ) : (
+                        <Loader2 size={14} className="animate-spin self-center text-muted" aria-label="입지 점수 계산 중" />
+                      )}
+                    </div>
+                    {selLoc?.total != null ? (
+                      <LocBars cats={selLoc.cats} />
+                    ) : !selLoc && !locFailed[sel.complex_id] ? (
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2" aria-hidden>
+                        {Array.from({ length: 8 }, (_, i) => (
+                          <span key={i} className="h-2 animate-pulse rounded-full bg-surface" />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {sel.complex_id ? (
+                  <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                    <Link href={complexHref(sel.complex_id, complexItems)} className="rounded-full border border-border px-3.5 py-2 hover:bg-surface-2">
                       {complexItems[sel.complex_id] ? "내 부동산 상세" : "단지 상세"}
                     </Link>
-                    <Link href={`/community?complex=${sel.complex_id}`} className="rounded-full border border-border px-3 py-1 hover:bg-surface-2">
+                    <Link href={`/community?complex=${sel.complex_id}`} className="rounded-full border border-border px-3.5 py-2 hover:bg-surface-2">
                       이야기{detail?.talk?.total ? ` ${detail.talk.total}` : ""}
-                      {detail?.talk?.recent ? <span className="ml-1 rounded-full bg-orange-500 px-1.5 text-[10px] font-bold text-white">N</span> : null}
+                      {detail?.talk?.recent ? <span className="ml-1 rounded-full bg-orange-500 px-1.5 text-xs font-bold text-white">N</span> : null}
                     </Link>
                     {!complexItems[sel.complex_id] ? (
-                      <Link href={registerComplexHref(sel.complex_id)} className="rounded-full bg-accent px-3 py-1 font-medium text-white">
+                      <Link href={registerComplexHref(sel.complex_id)} className="rounded-full bg-accent px-3.5 py-2 font-medium text-white">
                         ★ 관심 등록
                       </Link>
                     ) : null}
@@ -1052,7 +1170,7 @@ export function RealtyMap({
               {items.length === 0 && missingItems.length === 0 ? <MapIntro /> : null}
               <ul className={clsx("divide-y divide-border transition-opacity", searching && "opacity-50")} aria-busy={searching}>
                 {filterCount ? (
-                  <li className="flex items-center justify-between gap-2 bg-accent-soft/40 px-4 py-2 text-xs">
+                  <li className="flex items-center justify-between gap-2 bg-accent-soft/40 px-4 py-2.5 text-xs">
                     <span className="text-muted">
                       조건 {filterCount}개 적용 · {SORTS.find((x) => x.key === sortKey)?.label}
                     </span>
@@ -1074,7 +1192,7 @@ export function RealtyMap({
 
                 {sorted.map((p) => (
                   <li key={p.key}>
-                    <button type="button" onClick={() => select(p)} className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-surface-2">
+                    <button type="button" onClick={() => select(p)} className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left hover:bg-surface-2">
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-medium">
                           {p.complex_id !== null && myComplexes.has(p.complex_id) ? <span className="text-accent">★ </span> : null}
@@ -1083,11 +1201,11 @@ export function RealtyMap({
                         <span className="text-xs text-muted">
                           {p.n}건 · 최근 {formatDate(p.last_date)}
                         </span>
-                        {indicatorBits(p).length ? <span className="block truncate text-[11px] text-muted">{indicatorBits(p).join(" · ")}</span> : null}
+                        {indicatorBits(p).length ? <span className="block truncate text-xs text-muted">{indicatorBits(p).join(" · ")}</span> : null}
                       </span>
-                      <span className="tabular shrink-0 text-right text-sm font-semibold">
+                      <span className="tabular shrink-0 text-right text-base font-semibold">
                         {formatManwon(p.median_price, { short: true })}
-                        {p.median_ppy ? <span className="block text-[11px] font-normal text-muted">{unitPriceLabel(unit)} {formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}</span> : null}
+                        {p.median_ppy ? <span className="block text-xs font-normal text-muted">{unitPriceLabel(unit)} {formatManwon(fromPerPyeong(p.median_ppy, unit), { short: true })}</span> : null}
                       </span>
                     </button>
                   </li>
@@ -1105,7 +1223,7 @@ export function RealtyMap({
             <div ref={el} className="map-canvas h-full w-full bg-surface-2" />
           </div>
           {engine === "leaflet" && !keyId && !notice ? (
-            <div className={clsx("pointer-events-none absolute left-2 z-[500] rounded-md bg-surface/90 px-2 py-1 text-[11px] text-muted shadow", aboveSheet)}>
+            <div className={clsx("pointer-events-none absolute left-2 z-[500] rounded-md bg-surface/90 px-2 py-1 text-[0.75rem] text-muted shadow", aboveSheet)}>
               대체 지도 · NCP_MAPS_KEY_ID 를 설정하면 네이버 지도로 표시됩니다
             </div>
           ) : null}
@@ -1181,7 +1299,7 @@ export function RealtyMap({
                       </span>
                       <span className="tabular shrink-0 text-right font-semibold">
                         {formatManwon(it.estimate ?? it.last_price, { short: true })}
-                        <span className="block text-[11px] font-normal text-muted">{it.estimate ? "추정 시세" : it.last_price ? "최근 매매" : "시세 없음"}</span>
+                        <span className="block text-[0.75rem] font-normal text-muted">{it.estimate ? "추정 시세" : it.last_price ? "최근 매매" : "시세 없음"}</span>
                       </span>
                     </button>
                   </li>
@@ -1263,8 +1381,8 @@ export function RealtyMap({
                   ))}
                 </div>
               ))}
-              <p className="mt-2 text-[11px] text-muted">라벨의 <span className="text-up">▲</span>/<span className="text-down">▼</span> 는 1년 가격 변동(±1% 이상)입니다.</p>
-              {poiNote ? <p className="mt-1 text-[11px] text-muted">{poiNote}</p> : null}
+              <p className="mt-2 text-[0.75rem] text-muted">라벨의 <span className="text-up">▲</span>/<span className="text-down">▼</span> 는 1년 가격 변동(±1% 이상)입니다.</p>
+              {poiNote ? <p className="mt-1 text-[0.75rem] text-muted">{poiNote}</p> : null}
             </div>
           ) : null}
           {projectInfo ? (
@@ -1366,7 +1484,7 @@ function MapButton({
       )}
     >
       {children}
-      {badge ? <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-text px-1 text-[10px] font-bold leading-4 text-surface">{badge}</span> : null}
+      {badge ? <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-text px-1 text-[0.75rem] font-bold leading-4 text-surface">{badge}</span> : null}
     </button>
   );
 }

@@ -56,7 +56,7 @@ export function AreaBar({
               type="button"
               disabled={pending}
               onClick={() => save(t.area)}
-              className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium hover:border-accent hover:text-accent disabled:opacity-50"
+              className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-sm font-medium hover:border-accent hover:text-accent disabled:opacity-50"
             >
               {t.label} <span className="font-normal text-muted">· {t.trades}건</span>
             </button>
@@ -87,7 +87,7 @@ export function AreaBar({
               scroll={false}
               aria-current={on ? "true" : undefined}
               className={clsx(
-                "rounded-full border px-3 py-1 text-xs",
+                "rounded-full border px-3.5 py-1.5 text-sm",
                 on ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border bg-surface text-muted hover:border-accent hover:text-accent",
               )}
             >
@@ -99,7 +99,7 @@ export function AreaBar({
         })}
       </div>
       {other ? (
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-warn/10 px-3 py-2 text-[13px]">
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-warn/10 px-3 py-2 text-xs">
           <span>
             <b>{activeType?.label ?? `${viewing}㎡`}</b> 기준으로 보는 중입니다(저장 안 됨). 추정 시세·알림은 내 평형 기준입니다.
           </span>

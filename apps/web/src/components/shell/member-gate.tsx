@@ -24,7 +24,7 @@ export function MemberGate({ title, desc, next, children }: { title: string; des
 /** 게스트(이 기기 저장) 안내 한 줄 */
 export function GuestNote({ className }: { className?: string }) {
   return (
-    <p className={className ?? "rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-muted"}>
+    <p className={className ?? "rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted"}>
       로그인 없이 <b className="font-medium text-text">이 기기에 저장</b>되고 있어요.{" "}
       <Link href="/login" className="font-medium text-accent">이메일로 가입</Link>하면 다른 기기에서도 이어서 볼 수 있습니다.
     </p>

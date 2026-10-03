@@ -86,7 +86,7 @@ export function ItemSwitcher({ items, currentId, tab }: { items: SwitcherItem[];
         >
           {[...groups.map((g) => [g, items.filter((i) => i.group_tag === g)] as const), ...(others.length ? [["", others] as const] : [])].map(([g, list]) => (
             <div key={g || "etc"}>
-              {g ? <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-muted">{GROUP_TAGS[g as keyof typeof GROUP_TAGS]}</div> : null}
+              {g ? <div className="px-3 pb-1 pt-2 text-[0.75rem] font-medium text-muted">{GROUP_TAGS[g as keyof typeof GROUP_TAGS]}</div> : null}
               {list.map((i) => (
                 <Link
                   key={i.id}
@@ -100,7 +100,7 @@ export function ItemSwitcher({ items, currentId, tab }: { items: SwitcherItem[];
                     <TypeIcon type={i.property_type} size={15} />
                   </span>
                   <span className="min-w-0 flex-1 truncate">{shortAddress(i.label)}</span>
-                  <span className="shrink-0 text-[11px] text-muted">{PROPERTY_TYPES[i.property_type]?.label}</span>
+                  <span className="shrink-0 text-[0.75rem] text-muted">{PROPERTY_TYPES[i.property_type]?.label}</span>
                   {i.id === currentId ? <Check size={14} className="shrink-0" /> : null}
                 </Link>
               ))}

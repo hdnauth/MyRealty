@@ -9,7 +9,7 @@ import { Card, CardHeader, Change, Stat } from "@/components/ui";
 import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { formatDate, formatManwon, formatNumber } from "@/lib/format";
 import { calendarEntries, listNotifications } from "@/lib/queries/feed";
-import { listItems } from "@/lib/queries/items";
+import { itemTrends, listItems } from "@/lib/queries/items";
 import { getAreaUnit } from "@/lib/area-unit";
 import { sql } from "@/lib/db";
 import { insightBalance, marketInsights } from "@/lib/insights";
@@ -38,7 +38,7 @@ export default async function HomePage() {
   const owned = items.filter((i) => i.group_tag === "owned");
   // 대표 지역: 보유 → 첫 관심 부동산 순
   const mainSgg = (owned[0] ?? items[0])?.sgg_cd ?? null;
-  const [inputs, [monthAgo], newTrades] = await Promise.all([
+  const [inputs, [monthAgo], newTrades, trends] = await Promise.all([
     insightInputs(mainSgg),
     // 보유 부동산 추정 시세 합계: 30일 전 스냅샷
     sql<{ total: number | null }[]>`
@@ -54,6 +54,7 @@ export default async function HomePage() {
         and t.deal_date >= current_date - 60
         and (w.area_m2 is null or abs(t.area_m2 - w.area_m2) <= 3)
       order by t.deal_date desc limit 5`,
+    itemTrends(uid),
   ]);
   const insights = marketInsights(inputs);
   const balance = insightBalance(insights);
@@ -66,28 +67,64 @@ export default async function HomePage() {
   const highs = unread.filter((n) => n.kind === "record_high").length;
   const news = unread.filter((n) => n.kind === "news").length;
 
+  const SHOWN = 6;
   return (
     <div className="space-y-4">
       {user.isGuest ? <GuestNote /> : null}
+
+      {/* 관심 부동산이 가장 먼저 — 시세·1년 변화·추세를 글보다 앞에 */}
+      <section aria-labelledby="watch-title">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <h2 id="watch-title" className="text-lg font-bold">관심 부동산 <span className="text-base font-medium text-muted">{items.length}</span></h2>
+          <Link href="/items/new" className="hit flex items-center gap-0.5 rounded-lg px-2 py-1 text-sm font-medium text-accent">
+            <Plus size={18} />등록
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {items.slice(0, SHOWN).map((i) => (
+            <ItemCard key={i.id} item={i} unit={unit} trend={trends.get(i.id)} />
+          ))}
+        </div>
+        {items.length > SHOWN ? (
+          <Link href="/items" className="mt-2 flex items-center justify-center gap-0.5 rounded-xl py-2.5 text-sm text-accent hover:bg-surface-2">
+            {items.length - SHOWN}개 더 보기<ChevronRight size={18} />
+          </Link>
+        ) : null}
+      </section>
+
+      {owned.length ? (
+        <Link href="/portfolio" className="card block p-4 hover:border-accent/40">
+          <div className="grid grid-cols-3 gap-3">
+            <Stat
+              label="보유 자산 시세"
+              value={formatManwon(value, { short: true })}
+              sub={
+                monthAgo?.total && owned.every((i) => i.estimate) ? (
+                  <span>한 달 <Change value={value / monthAgo.total - 1} /></span>
+                ) : (
+                  <span className="text-muted">{owned.length}건</span>
+                )
+              }
+            />
+            <Stat
+              label="평가 손익"
+              value={cost ? formatManwon(value - cost, { short: true }) : "-"}
+              sub={cost ? <span className={value >= cost ? "text-up" : "text-down"}>{(((value - cost) / cost) * 100).toFixed(1)}%</span> : null}
+            />
+            <Stat label="순자산" value={formatManwon(value - debt, { short: true })} sub={<span className="text-muted">부채 {formatManwon(debt, { short: true })}</span>} />
+          </div>
+        </Link>
+      ) : null}
+
       <Card className="p-4">
         <p className="text-xs text-muted">{formatDate(new Date(), "long")} 요약</p>
-        <ul className="mt-2 space-y-2 text-[15px] leading-relaxed">
-          {owned.length && value ? (
-            <li>
-              보유 자산 <b className="tabular">{formatManwon(value, { short: true })}</b>
-              {monthAgo?.total && owned.every((i) => i.estimate) ? (
-                <>
-                  {" "}· 한 달 전보다 <Change value={value / monthAgo.total - 1} /> ({formatManwon(value - monthAgo.total, { short: true })})
-                </>
-              ) : null}
-            </li>
-          ) : null}
+        <ul className="mt-2 space-y-2 text-sm leading-relaxed">
           {insights.length ? (
             <li>
               <Link href="/indicators" className="hover:text-accent">
                 {regionName ?? "관심 지역"} 시장: <b>{balance.verdict}</b>
                 <span className="text-muted"> — 상승 요인 {balance.up} · 하락 요인 {balance.down}</span>
-                <span className="block text-[13px] text-muted">
+                <span className="block text-sm text-muted">
                   {insights.filter((x) => x.tone !== "neutral").slice(0, 3).map((x) => x.title).join(" · ")}
                 </span>
               </Link>
@@ -113,7 +150,7 @@ export default async function HomePage() {
           <CardHeader title="이번 주 새로 신고된 거래" sub="관심 부동산과 같은 단지·평형 · 최근 7일 수집" />
           <ul className="divide-y divide-border px-4 pb-2 text-sm">
             {newTrades.map((t, i) => (
-              <li key={i} className="flex items-center justify-between gap-3 py-2">
+              <li key={i} className="flex items-center justify-between gap-3 py-2.5">
                 <Link href={`/items/${t.item_id}?tab=price`} className="min-w-0 truncate hover:text-accent">
                   {t.label} <span className="text-muted">· {formatDate(t.deal_date)} · {t.floor ? `${t.floor}층` : ""} {t.deal_kind === "sale" ? "매매" : t.deal_kind === "jeonse" ? "전세" : "월세"}</span>
                 </Link>
@@ -129,24 +166,8 @@ export default async function HomePage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          {owned.length ? (
-            <Link href="/portfolio" className="card block p-4 hover:border-accent/40">
-              <div className="grid grid-cols-3 gap-3">
-                <Stat label="보유 자산 시세" value={formatManwon(value, { short: true })} sub={<span className="text-muted">{owned.length}건</span>} />
-                <Stat
-                  label="평가 손익"
-                  value={cost ? formatManwon(value - cost, { short: true }) : "-"}
-                  sub={cost ? <span className={value >= cost ? "text-up" : "text-down"}>{(((value - cost) / cost) * 100).toFixed(1)}%</span> : null}
-                />
-                <Stat label="순자산" value={formatManwon(value - debt, { short: true })} sub={<span className="text-muted">부채 {formatManwon(debt, { short: true })}</span>} />
-              </div>
-            </Link>
-          ) : null}
-
-          <NeighborhoodFeed uid={uid} />
-
           <Card className="overflow-hidden">
-            <CardHeader title="최근 소식" action={<Link href="/notifications" className="flex items-center text-accent">전체<ChevronRight size={16} /></Link>} />
+            <CardHeader title="최근 소식" action={<Link href="/notifications" className="flex items-center text-accent">전체<ChevronRight size={18} /></Link>} />
             {notes.length ? (
               <div className="divide-y divide-border">
                 {notes.map((n) => (
@@ -157,23 +178,16 @@ export default async function HomePage() {
               <p className="px-4 pb-4 text-sm text-muted">아직 소식이 없습니다. 매일 아침 수집 후 표시됩니다.</p>
             )}
           </Card>
+          <NeighborhoodFeed uid={uid} />
         </div>
 
         <div className="space-y-4">
           <Card>
-            <CardHeader title="관심 부동산" action={<Link href="/items/new" className="flex items-center text-accent"><Plus size={16} />등록</Link>} />
-            <div className="space-y-2 px-3 pb-3">
-              {items.slice(0, 6).map((i) => (
-                <ItemCard key={i.id} item={i} unit={unit} />
-              ))}
-            </div>
-          </Card>
-          <Card>
-            <CardHeader title="다가오는 일정" action={<Link href="/calendar" className="flex items-center text-accent">캘린더<ChevronRight size={16} /></Link>} />
+            <CardHeader title="다가오는 일정" action={<Link href="/calendar" className="flex items-center text-accent">캘린더<ChevronRight size={18} /></Link>} />
             {upcoming.length ? (
               <ul className="divide-y divide-border px-4 pb-2 text-sm">
                 {upcoming.slice(0, 6).map((e, i) => (
-                  <li key={i} className="flex gap-3 py-2">
+                  <li key={i} className="flex gap-3 py-2.5">
                     <span className="tabular w-12 shrink-0 text-muted">{e.date.slice(5).replace("-", ".")}</span>
                     <span className="min-w-0">
                       <span className="block truncate">{e.title}</span>

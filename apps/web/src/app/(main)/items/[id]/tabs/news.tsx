@@ -40,7 +40,7 @@ export async function NewsTab({ item }: { item: WatchItem }) {
             {articles.map((a) => (
               <li key={a.link_id}>
                 <a href={safeHref(a.url) ?? undefined} target="_blank" rel="noreferrer" className="block px-4 py-3 hover:bg-surface-2">
-                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[0.75rem] text-muted">
                     {a.category ? (
                       <Badge tone="accent">{a.category}</Badge>
                     ) : a.query ? (
@@ -63,7 +63,7 @@ export async function NewsTab({ item }: { item: WatchItem }) {
                   <p className="mt-1 text-sm font-medium leading-snug">
                     {a.title} <ExternalLink size={12} className="inline text-muted" />
                   </p>
-                  {a.ai_summary ? <p className="mt-1 text-[13px] text-text/80">🤖 {a.ai_summary}</p> : null}
+                  {a.ai_summary ? <p className="mt-1 text-xs text-text/80">🤖 {a.ai_summary}</p> : null}
                 </a>
               </li>
             ))}
@@ -117,7 +117,7 @@ export async function NewsTab({ item }: { item: WatchItem }) {
                             <td className="py-1 text-right">{formatManwon(m.top_price, { short: true })}</td>
                             <td className={`py-1 text-right ${m.gap === null ? "text-muted" : m.gap < 0 ? "text-down" : "text-up"}`} title={m.market ? `주변 ${m.marketN}건 중위 ${formatManwon(m.market, { short: true })}${m.marketNew ? ` · 10년 이내 신축 ${formatManwon(m.marketNew, { short: true })}` : ""}` : "주변 거래 부족"}>
                               {m.gap === null ? "거래 부족" : formatPct(m.gap, 0)}
-                              {m.gapNew !== null ? <span className="block text-[10px] text-muted">신축 대비 {formatPct(m.gapNew, 0)}</span> : null}
+                              {m.gapNew !== null ? <span className="block text-[0.75rem] text-muted">신축 대비 {formatPct(m.gapNew, 0)}</span> : null}
                             </td>
                           </tr>
                         ))}

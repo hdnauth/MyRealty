@@ -93,11 +93,11 @@ export async function RebuildTab({ uid, sgg, age, sort, unit, href }: {
                   <tr key={r.id} className="border-b border-border/60 last:border-0">
                     <td className="max-w-[14rem] py-2">
                       <Link href={`/complexes/${r.id}`} className="block truncate text-accent">{r.name}</Link>
-                      <span className="text-[11px] text-muted">{sggLabel(r.sgg_name, r.sgg_cd)}{r.mine ? " · " : ""}{r.mine ? <Link href={`/items/${r.mine}`} className="text-accent">내 부동산</Link> : null}</span>
+                      <span className="text-[0.75rem] text-muted">{sggLabel(r.sgg_name, r.sgg_cd)}{r.mine ? " · " : ""}{r.mine ? <Link href={`/items/${r.mine}`} className="text-accent">내 부동산</Link> : null}</span>
                     </td>
-                    <td className="tabular py-2 text-right">{r.build_year} <span className="text-[11px] text-muted">({r.age}년)</span></td>
+                    <td className="tabular py-2 text-right">{r.build_year} <span className="text-[0.75rem] text-muted">({r.age}년)</span></td>
                     <td className="tabular py-2 text-right">{r.households?.toLocaleString() ?? "-"}</td>
-                    <td className="tabular py-2 text-right">{r.vl_rat ? `${Math.round(r.vl_rat)}%` : "-"} <span className="text-[11px] text-muted">{r.cap ? `(${r.cap}%)` : ""}</span></td>
+                    <td className="tabular py-2 text-right">{r.vl_rat ? `${Math.round(r.vl_rat)}%` : "-"} <span className="text-[0.75rem] text-muted">{r.cap ? `(${r.cap}%)` : ""}</span></td>
                     <td className={`tabular py-2 text-right ${r.headroom !== null && r.headroom > 0 ? "font-semibold text-up" : ""}`}>
                       {r.headroom !== null ? `${r.headroom > 0 ? "+" : ""}${Math.round(r.headroom)}%p` : "-"}
                     </td>
@@ -114,7 +114,7 @@ export async function RebuildTab({ uid, sgg, age, sort, unit, href }: {
         ) : (
           <EmptyState title="후보 단지가 없습니다" desc="수집된 시군구(관심 부동산이 있는 지역)의 단지만 봅니다. 관심 부동산을 등록하면 그 지역 단지가 채워집니다." />
         )}
-        <p className="px-4 pb-4 text-[11px] leading-relaxed text-muted">
+        <p className="px-4 pb-4 text-[0.75rem] leading-relaxed text-muted">
           용적률 상한은 서울시 도시계획 조례의 용도지역별 기준(참고값)이고 지역마다 다릅니다. 세대당 대지 = 대지면적 ÷ 세대수(평균). 실제 사업성은
           종상향·기부채납·분담금에 따라 크게 달라지므로 재료로만 쓰세요. 수집된 시군구 단지만 대상입니다.
         </p>

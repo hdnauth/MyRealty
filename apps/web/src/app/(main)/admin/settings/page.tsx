@@ -23,7 +23,7 @@ export default async function AdminSettings() {
         <CardHeader title="가입 · 공지 · AI 한도" />
         <ActionForm action={saveSiteSettingsAction} className="space-y-5 px-4 pb-4">
           <fieldset className="space-y-2">
-            <legend className="mb-1 text-[13px] font-medium text-muted">가입 방식</legend>
+            <legend className="mb-1 text-xs font-medium text-muted">가입 방식</legend>
             {SIGNUP_MODES.map((m) => (
               <label key={m.value} className="flex items-start gap-2 text-sm">
                 <input type="radio" name="signupMode" value={m.value} defaultChecked={site.signupMode === m.value} className="mt-1" />
@@ -37,18 +37,18 @@ export default async function AdminSettings() {
           </fieldset>
 
           <label className="block">
-            <span className="mb-1 block text-[13px] font-medium text-muted">사용자 1인당 월 AI 한도(USD)</span>
+            <span className="mb-1 block text-xs font-medium text-muted">사용자 1인당 월 AI 한도(USD)</span>
             <Input name="aiUserMonthlyLimitUsd" type="number" min={0} step="0.5" defaultValue={site.aiUserMonthlyLimitUsd ?? ""} placeholder="비우면 제한 없음" className="max-w-48" />
             <span className="mt-1 block text-xs text-muted">전체 월 예산은 환경 변수 AI_MONTHLY_BUDGET_USD(현재 ${budget})입니다. 둘 중 먼저 닿는 한도가 적용됩니다.</span>
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-[13px] font-medium text-muted">공지(모든 화면 상단)</span>
+            <span className="mb-1 block text-xs font-medium text-muted">공지(모든 화면 상단)</span>
             <Textarea name="notice" defaultValue={site.notice} rows={2} maxLength={300} placeholder="예) 9/30 02:00~03:00 점검 예정" />
           </label>
 
           <fieldset className="space-y-2">
-            <legend className="mb-1 text-[13px] font-medium text-muted">동네 이야기(커뮤니티)</legend>
+            <legend className="mb-1 text-xs font-medium text-muted">동네 이야기(커뮤니티)</legend>
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" name="communityEnabled" defaultChecked={site.communityEnabled} className="mt-1" />
               <span>글·댓글 작성 허용 <span className="block text-xs text-muted">끄면 읽기만 가능(관리자는 계속 쓸 수 있음)</span></span>

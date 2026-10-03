@@ -9,7 +9,7 @@ export default function LegalLayout({ children }: LayoutProps<"/legal">) {
         <img src="/icons/icon.svg" alt="" className="h-8 w-8" />
         <span className="font-bold">마이리얼티</span>
       </Link>
-      <article className="legal space-y-4 text-[15px] leading-relaxed">{children}</article>
+      <article className="legal space-y-4 text-sm leading-relaxed">{children}</article>
       <nav className="mt-10 flex flex-wrap gap-4 border-t border-border pt-4 text-sm text-muted">
         <Link href="/legal/privacy" className="hover:text-accent">개인정보처리방침</Link>
         <Link href="/legal/terms" className="hover:text-accent">이용약관</Link>

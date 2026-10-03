@@ -113,7 +113,7 @@ export default async function PortfolioPage(props: PageProps<"/portfolio">) {
                     <td className="px-4 py-2"><Link href={`/items/${r.id}`} className="hover:text-accent">{r.label}</Link></td>
                     <td className="px-2 py-2 text-right">
                       {formatManwon(cur, { short: true })}
-                      {source ? <span className="block text-[11px] text-muted">{VALUE_SOURCE_LABEL[source]}</span> : null}
+                      {source ? <span className="block text-[0.75rem] text-muted">{VALUE_SOURCE_LABEL[source]}</span> : null}
                     </td>
                     <td className="px-2 py-2 text-right">{formatManwon(r.purchase_price, { short: true })}</td>
                     <td className={`px-2 py-2 text-right ${r.purchase_price && v >= r.purchase_price ? "text-up" : "text-down"}`}>{r.purchase_price && source !== "purchase" ? formatPct(v / r.purchase_price - 1) : "-"}</td>

@@ -55,7 +55,7 @@ export async function NearbyCompare({ item, mode }: { item: WatchItem; mode: Vie
               endLabels
             />
           </div>
-          <p className="px-4 pb-4 text-[13px] leading-relaxed text-muted">
+          <p className="px-4 pb-4 text-xs leading-relaxed text-muted">
             지금 유사 단지보다 <b className="text-text">{formatPct(pos.rel.current)}</b> — 최근 3년 평균 격차는 {formatPct(pos.rel.average)}입니다
             {mode === "pro" ? ` (평소 대비 ${pos.rel.z >= 0 ? "+" : ""}${pos.rel.z.toFixed(1)} 표준편차)` : ""}.
             {pos.rel.z <= -1

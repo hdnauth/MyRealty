@@ -148,7 +148,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
       <PageHeader title="비교" sub="최대 5개 부동산을 나란히 비교" />
       <div className="flex flex-wrap gap-1.5">
         {all.map((i) => (
-          <Link key={i.id} href={toggle(i.id)} className={`rounded-full border px-3 py-1 text-[13px] ${ids.includes(i.id) ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted"}`}>
+          <Link key={i.id} href={toggle(i.id)} className={`rounded-full border px-3.5 py-1.5 text-sm ${ids.includes(i.id) ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted"}`}>
             {ids.includes(i.id) ? "✓ " : ""}
             {i.label}
           </Link>
@@ -185,7 +185,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
                 <tbody className="tabular">
                   {metrics.map((m) => (
                     <tr key={m.label} className="border-b border-border/60 last:border-0">
-                      <td className="sticky left-0 z-10 w-26 bg-surface px-3 py-2 text-[13px] leading-snug text-muted md:px-4">{m.label}</td>
+                      <td className="sticky left-0 z-10 w-26 bg-surface px-3 py-2 text-xs leading-snug text-muted md:px-4">{m.label}</td>
                       {rows.map((r) => (
                         <td key={r.it.id} className="px-3 py-2 text-right leading-snug">{m.get(r)}</td>
                       ))}
@@ -229,7 +229,7 @@ export default async function ComparePage(props: PageProps<"/compare">) {
             ) : null}
             {ai ? (
               <div className="space-y-4 px-4 pb-4 text-sm">
-                <p className="text-[15px] font-medium">{ai.data.result.summary}</p>
+                <p className="text-sm font-medium">{ai.data.result.summary}</p>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   {ai.data.result.items.map((x) => (
                     <div key={x.name} className="rounded-xl bg-surface-2 p-3">

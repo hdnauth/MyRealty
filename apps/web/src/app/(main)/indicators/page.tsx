@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LineSeriesChart, Sparkline } from "@/components/charts/series-chart";
 import { SentimentCard } from "@/components/community/sentiment-card";
+import { MiniTrend } from "@/components/charts/mini-trend";
 import { ContribBars } from "@/components/indicators/contrib-bars";
+import { MarketHero } from "@/components/indicators/market-hero";
 import { type JeonseItemOption, JeonseCheck } from "@/components/indicators/jeonse-check";
 import { BacktestCard, InsightCard, MarketVerdictCard } from "@/components/indicators/insight-card";
 import { ViewModeToggle } from "@/components/shell/view-mode-toggle";
@@ -129,7 +131,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
             <Link
               key={g.sgg}
               href={q({ sgg: g.sgg })}
-              className={`shrink-0 rounded-full border px-3 py-1 text-[13px] ${g.sgg === sgg ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted"}`}
+              className={`shrink-0 rounded-full border px-3.5 py-1.5 text-sm ${g.sgg === sgg ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted"}`}
             >
               {g.name.split(" ").at(-1)}
             </Link>
@@ -139,9 +141,26 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
 
       <Tabs active={view} items={VIEWS.map((x) => ({ ...x, href: q({ view: x.key }) }))} />
 
-      {view === "summary" && pro ? <InsightCard insights={insights} region={regionName} record={record} /> : null}
-      {view === "summary" && !pro && sgg ? (
-        <MarketVerdictCard insights={insights} ranked={ranked} region={regionName} record={record} signal={signal} temp={temp} band={band} />
+      {view === "summary" && pro && !sgg ? <InsightCard insights={insights} region={regionName} record={record} /> : null}
+      {/* 요약: 그림(가격·거래 추이)을 먼저, 판정은 옆(PC)·아래(모바일)에 짧게 */}
+      {view === "summary" && sgg ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <Card className="p-4 pb-2 lg:col-span-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <h2 className="text-base font-semibold">{regionName ?? "관심 지역"} 아파트 가격·거래</h2>
+              <span className="text-sm">
+                가격 1년 <ChangeText v={change(r("idx"), 12)} /> · 3개월 <ChangeText v={change(r("idx"), 3)} />
+              </span>
+            </div>
+            <p className="mb-1 text-xs text-muted">실거래로 만든 가격지수(시작월 = 100)와 월 매매 건수</p>
+            <MarketHero index={r("idx")} volume={r("vol")} />
+          </Card>
+          {pro ? (
+            <InsightCard insights={insights} region={regionName} record={record} />
+          ) : (
+            <MarketVerdictCard compact insights={insights} ranked={ranked} region={regionName} record={record} signal={signal} temp={temp} band={band} />
+          )}
+        </div>
       ) : null}
 
       {view === "macro" || view === "tools" ? null : !sgg ? (
@@ -158,14 +177,12 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
       ) : (
         <>
           {view === "summary" && !pro ? (
-            <Card className="p-4">
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <Stat label="가격 1년 변화" value={formatPct(change(r("idx"), 12))} sub={<span className="text-muted">최근 3개월 {formatPct(change(r("idx"), 3))}</span>} />
-                <Stat label="84㎡ 아파트 중간 가격" value={formatManwon(last(r("med84")), { short: true })} />
-                <Stat label="전세가 ÷ 매매가" value={formatPct(last(r("jr")), 1, false)} sub={<span className="text-muted">높을수록 갭이 작음</span>} />
-                <Stat label="월 매매(최근 3개월 평균)" value={vol3 !== null ? `${Math.round(vol3).toLocaleString()}건` : "-"} sub={<span className="text-muted">집계 중인 이번 달 제외</span>} />
-              </div>
-            </Card>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <TrendTile label="84㎡ 아파트 중간 가격" value={formatManwon(last(r("med84")), { short: true })} sub={<>1년 <ChangeText v={change(r("med84"), 12)} /></>} points={r("med84").slice(-24)} />
+              <TrendTile label="전세가 ÷ 매매가" value={formatPct(last(r("jr")), 1, false)} sub="높을수록 갭이 작음" points={r("jr").slice(-24)} />
+              <TrendTile label="월 매매(최근 3개월 평균)" value={vol3 !== null ? `${Math.round(vol3).toLocaleString()}건` : "-"} sub="집계 중인 이번 달 제외" points={r("vol").filter(([d]) => d < thisMonth).slice(-24)} />
+              <TrendTile label="시장 온도" value={temp !== null ? `${Math.round(temp)}` : "-"} sub={band.label} points={r("ind.temp").slice(-24)} />
+            </div>
           ) : null}
           {view === "summary" ? (
           <details open={pro} className="group">
@@ -187,7 +204,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
               <div className="mt-2">
                 <ContribBars rows={contribs} />
               </div>
-              <p className="mt-3 text-[11px] text-muted">0~20 냉각 · 20~40 약세 · 40~60 중립 · 60~80 강세 · 80~100 과열. 과거 분포 대비 z-score 합성.</p>
+              <p className="mt-3 text-[0.75rem] text-muted">0~20 냉각 · 20~40 약세 · 40~60 중립 · 60~80 강세 · 80~100 과열. 과거 분포 대비 z-score 합성.</p>
             </Card>
             <Card className="p-4 lg:col-span-2">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -387,5 +404,27 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
       {view === "tools" ? <JeonseCheck items={jeonseItems} /> : null}
       <ViewModeToggle mode={mode} what="온도계 구성·회귀·과거 성적 표" />
     </div>
+  );
+}
+
+/** 변화율: ▲빨강/▼파랑(국내 관례) */
+function ChangeText({ v }: { v: number | null }) {
+  if (v === null || v === undefined) return <span className="text-muted">-</span>;
+  return <b className={v > 0.0005 ? "text-up" : v < -0.0005 ? "text-down" : "text-muted"}>{formatPct(v)}</b>;
+}
+
+/** 숫자 + 최근 2년 작은 추세선(글보다 그림이 먼저 눈에 들어오게) */
+function TrendTile({ label, value, sub, points }: { label: string; value: string; sub?: React.ReactNode; points: Point[] }) {
+  return (
+    <Card className="flex flex-col justify-between gap-2 p-4">
+      <div className="text-xs text-muted">{label}</div>
+      <div className="flex items-end justify-between gap-2">
+        <div className="min-w-0">
+          <div className="tabular truncate text-xl font-bold">{value}</div>
+          {sub ? <div className="text-xs text-muted">{sub}</div> : null}
+        </div>
+        <MiniTrend points={points} width={64} height={30} className="shrink-0" />
+      </div>
+    </Card>
   );
 }

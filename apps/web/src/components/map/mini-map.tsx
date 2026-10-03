@@ -100,7 +100,7 @@ export function MiniMap({
         lng,
         lat,
         zIndex: 1000,
-        html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#2563eb;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap">★ ${esc(pinLabel(label))}</div>`,
+        html: `<div style="transform:translate(-12px,-50%);display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:999px;background:#2563eb;color:#fff;font-size:13px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap">★ ${esc(pinLabel(label))}</div>`,
       }),
     ];
     return () => ms.forEach((m) => m.remove());
@@ -163,7 +163,7 @@ export function MiniMap({
     if (!map) return;
     const perArea = COMPLEX_TYPES.has(txType);
     const ms: Removable[] = [];
-    const shown = declutter([...points].sort((a, b) => b.n - a.n).slice(0, 60), bbox, map.size(), { w: 84, h: 30 });
+    const shown = declutter([...points].sort((a, b) => b.n - a.n).slice(0, 60), bbox, map.size(), { w: 96, h: 36 });
     for (const p of shown) {
       // 내 단지는 핀이 이미 가리키므로 라벨을 겹쳐 그리지 않는다
       if (selfComplexId !== null && p.complex_id === selfComplexId) continue;
@@ -176,7 +176,7 @@ export function MiniMap({
           zIndex: self ? 900 : 100,
           title: `${p.name} · 최근 1년 ${p.n}건${p.complex_id ? " — 눌러서 단지 보기" : ""}`,
           onClick: p.complex_id ? () => router.push(complexHref(p.complex_id!, myComplexes)) : undefined,
-          html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:2px 6px;border-radius:7px;background:${self ? "#2563eb" : "#fff"};color:${self ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.15);font-size:10.5px;line-height:1.2;white-space:nowrap;font-weight:600;cursor:${p.complex_id ? "pointer" : "default"}">${main}<span style="font-weight:400;opacity:.75">${esc(shortName(p.name))} · ${p.n}건</span></div>`,
+          html: `<div style="transform:translate(-50%,-100%);display:inline-flex;flex-direction:column;align-items:center;padding:3px 7px;border-radius:8px;background:${self ? "#2563eb" : "#fff"};color:${self ? "#fff" : "#16191f"};border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.15);font-size:12px;line-height:1.25;white-space:nowrap;font-weight:600;cursor:${p.complex_id ? "pointer" : "default"}">${main}<span style="font-weight:400;opacity:.75">${esc(shortName(p.name))} · ${p.n}건</span></div>`,
         }),
       );
     }
@@ -189,7 +189,7 @@ export function MiniMap({
           lat: p.lat,
           zIndex: 50,
           title: p.name,
-          html: `<div title="${esc(p.name)}" style="transform:translate(-50%,-50%);width:18px;height:18px;border-radius:999px;background:${st.bg};display:flex;align-items:center;justify-content:center;font-size:10px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${st.icon}</div>`,
+          html: `<div title="${esc(p.name)}" style="transform:translate(-50%,-50%);width:22px;height:22px;border-radius:999px;background:${st.bg};display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${st.icon}</div>`,
         }),
       );
     }
@@ -203,7 +203,7 @@ export function MiniMap({
           <div ref={el} className="map-canvas h-full w-full bg-surface-2" />
         </div>
       </div>
-      <p className="border-t border-border bg-surface px-3 py-1.5 text-[11px] text-muted">
+      <p className="border-t border-border bg-surface px-3 py-1.5 text-[0.75rem] text-muted">
         파란 원: 탐색 반경 {radius >= 1000 ? `${radius / 1000}km` : `${radius}m`} · 라벨: 주변 최근 1년 매매 중위
         {COMPLEX_TYPES.has(txType) ? `(${unit === "pyeong" ? "평" : "㎡"}당)` : ""}
         {points.length === 0 ? " — 아직 수집된 주변 거래가 없습니다" : ` ${points.length}곳`}

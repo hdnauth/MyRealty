@@ -25,7 +25,7 @@ export default async function NewItemPage(props: PageProps<"/items/new">) {
         title="관심 부동산 등록"
         sub="주소만 넣으면 시세·비슷한 단지 비교·시장 흐름·위험 신호를 한 화면에 정리해 드려요."
       />
-      {!user || user.isGuest ? <GuestNote className="mb-4 rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-muted" /> : null}
+      {!user || user.isGuest ? <GuestNote className="mb-4 rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted" /> : null}
       <NewItemForm
         mapKeys={{ keyId: env.ncpKeyId ?? null, vworldKey: env.vworldKey ?? null }}
         unit={unit}

@@ -121,7 +121,7 @@ export function Composer({
       ) : null}
 
       <div>
-        <span className="mb-1 block text-[13px] font-medium text-muted">말머리</span>
+        <span className="mb-1 block text-xs font-medium text-muted">말머리</span>
         <input type="hidden" name="category" value={category} />
         <div className="flex flex-wrap gap-1.5">
           {USER_CATEGORIES.map((c) => (
@@ -129,7 +129,7 @@ export function Composer({
               key={c}
               type="button"
               onClick={() => setCategory(c)}
-              className={clsx("rounded-full border px-3 py-1 text-sm", category === c ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted")}
+              className={clsx("rounded-full border px-3.5 py-1.5 text-sm", category === c ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted")}
             >
               {CATEGORIES[c].label}
             </button>
@@ -147,14 +147,14 @@ export function Composer({
 
       {/* 첨부 */}
       <div className="space-y-2">
-        <span className="block text-[13px] font-medium text-muted">데이터·사진 첨부</span>
+        <span className="block text-xs font-medium text-muted">데이터·사진 첨부</span>
         <div className="flex flex-wrap gap-1.5">
           {complexId ? (
             <Chip active={atts.some((a) => a.type === "complex")} onClick={() => toggle({ type: "complex", id: complexId, label: "단지 시세" })} icon={Building2}>단지 시세 카드</Chip>
           ) : null}
           {complexId ? <Chip active={picker === "trade"} onClick={() => setPicker(picker === "trade" ? null : "trade")} icon={Receipt}>실거래</Chip> : null}
           <Chip active={picker === "series"} onClick={() => setPicker(picker === "series" ? null : "series")} icon={LineChart}>지표</Chip>
-          <label className={clsx("inline-flex cursor-pointer items-center gap-1 rounded-full border border-border px-3 py-1 text-sm text-muted hover:text-text", images.length >= LIMITS.imagesPerPost && "pointer-events-none opacity-50")}>
+          <label className={clsx("inline-flex cursor-pointer items-center gap-1 rounded-full border border-border px-3.5 py-1.5 text-sm text-muted hover:text-text", images.length >= LIMITS.imagesPerPost && "pointer-events-none opacity-50")}>
             <ImagePlus size={14} /> 사진 {images.length}/{LIMITS.imagesPerPost}
             <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
           </label>
@@ -217,7 +217,7 @@ export function Composer({
       {/* 투표 */}
       {!editing ? (
         <div className="space-y-2">
-          <span className="block text-[13px] font-medium text-muted">투표</span>
+          <span className="block text-xs font-medium text-muted">투표</span>
           <input type="hidden" name="poll_kind" value={poll} />
           <div className="flex flex-wrap gap-1.5">
             <Chip active={poll === ""} onClick={() => setPoll("")}>없음</Chip>
@@ -261,7 +261,7 @@ function Chip({ active, onClick, icon: Icon, children }: { active: boolean; onCl
     <button
       type="button"
       onClick={onClick}
-      className={clsx("inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm", active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text")}
+      className={clsx("inline-flex items-center gap-1 rounded-full border px-3.5 py-1.5 text-sm", active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border text-muted hover:text-text")}
     >
       {Icon ? <Icon size={14} /> : null}
       {children}

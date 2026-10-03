@@ -14,7 +14,7 @@ import { readFinanceProfile } from "@/lib/brief";
 import { getViewMode } from "@/lib/view-mode";
 import { DeleteAccount } from "./delete-account";
 import { PushManager } from "./push-manager";
-import { ThemePicker } from "@/components/shell/theme-picker";
+import { FontSizePicker, ThemePicker } from "@/components/shell/theme-picker";
 import { MODEL, serverAiEnabled, userAiRow } from "@/lib/ai/client";
 import { isAiProvider, PROVIDER_INFO } from "@/lib/ai/providers";
 import { AiSettings } from "./ai-settings";
@@ -83,6 +83,11 @@ export default async function SettingsPage() {
       <Card>
         <CardHeader title="화면 테마" sub="시스템은 기기의 다크 모드 설정을 따릅니다. 이 기기에 저장됩니다(상단·사이드바의 해·달 버튼으로도 바꿀 수 있습니다)." />
         <ThemePicker />
+      </Card>
+
+      <Card>
+        <CardHeader title="글자 크기" sub="글자·버튼·여백이 함께 커집니다. 이 기기에 저장됩니다." />
+        <FontSizePicker />
       </Card>
 
       <Card>

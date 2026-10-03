@@ -103,14 +103,14 @@ export function Chat({ conversationId, initial, enabled }: { conversationId: str
         {msgs.map((m, i) =>
           m.role === "user" ? (
             <div key={i} className="flex justify-end">
-              <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-[15px] text-white">{m.text}</div>
+              <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-sm text-white">{m.text}</div>
             </div>
           ) : (
             <div key={i} className="max-w-full">
               {m.tools?.length ? (
                 <div className="mb-1 flex flex-wrap gap-1">
                   {m.tools.map((t, j) => (
-                    <span key={j} className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">
+                    <span key={j} className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[0.75rem] text-muted">
                       <Wrench size={11} /> {TOOL_LABEL[t] ?? t}
                     </span>
                   ))}
@@ -149,7 +149,7 @@ export function Chat({ conversationId, initial, enabled }: { conversationId: str
           rows={1}
           disabled={!enabled}
           placeholder={enabled ? "무엇이든 물어보세요" : "AI 키 설정 필요"}
-          className="max-h-40 min-h-11 flex-1 resize-none rounded-xl border border-border bg-surface px-3 py-2.5 text-[15px] outline-none focus:border-accent"
+          className="max-h-40 min-h-11 flex-1 resize-none rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent"
         />
         <button type="submit" disabled={busy || !enabled || !input.trim()} aria-label="보내기" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-white disabled:opacity-40">
           {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowUp size={18} />}

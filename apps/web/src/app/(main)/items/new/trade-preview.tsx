@@ -61,7 +61,7 @@ export function TradePreviewCard({
         </Mini>
       </div>
       {shown.length ? (
-        <ul className="divide-y divide-border border-t border-border text-[13px]">
+        <ul className="divide-y divide-border border-t border-border text-xs">
           {shown.map((r, i) => (
             <li key={i} className={clsx("flex justify-between gap-2 px-3 py-1.5 tabular", r.canceled && "text-muted line-through")}>
               <span className="min-w-0 truncate text-muted">
@@ -82,7 +82,7 @@ export function TradePreviewCard({
           {hasComplex && area ? "이 평형의 최근 거래가 없습니다. 다른 평형 거래는 평형 목록의 가격을 참고하세요." : "최근 1년 신고된 거래가 없습니다."}
         </p>
       )}
-      {preview.note ? <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted">{preview.note}</p> : null}
+      {preview.note ? <p className="border-t border-border px-3 py-1.5 text-[0.75rem] text-muted">{preview.note}</p> : null}
     </div>
   );
 }
@@ -90,7 +90,7 @@ export function TradePreviewCard({
 function Mini({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[11px] text-muted">{label}</div>
+      <div className="text-[0.75rem] text-muted">{label}</div>
       <div className="tabular text-sm font-semibold">{children}</div>
     </div>
   );

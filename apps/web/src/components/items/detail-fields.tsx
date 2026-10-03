@@ -87,7 +87,7 @@ export function DetailFields({
                   type="button"
                   key={a.area}
                   onClick={() => setArea(String(a.area))}
-                  className={`rounded-full border px-2.5 py-1 text-xs ${String(a.area) === area ? "border-accent bg-accent-soft text-accent" : "border-border text-muted"}`}
+                  className={`rounded-full border px-3 py-1.5 text-sm ${String(a.area) === area ? "border-accent bg-accent-soft text-accent" : "border-border text-muted"}`}
                 >
                   {a.area}㎡ · {(a.area / 3.305785).toFixed(0)}평 <span className="opacity-60">({a.n})</span>
                 </button>
@@ -102,7 +102,7 @@ export function DetailFields({
         <div className={group === "candidate" ? "space-y-3 rounded-xl bg-surface-2 p-4" : "hidden"}>
           <p className="text-sm font-medium">자금 정보 (선택) — 필요한 대출·월 상환 계산용</p>
           {profile?.cash != null ? (
-            <p className="text-[13px] text-muted">
+            <p className="text-xs text-muted">
               저장된 자금: 현금 {formatManwon(profile.cash, { short: true })}
               {profile.income ? ` · 연소득 ${formatManwon(profile.income, { short: true })}` : ""} · LTV {Math.round(profile.ltv * 100)}%. 바꾸려면 아래에 새로 넣으세요.
             </p>
@@ -122,7 +122,7 @@ export function DetailFields({
       )}
       {finance ? (
         <div className={group === "candidate" ? "hidden" : "space-y-4 rounded-xl bg-surface-2 p-4"}>
-          {tenant ? <p className="text-[13px] text-muted">보증금을 넣으면 깡통전세 비율·보증보험 한도·전세 시세와 비교합니다.</p> : null}
+          {tenant ? <p className="text-xs text-muted">보증금을 넣으면 깡통전세 비율·보증보험 한도·전세 시세와 비교합니다.</p> : null}
 
           <div className={showPurchase ? "grid grid-cols-1 gap-4 sm:grid-cols-2" : "hidden"}>
             <MoneyField label="매입가" name="purchase_price" defaultValue={d.purchase_price} />

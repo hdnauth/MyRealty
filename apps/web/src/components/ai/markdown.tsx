@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 /** AI 응답·리포트용 Markdown 렌더러(표 지원, 링크는 새 탭) */
 export function Markdown({ children }: { children: string }) {
   return (
-    <div className="prose-mr text-[15px] leading-relaxed">
+    <div className="prose-mr text-sm leading-relaxed">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -22,7 +22,7 @@ export function Markdown({ children }: { children: string }) {
           ul: (p) => <ul {...p} className="my-1 list-disc space-y-0.5 pl-5" />,
           ol: (p) => <ol {...p} className="my-1 list-decimal space-y-0.5 pl-5" />,
           p: (p) => <p {...p} className="my-1.5" />,
-          code: (p) => <code {...p} className="rounded bg-surface-2 px-1 text-[13px]" />,
+          code: (p) => <code {...p} className="rounded bg-surface-2 px-1 text-xs" />,
         }}
       >
         {children}

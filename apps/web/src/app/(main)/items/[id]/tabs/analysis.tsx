@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Card, CardHeader, EmptyState, Stat } from "@/components/ui";
 import { latestAnalysis } from "@/lib/ai/analysis";
 import { AiReportButton } from "@/components/ai/report-button";
-import { AiSetupNotice } from "@/components/ai/setup-notice";
+import { AiSetupNotice, AiSignupNotice } from "@/components/ai/setup-notice";
+import { getUser } from "@/lib/auth/session";
 import { aiStatus } from "@/lib/ai/client";
 import { sql } from "@/lib/db";
 import { formatDate, formatManwon, formatPct } from "@/lib/format";
@@ -34,11 +35,12 @@ export async function AnalysisTab({ item }: { item: WatchItem }) {
       select estimate from valuations where watch_item_id = ${item.id} and as_of <= current_date - 80 order by as_of desc limit 1`,
     latestAnalysis(item.user_id, item.id),
   ]);
-  const ai = await aiStatus(item.user_id);
+  const [ai, viewer] = await Promise.all([aiStatus(item.user_id), getUser()]);
+  const member = Boolean(viewer && !viewer.isGuest);
   const v = vals[0];
   const prev = prevs[0];
   const card = a?.data.card;
-  const enabled = ai.enabled;
+  const enabled = ai.enabled && member;
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -59,7 +61,7 @@ export async function AnalysisTab({ item }: { item: WatchItem }) {
             </p>
           </>
         ) : (
-          <p className="mt-2 text-sm text-muted">ETL avm 단계에서 매일 계산됩니다.</p>
+          <p className="mt-2 text-sm text-muted">비슷한 거래가 충분히 모이면 매일 아침 계산합니다. 그전에는 개요의 현재 시세(같은 평형 6개월 거래 중위)를 참고하세요.</p>
         )}
       </Card>
 
@@ -69,7 +71,9 @@ export async function AnalysisTab({ item }: { item: WatchItem }) {
           sub={a ? `${formatDate(a.created_at, "long")} 생성 · ${a.model ?? ""}` : "데이터(시세·거래·입지·뉴스·지표)만 근거로 작성"}
           action={<AnalyzeButton itemId={item.id} enabled={enabled} hasCard={Boolean(card)} />}
         />
-        {!enabled ? (
+        {!member ? (
+          <div className="px-4 pb-4"><AiSignupNotice next={`/items/${item.id}?tab=analysis`} /></div>
+        ) : !enabled ? (
           <div className="px-4 pb-4"><AiSetupNotice problem={ai.problem} /></div>
         ) : null}
         {card ? (

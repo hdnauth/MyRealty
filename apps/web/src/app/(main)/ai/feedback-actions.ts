@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 import { audit } from "@/lib/admin";
 import { feedbackExcerpt, isAiReportReason, isAiSurface } from "@/lib/ai/feedback";
-import { requireAdmin, requireUser } from "@/lib/auth/session";
+import { ensureUser, requireAdmin } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 
 export type AiReportState = { error?: string; ok?: string };
@@ -11,7 +11,8 @@ export type AiReportState = { error?: string; ok?: string };
 const REPORTS_PER_DAY = 30;
 
 export async function reportAiAction(surface: string, ref: string | null, excerpt: string, _: AiReportState, form: FormData): Promise<AiReportState> {
-  const user = await requireUser();
+  // 방문자도 AI 답변(동네 이야기 AI 첫 답변 등)을 신고할 수 있게 기기 게스트로 기록한다
+  const user = await ensureUser();
   if (!isAiSurface(surface)) return { error: "잘못된 요청" };
   const reason = String(form.get("reason") ?? "");
   if (!isAiReportReason(reason)) return { error: "신고 사유를 고르세요." };

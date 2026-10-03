@@ -2,10 +2,10 @@
 
 import { refresh } from "next/cache";
 import { generateReport, type ReportKind } from "@/lib/ai/reports";
-import { requireUser } from "@/lib/auth/session";
+import { requireMember } from "@/lib/auth/session";
 
 export async function generateReportAction(kind: ReportKind): Promise<{ error?: string }> {
-  const user = await requireUser();
+  const user = await requireMember();
   try {
     await generateReport(user.id, kind);
   } catch (e) {

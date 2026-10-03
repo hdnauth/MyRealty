@@ -16,8 +16,9 @@ export default function AccountDeletionPage() {
 
       <h2>앱에서 바로 삭제</h2>
       <ol>
-        <li>로그인 후 <Link href="/settings">설정</Link>으로 이동합니다(모바일은 메뉴 → 설정).</li>
+        <li><Link href="/settings">설정</Link>으로 이동합니다(모바일은 전체 탭 → 설정).</li>
         <li>맨 아래 <b>회원 탈퇴</b>에 가입한 이메일 주소를 입력하고 <b>탈퇴</b>를 누릅니다.</li>
+        <li>가입하지 않고 이 기기에서만 썼다면 <b>이 기기 데이터 삭제</b>에 &lsquo;삭제&rsquo;를 입력합니다.</li>
         <li>즉시 삭제되며 되돌릴 수 없습니다.</li>
       </ol>
 

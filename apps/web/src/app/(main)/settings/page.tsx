@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Button, Card, CardHeader, PageHeader } from "@/components/ui";
-import { readToken, requireUser, SESSION_COOKIE, sessionUserId } from "@/lib/auth/session";
+import { Button, Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
+import { readToken, pageUser, SESSION_COOKIE, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { formatDate, timeAgo } from "@/lib/format";
@@ -20,8 +20,8 @@ export const metadata: Metadata = { title: "설정" };
 
 export default async function SettingsPage() {
   const uid = await sessionUserId();
-  const [user, sessions, current, [ai], site, unit, aiRow] = await Promise.all([
-    requireUser(),
+  const [viewer, sessions, current, [ai], site, unit, aiRow] = await Promise.all([
+    pageUser(uid),
     sql<{ id: string; user_agent: string | null; created_at: string; last_seen_at: string | null; remember: boolean }[]>`
       select id, user_agent, created_at::text, last_seen_at::text, remember from sessions
       where user_id = ${uid} and revoked_at is null and expires_at > now() order by coalesce(last_seen_at, created_at) desc`,
@@ -34,6 +34,8 @@ export default async function SettingsPage() {
     getAreaUnit(),
     userAiRow(uid),
   ]);
+  const user = viewer ?? { email: null, isGuest: true, isAdmin: false, isEnvAdmin: false, settings: {} as Record<string, unknown> };
+  const member = !user.isGuest;
   const savedAi =
     aiRow && isAiProvider(aiRow.provider)
       ? { provider: aiRow.provider, model: aiRow.model, baseUrl: aiRow.base_url, keyHint: aiRow.key_hint, updatedAt: aiRow.updated_at }
@@ -41,39 +43,38 @@ export default async function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <PageHeader title="메뉴 · 설정" />
-      <Card className="lg:hidden">
-        <div className="grid grid-cols-3 gap-1 p-2 text-center text-sm">
-          {[
-            ["/community", "동네 이야기"],
-            ["/portfolio", "포트폴리오"],
-            ["/compare", "비교"],
-            ["/calendar", "캘린더"],
-            ["/projects", "개발사업"],
-            ["/indicators/custom", "커스텀 지표"],
-            ["/notifications", "알림"],
-            ...(user.isAdmin ? [["/admin", "관리"]] : []),
-          ].map(([href, label]) => (
-            <Link key={href} href={href} className="rounded-lg px-2 py-3 hover:bg-surface-2">
-              {label}
-            </Link>
-          ))}
-        </div>
-      </Card>
-      <Card>
-        <CardHeader
-          title="계정"
-          sub={`${user.email}${user.isAdmin ? " · 관리자" : ""}`}
-          action={<form action={logoutAction}><Button variant="secondary" type="submit">로그아웃</Button></form>}
-        />
-        {user.isAdmin ? (
-          <div className="px-4 pb-3">
-            <Link href="/admin" className="text-sm font-medium text-accent">관리 화면 열기 →</Link>
+      <PageHeader title="설정" />
+      {member ? (
+        <Card>
+          <CardHeader
+            title="계정"
+            sub={`${user.email}${user.isAdmin ? " · 관리자" : ""}`}
+            action={<form action={logoutAction}><Button variant="secondary" type="submit">로그아웃</Button></form>}
+          />
+          {user.isAdmin ? (
+            <div className="px-4 pb-3">
+              <Link href="/admin" className="text-sm font-medium text-accent">관리 화면 열기 →</Link>
+            </div>
+          ) : (
+            <div className="h-2" />
+          )}
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader
+            title={viewer ? "게스트(이 기기)" : "로그인하지 않음"}
+            sub={
+              viewer
+                ? "관심 부동산·구독·설정이 이 기기에 묶여 저장됩니다. 브라우저 데이터를 지우면 사라질 수 있어요."
+                : "관심 부동산을 등록하면 이 기기에 저장됩니다."
+            }
+          />
+          <div className="px-4 pb-4">
+            <LinkButton href="/login?next=/settings" className="w-full sm:w-auto">이메일로 간편 가입 · 로그인</LinkButton>
+            <p className="mt-2 text-xs text-muted">가입하면 다른 기기 동기화·이메일 요약·글쓰기·AI 질문을 쓸 수 있고, 지금까지 저장한 내용은 그대로 이어집니다.</p>
           </div>
-        ) : (
-          <div className="h-2" />
-        )}
-      </Card>
+        </Card>
+      )}
 
       <Card>
         <CardHeader title="화면 테마" sub="시스템은 기기의 다크 모드 설정을 따릅니다. 이 기기에 저장됩니다(상단·사이드바의 해·달 버튼으로도 바꿀 수 있습니다)." />
@@ -103,11 +104,20 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader title="알림" sub="중요 알림(신고가·강한 호재/악재 뉴스·만기 D-7)은 푸시로 즉시, 나머지는 매일 아침 이메일로 모아서 보냅니다." />
+        <CardHeader
+          title="알림"
+          sub={
+            member
+              ? "중요 알림(신고가·강한 호재/악재 뉴스·만기 D-7)은 푸시로 즉시, 나머지는 매일 아침 이메일로 모아서 보냅니다."
+              : "중요 알림(신고가·강한 호재/악재 뉴스·만기 D-7)을 이 기기로 푸시합니다. 이메일 요약은 가입 후 받을 수 있어요."
+          }
+        />
         <form action={updateNotificationSettingsAction} className="space-y-2 px-4 text-sm">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" name="emailDigest" defaultChecked={user.settings.emailDigest !== false} /> 이메일 다이제스트 받기
-          </label>
+          {member ? (
+            <label className="flex items-center gap-2">
+              <input type="checkbox" name="emailDigest" defaultChecked={user.settings.emailDigest !== false} /> 이메일 다이제스트 받기
+            </label>
+          ) : null}
           <label className="flex items-center gap-2">
             <input type="checkbox" name="pushEnabled" defaultChecked={user.settings.pushEnabled !== false} /> 중요 알림 푸시 받기
           </label>
@@ -118,6 +128,7 @@ export default async function SettingsPage() {
         </div>
       </Card>
 
+      {member ? (
       <Card>
         <CardHeader title="로그인된 기기" sub="“이 기기 기억하기”로 로그인한 기기는 90일 동안(접속할 때마다 연장) 자동 로그인됩니다." />
         <ul className="divide-y divide-border px-4 pb-2 text-sm">
@@ -139,7 +150,9 @@ export default async function SettingsPage() {
           ))}
         </ul>
       </Card>
+      ) : null}
 
+      {member ? (
       <Card id="ai" className="scroll-mt-20">
         <CardHeader
           title="AI 모델"
@@ -161,11 +174,19 @@ export default async function SettingsPage() {
           </span>
         </div>
       </Card>
+      ) : null}
 
-      <Card className="border-up/30">
-        <CardHeader title="회원 탈퇴" sub="관심 부동산·메모·알림·AI 기록이 모두 삭제되며 되돌릴 수 없습니다. 동네 이야기에 쓴 글·댓글은 '탈퇴한 사용자'로 남으니, 지우려면 탈퇴 전에 직접 삭제하세요." />
-        <DeleteAccount email={user.email} disabled={user.isEnvAdmin} />
-      </Card>
+      {member ? (
+        <Card className="border-up/30">
+          <CardHeader title="회원 탈퇴" sub="관심 부동산·메모·알림·AI 기록이 모두 삭제되며 되돌릴 수 없습니다. 동네 이야기에 쓴 글·댓글은 '탈퇴한 사용자'로 남으니, 지우려면 탈퇴 전에 직접 삭제하세요." />
+          <DeleteAccount email={user.email} disabled={user.isEnvAdmin} />
+        </Card>
+      ) : viewer ? (
+        <Card className="border-up/30">
+          <CardHeader title="이 기기 데이터 삭제" sub="이 기기에 저장한 관심 부동산·메모·알림·구독을 모두 지웁니다. 되돌릴 수 없습니다." />
+          <DeleteAccount email={null} disabled={false} />
+        </Card>
+      ) : null}
       <nav className="flex flex-wrap gap-4 px-1 text-xs text-muted">
         <Link href="/legal/terms" className="hover:text-accent">이용약관</Link>
         <Link href="/legal/privacy" className="hover:text-accent">개인정보처리방침</Link>

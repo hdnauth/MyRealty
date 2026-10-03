@@ -6,7 +6,7 @@ import { AiReportButton } from "@/components/ai/report-button";
 import { FollowButton, SummaryButton } from "@/components/community/interactive";
 import { PostList } from "@/components/community/parts";
 import { Card, CardHeader, Input, LinkButton, Notice, PageHeader } from "@/components/ui";
-import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { timeAgo } from "@/lib/format";
 import { canWrite, communityMe, getSummary, isFollowing, listPosts, shortSgg, sggNames, subscriptions } from "@/lib/community/queries";
@@ -18,8 +18,10 @@ const PAGE = 20;
 
 export default async function CommunityPage(props: PageProps<"/community">) {
   const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
-  const user = await requireUser();
-  const [me, subs] = await Promise.all([communityMe(uid, user.isAdmin), subscriptions(uid)]);
+  // 방문자도 읽을 수 있다(구독이 없으면 활발한 게시판을 보여 준다). 쓰기는 이메일 가입 후
+  const [user, subs] = await Promise.all([pageUser(uid), subscriptions(uid)]);
+  const me = await communityMe(uid, user?.isAdmin ?? false);
+  const member = Boolean(user && !user.isGuest);
 
   const sgg = isSgg(sp.sgg) ? sp.sgg : null;
   const complexId = typeof sp.complex === "string" && /^\d+$/.test(sp.complex) ? Number(sp.complex) : null;
@@ -51,11 +53,15 @@ export default async function CommunityPage(props: PageProps<"/community">) {
     // 단지 게시판: 같은 시군구의 인기글을 함께(빈 게시판 완화)
     complex && page === 1 && !q ? listPosts({ uid, sgg: complex.sgg, excludeComplex: complex.id, sort: "hot", limit: 5 }) : Promise.resolve([]),
     complexId ? getSummary("complex_faq", String(complexId)) : sgg ? getSummary("sgg_week", sgg) : Promise.resolve(null),
-    // 구독이 없으면 활발한 게시판을 보여 준다
+    // 구독이 없으면(방문자·처음 사용자) 활발한 게시판, 글이 아직 없으면 데이터가 모이는 지역 게시판을 보여 준다
     feed && !hasSubs
       ? sql<{ sgg: string; n: number }[]>`
-          select sgg_cd as sgg, count(*)::int as n from community_posts where status = 'visible' and created_at > now() - interval '30 days'
-          group by sgg_cd order by n desc limit 8`
+          with active as (
+            select sgg_cd as sgg, count(*)::int as n from community_posts where status = 'visible' and created_at > now() - interval '30 days'
+            group by sgg_cd order by n desc limit 12)
+          select sgg, n from active
+          union all
+          select t.sgg_cd, 0 from collect_targets t where t.enabled and not exists (select 1 from active) group by t.sgg_cd limit 12`
       : Promise.resolve([]),
   ]);
   const popularNames = await sggNames(popular.map((p) => p.sgg));
@@ -76,11 +82,11 @@ export default async function CommunityPage(props: PageProps<"/community">) {
     <div className="space-y-4">
       <PageHeader
         title={title}
-        sub={complex ? `${shortSgg(sggName)} ${complex.umd_nm ?? ""} · 단지 글은 ${shortSgg(sggName)} 게시판에도 함께 보입니다` : sggName ? sggName : "관심 부동산의 단지·시군구 글을 모아 봅니다"}
-        action={<LinkButton href={canWrite(me) ? newHref : `/community/profile?next=${encodeURIComponent(newHref)}`}><PenSquare size={16} />글쓰기</LinkButton>}
+        sub={complex ? `${shortSgg(sggName)} ${complex.umd_nm ?? ""} · 단지 글은 ${shortSgg(sggName)} 게시판에도 함께 보입니다` : sggName ? sggName : hasSubs ? "관심 부동산의 단지·시군구 글을 모아 봅니다" : "우리 동네 단지·시군구 이야기를 나눠요. 읽기는 로그인 없이 가능합니다"}
+        action={<LinkButton href={!member ? `/login?next=${encodeURIComponent(newHref)}&why=member` : canWrite(me) ? newHref : `/community/profile?next=${encodeURIComponent(newHref)}`}><PenSquare size={16} />글쓰기</LinkButton>}
       />
 
-      {!canWrite(me) ? (
+      {member && !canWrite(me) ? (
         <Notice>
           글·댓글을 쓰려면 <Link href="/community/profile" className="font-semibold text-accent underline">닉네임을 정하고 운영 원칙에 동의</Link>하세요. 이메일은 다른 사용자에게 보이지 않습니다.
         </Notice>
@@ -90,7 +96,7 @@ export default async function CommunityPage(props: PageProps<"/community">) {
 
       {/* 게시판 고르기: 구독 전체 / 시군구 / 단지 */}
       <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0">
-        <BoardChip href="/community" active={feed}>내 구독 전체</BoardChip>
+        <BoardChip href="/community" active={feed}>{hasSubs ? "내 구독 전체" : "전체 최신글"}</BoardChip>
         {subs.sggs.map((s) => (
           <BoardChip key={s.sgg} href={`/community?sgg=${s.sgg}`} active={sgg === s.sgg && !complexId}>{shortSgg(s.name)}</BoardChip>
         ))}
@@ -165,7 +171,7 @@ export default async function CommunityPage(props: PageProps<"/community">) {
           showBoard={feed || Boolean(sgg)}
           empty={
             q ? `"${q}" 검색 결과가 없습니다.` : feed && !hasSubs ? (
-              <>관심 부동산을 등록하면 그 단지·시군구 게시판이 자동으로 구독됩니다.<br /><Link href="/items/new" className="text-accent underline">관심 부동산 등록</Link></>
+              <>아직 올라온 글이 없습니다. 아래 지역 게시판을 둘러보거나, 관심 부동산을 등록하면 그 단지·시군구 게시판이 자동으로 구독됩니다.<br /><Link href="/items" className="text-accent underline">관심 부동산 등록</Link></>
             ) : (
               <>아직 글이 없습니다. 첫 글을 남겨 이웃과 이야기를 시작해 보세요.<br /><Link href={newHref} className="text-accent underline">글쓰기</Link></>
             )
@@ -188,10 +194,10 @@ export default async function CommunityPage(props: PageProps<"/community">) {
 
       {popular.length ? (
         <Card>
-          <CardHeader title="활발한 게시판" sub="최근 30일 글이 많은 시군구" />
+          <CardHeader title={popular.some((p) => p.n) ? "활발한 게시판" : "지역 게시판 둘러보기"} sub={popular.some((p) => p.n) ? "최근 30일 글이 많은 시군구" : "시세 데이터가 모이고 있는 지역"} />
           <div className="flex flex-wrap gap-1.5 px-4 pb-4">
             {popular.map((p) => (
-              <BoardChip key={p.sgg} href={`/community?sgg=${p.sgg}`} active={false}>{popularNames[p.sgg] ?? p.sgg} · {p.n}</BoardChip>
+              <BoardChip key={p.sgg} href={`/community?sgg=${p.sgg}`} active={false}>{shortSgg(popularNames[p.sgg] ?? p.sgg)}{p.n ? ` · ${p.n}` : ""}</BoardChip>
             ))}
           </div>
         </Card>

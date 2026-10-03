@@ -23,6 +23,26 @@ def test_cleanup_keeps_recent_and_live(conn):
            ('chat', 'c', 'wrong', 'open', null)"""
     )
     conn.commit()
-    assert cleanup_auth(conn) == {"otp_codes": 1, "sessions": 2, "ai_feedback": 1}
+    assert cleanup_auth(conn) == {"otp_codes": 1, "sessions": 2, "ai_feedback": 1, "guests": 0}
     assert conn.execute("select count(*) as n from otp_codes").fetchone()["n"] == 1
     assert conn.execute("select count(*) as n from sessions").fetchone()["n"] == 2
+
+
+def test_cleanup_removes_unreachable_guests(conn):
+    old = "now() - interval '10 days'"
+    gone, live, fresh = (
+        conn.execute(f"insert into users (email, created_at) values (null, {old}) returning id").fetchone()["id"],
+        conn.execute(f"insert into users (email, created_at) values (null, {old}) returning id").fetchone()["id"],
+        conn.execute("insert into users (email) values (null) returning id").fetchone()["id"],
+    )
+    member = conn.execute(f"insert into users (email, created_at) values ('m@example.com', {old}) returning id").fetchone()["id"]
+    conn.execute(
+        """insert into sessions (user_id, expires_at, revoked_at) values
+           (%(gone)s, now() - interval '1 day', null),
+           (%(live)s, now() + interval '80 days', null)""",
+        {"gone": gone, "live": live},
+    )
+    conn.commit()
+    assert cleanup_auth(conn)["guests"] == 1
+    left = {r["id"] for r in conn.execute("select id from users").fetchall()}
+    assert left == {live, fresh, member}

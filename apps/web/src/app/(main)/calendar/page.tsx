@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { safeHref } from "@/lib/format";
 import { calendarEntries, type CalendarEntry } from "@/lib/queries/feed";
 
@@ -29,7 +29,7 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
   const first = new Date(base.getFullYear(), base.getMonth(), 1);
   const last = new Date(base.getFullYear(), base.getMonth() + 1, 0);
   const iso = (d: Date) => `${ym(d)}-${String(d.getDate()).padStart(2, "0")}`;
-  const [, entries] = await Promise.all([requireUser(), calendarEntries(uid, iso(first), iso(last))]);
+  const [user, entries] = await Promise.all([pageUser(uid), calendarEntries(uid, iso(first), iso(last))]);
   const byDay = new Map<string, CalendarEntry[]>();
   for (const e of entries) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
   const prev = new Date(first.getFullYear(), first.getMonth() - 1, 1);
@@ -87,7 +87,15 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
             ))}
           </ul>
         ) : (
-          <p className="p-4 text-sm text-muted">이 달의 일정이 없습니다.</p>
+          <p className="p-4 text-sm text-muted">
+            이 달의 일정이 없습니다.
+            {!user?.itemCount ? (
+              <>
+                {" "}관심 부동산을 등록하면 주변 청약·입주 일정과 대출·전세 만기도 함께 표시됩니다.{" "}
+                <Link href="/items" className="text-accent underline">관심 부동산 등록</Link>
+              </>
+            ) : null}
+          </p>
         )}
       </Card>
     </div>

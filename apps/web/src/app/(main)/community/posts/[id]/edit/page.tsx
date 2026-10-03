@@ -2,14 +2,15 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Composer } from "@/components/community/composer";
 import { Card, PageHeader } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { requireMember } from "@/lib/auth/session";
 import { getPost, shortSgg } from "@/lib/community/queries";
 import { updatePostAction } from "../../../actions";
 
 export const metadata: Metadata = { title: "글 수정" };
 
 export default async function EditPostPage(props: PageProps<"/community/posts/[id]/edit">) {
-  const [{ id: raw }, user] = await Promise.all([props.params, requireUser()]);
+  const { id: raw } = await props.params;
+  const user = await requireMember(`/community/posts/${raw}/edit`);
   const id = Number(raw);
   const post = Number.isSafeInteger(id) ? await getPost(id, user.id) : null;
   if (!post || !post.mine || post.kind !== "user" || post.status === "hidden") notFound();

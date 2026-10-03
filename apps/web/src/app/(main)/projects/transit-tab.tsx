@@ -96,7 +96,10 @@ export async function TransitTab({ uid, isAdmin, status, unit, href }: {
             })}
           </div>
         ) : (
-          <EmptyState title="등록된 철도 사업이 없습니다" desc="매일 ETL 의 rail 단계가 계획·착공·최근 개통 노선 시드를 넣습니다(uv run myrealty rail-seed)." />
+          <EmptyState
+            title="철도 사업 정보를 준비하고 있어요"
+            desc={isAdmin ? "매일 ETL 의 rail 단계가 계획·착공·최근 개통 노선 시드를 넣습니다(uv run myrealty rail-seed)." : "GTX·신설 노선의 역과 개통 일정을 매일 아침 자동으로 정리합니다."}
+          />
         )}
         <p className="px-4 pb-4 text-[11px] leading-relaxed text-muted">
           노선·개통 목표는 국가철도망 구축계획·사업자 발표를 정리한 참고 자료로, 일정은 자주 바뀝니다. 역 위치는 브이월드 역 정보이고 신설역은 법정동 중심(대략)입니다.

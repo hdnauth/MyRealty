@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { requireUser } from "@/lib/auth/session";
+import { ensureUser, requireMember, requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { answerQuestion, buildSummary } from "@/lib/community/ai";
@@ -18,7 +18,7 @@ const str = (v: FormDataEntryValue | null) => (v === null ? "" : String(v)).trim
 
 /** 글쓰기 전 공통 확인: 커뮤니티 열림, 닉네임·동의, 작성 제한 */
 async function writer() {
-  const user = await requireUser();
+  const user = await requireMember();
   const [me, site] = await Promise.all([communityMe(user.id, user.isAdmin), getSiteSettings()]);
   if (!site.communityEnabled && !user.isAdmin) return { error: "지금은 커뮤니티 글쓰기가 잠시 중단되어 있습니다." } as const;
   if (!canWrite(me)) return { error: "닉네임을 정하고 운영 원칙에 동의해야 글을 쓸 수 있습니다." } as const;
@@ -260,7 +260,7 @@ export async function deleteCommentAction(commentId: number) {
 
 /** 좋아요 토글. 결과 개수를 돌려줘 화면을 바로 갱신한다 */
 export async function toggleLikeAction(target: "post" | "comment", id: number): Promise<{ liked: boolean; count: number } | { error: string }> {
-  const user = await requireUser();
+  const user = await requireMember();
   if (target !== "post" && target !== "comment") return { error: "잘못된 요청" };
   const table = target === "post" ? sql`community_posts` : sql`community_comments`;
   const [row] = await sql<{ user_id: string | null; status: string }[]>`select user_id, status from ${table} where id = ${id}`;
@@ -276,7 +276,7 @@ export async function toggleLikeAction(target: "post" | "comment", id: number): 
 }
 
 export async function reportAction(target: "post" | "comment", id: number, _: FormState, form: FormData): Promise<FormState> {
-  const user = await requireUser();
+  const user = await requireMember();
   const reason = str(form.get("reason"));
   if (!isReportReason(reason)) return { error: "신고 사유를 고르세요." };
   const detail = str(form.get("detail")).slice(0, 500) || null;
@@ -310,7 +310,7 @@ export async function reportAction(target: "post" | "comment", id: number, _: Fo
 }
 
 export async function voteAction(postId: number, option: number): Promise<{ error?: string }> {
-  const user = await requireUser();
+  const user = await requireMember();
   const [p] = await sql<{ n: number; closed: boolean; status: string }[]>`
     select cardinality(pl.options) as n, coalesce(pl.closes_at < now(), false) as closed, p.status
     from community_polls pl join community_posts p on p.id = pl.post_id where pl.post_id = ${postId}`;
@@ -325,7 +325,7 @@ export async function voteAction(postId: number, option: number): Promise<{ erro
 }
 
 export async function followAction(scope: "sgg" | "complex", id: string, on: boolean) {
-  const user = await requireUser();
+  const user = await ensureUser();
   if (scope !== "sgg" && scope !== "complex") return;
   if (scope === "sgg" && !isSgg(id)) return;
   if (scope === "complex" && !/^\d+$/.test(id)) return;
@@ -335,7 +335,7 @@ export async function followAction(scope: "sgg" | "complex", id: string, on: boo
 }
 
 export async function saveProfileAction(_: FormState, form: FormData): Promise<FormState> {
-  const user = await requireUser();
+  const user = await requireMember();
   const me = await communityMe(user.id, user.isAdmin);
   const nickname = str(form.get("nickname"));
   const err = nicknameError(nickname);
@@ -368,7 +368,7 @@ export async function saveProfileAction(_: FormState, form: FormData): Promise<F
 }
 
 export async function summaryAction(scope: "complex_faq" | "sgg_week", id: string): Promise<FormState> {
-  const user = await requireUser();
+  const user = await requireMember();
   if (scope === "sgg_week" ? !isSgg(id) : !/^\d+$/.test(id)) return { error: "잘못된 요청" };
   try {
     const r = await buildSummary(user.id, scope, id, user.isAdmin);
@@ -381,7 +381,7 @@ export async function summaryAction(scope: "complex_faq" | "sgg_week", id: strin
 
 /** 사용자 차단·해제. 차단한 사용자의 글은 목록에서 빠지고 댓글은 가려지며, 그 사용자의 댓글 알림도 오지 않는다 */
 export async function blockUserAction(targetId: string, block: boolean): Promise<FormState> {
-  const user = await requireUser();
+  const user = await requireMember();
   if (!/^[0-9a-f-]{36}$/i.test(targetId)) return { error: "잘못된 요청" };
   if (targetId === user.id) return { error: "나를 차단할 수 없습니다." };
   if (block) {

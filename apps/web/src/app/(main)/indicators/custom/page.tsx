@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LineSeriesChart } from "@/components/charts/series-chart";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { getUser, NO_USER } from "@/lib/auth/session";
 import { evalExpression, listCustom } from "@/lib/queries/custom";
 import { indicatorRegions, listSeries } from "@/lib/queries/indicators";
 import { deleteCustomAction } from "./actions";
@@ -11,8 +11,8 @@ import { Builder } from "./builder";
 export const metadata: Metadata = { title: "커스텀 지표" };
 
 export default async function CustomIndicatorsPage() {
-  const user = await requireUser();
-  const [catalog, saved, regions] = await Promise.all([listSeries(user.id), listCustom(user.id), indicatorRegions(user.id)]);
+  const uid = (await getUser())?.id ?? NO_USER;
+  const [catalog, saved, regions] = await Promise.all([listSeries(uid), listCustom(uid), indicatorRegions(uid)]);
   const results = await Promise.all(saved.map((s) => evalExpression(s.expression)));
   return (
     <div className="space-y-4">

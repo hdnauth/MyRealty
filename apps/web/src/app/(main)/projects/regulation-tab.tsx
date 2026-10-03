@@ -66,7 +66,7 @@ function RegionList({ title, rows }: { title: string; rows: { sido: string | nul
           ))}
         </ul>
       ) : (
-        <p className="px-4 pb-4 text-xs text-muted">아직 받은 경계가 없습니다(매일 ETL regulations 단계, 브이월드 키 필요).</p>
+        <p className="px-4 pb-4 text-xs text-muted">규제 구역 경계를 준비하고 있어요. 매일 아침 자동으로 수집됩니다.</p>
       )}
     </Card>
   );

@@ -2,7 +2,7 @@ import { Building, Building2, Home, Landmark, Store, Trees } from "lucide-react"
 import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { type AreaUnit, formatArea, formatDate, formatManwon } from "@/lib/format";
-import { GROUP_TAGS, PROPERTY_TYPES, type PropertyType } from "@/lib/property";
+import { currentValue, GROUP_TAGS, PROPERTY_TYPES, type PropertyType, VALUE_SOURCE_LABEL } from "@/lib/property";
 
 const ICONS: Record<PropertyType, typeof Home> = {
   apt: Building2,
@@ -34,14 +34,15 @@ export function ItemCard({
     area_m2: number | null;
     land_area_m2: number | null;
     estimate: number | null;
+    median6m?: number | null;
     last_trade_price: number | null;
     last_trade_date: string | null;
     purchase_price: number | null;
     unread: number;
   };
 }) {
-  const value = item.estimate ?? item.last_trade_price;
-  const gain = value && item.purchase_price ? value / item.purchase_price - 1 : null;
+  const { value, source } = currentValue(item);
+  const gain = value && item.purchase_price && source !== "purchase" ? value / item.purchase_price - 1 : null;
   return (
     <Link href={`/items/${item.id}`} className="card flex items-center gap-3 p-4 transition-colors hover:border-accent/40">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
@@ -60,7 +61,7 @@ export function ItemCard({
       <div className="shrink-0 text-right">
         <div className="tabular font-semibold">{value ? formatManwon(value, { short: true }) : "-"}</div>
         <div className="text-[11px] text-muted">
-          {item.estimate ? "추정" : item.last_trade_date ? `최근 ${formatDate(item.last_trade_date)}` : "거래 없음"}
+          {source === "last" && item.last_trade_date ? `최근 거래 ${formatDate(item.last_trade_date)}` : source ? VALUE_SOURCE_LABEL[source] : "거래 없음"}
           {gain !== null ? (
             <span className={gain >= 0 ? "ml-1 text-up" : "ml-1 text-down"}>
               {gain >= 0 ? "+" : ""}

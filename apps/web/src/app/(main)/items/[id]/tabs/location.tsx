@@ -55,8 +55,8 @@ export async function LocationTab({ item }: { item: WatchItem }) {
     return (
       <Card>
         <EmptyState
-          title="아직 입지 점수가 없습니다"
-          desc="ETL pois 단계가 주변 편의시설(상가정보·병원정보 API, 표준데이터 CSV)을 모은 뒤 점수를 계산합니다."
+          title="입지 점수를 준비하고 있어요"
+          desc="주변 역·학교·병원·마트·공원 정보를 모아 점수를 계산합니다. 매일 아침 자동으로 수집되며, 준비되면 이 화면에 나타납니다."
         />
       </Card>
     );

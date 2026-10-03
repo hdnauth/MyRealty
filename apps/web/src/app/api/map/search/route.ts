@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { geocode } from "@/lib/external/geocode";
 
@@ -11,7 +10,6 @@ export type MapSearchResult =
  * 지도 검색: 수집된 단지명·읍면동 이름(입력 중에 바로) + geo=1 이면 주소 지오코딩(엔터·'주소로 찾기' — 외부 API 라 입력마다 부르지 않는다).
  */
 export async function GET(req: NextRequest) {
-  if (!(await getUser())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const q = (req.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 60);
   if (q.length < 2) return NextResponse.json({ results: [] });
   const like = `%${q.replace(/\s+/g, "%")}%`;

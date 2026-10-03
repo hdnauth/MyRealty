@@ -6,7 +6,7 @@ import { pingModel } from "@/lib/ai/engine";
 import { listModels, type ModelOption, normalizeBaseUrl } from "@/lib/ai/models";
 import { type AiProvider, isAiProvider, PROVIDER_INFO } from "@/lib/ai/providers";
 import { decryptSecret, encryptSecret, keyHint } from "@/lib/ai/secret";
-import { requireUser } from "@/lib/auth/session";
+import { requireMember } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 
 export type AiForm = { provider: string; model?: string; apiKey?: string; baseUrl?: string };
@@ -32,7 +32,7 @@ async function toConfig(userId: string, f: AiForm): Promise<{ cfg: AiConfig } | 
 }
 
 export async function loadAiModelsAction(f: AiForm): Promise<{ models?: ModelOption[]; error?: string }> {
-  const user = await requireUser();
+  const user = await requireMember();
   const r = await toConfig(user.id, f);
   if ("error" in r) return r;
   try {
@@ -44,7 +44,7 @@ export async function loadAiModelsAction(f: AiForm): Promise<{ models?: ModelOpt
 }
 
 export async function testAiAction(f: AiForm): Promise<{ ok: boolean; message: string }> {
-  const user = await requireUser();
+  const user = await requireMember();
   const r = await toConfig(user.id, f);
   if ("error" in r) return { ok: false, message: r.error };
   if (!r.cfg.model) return { ok: false, message: "모델을 고르세요." };
@@ -58,7 +58,7 @@ export async function testAiAction(f: AiForm): Promise<{ ok: boolean; message: s
 }
 
 export async function saveAiSettingsAction(f: AiForm): Promise<{ error?: string }> {
-  const user = await requireUser();
+  const user = await requireMember();
   const r = await toConfig(user.id, f);
   if ("error" in r) return r;
   const { cfg } = r;
@@ -80,7 +80,7 @@ export async function saveAiSettingsAction(f: AiForm): Promise<{ error?: string 
 
 /** 내 설정을 지우고 서버 기본으로 */
 export async function clearAiSettingsAction(): Promise<void> {
-  const user = await requireUser();
+  const user = await requireMember();
   await sql`delete from user_ai_settings where user_id = ${user.id}`;
   refresh();
 }

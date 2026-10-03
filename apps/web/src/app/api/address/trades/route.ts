@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { geocode } from "@/lib/external/geocode";
@@ -49,7 +48,6 @@ function summarizeByArea(rows: PreviewTrade[]) {
  * 수집된 단지면 DB, 아니면 실거래 API 를 바로 조회한다(저장은 등록 후 개별 수집이 한다).
  */
 export async function GET(req: NextRequest) {
-  if (!(await getUser())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sp = req.nextUrl.searchParams;
   const type = sp.get("type") ?? "";
   const sgg = sp.get("sgg") ?? "";

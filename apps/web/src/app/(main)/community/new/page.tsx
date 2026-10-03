@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { type BoardOption, Composer } from "@/components/community/composer";
 import { Card, PageHeader } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { requireMember } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { canWrite, communityMe, shortSgg, sggNames, subscriptions } from "@/lib/community/queries";
 import { isSgg, isUserCategory } from "@/lib/community/rules";
@@ -11,7 +11,9 @@ import { createPostAction } from "../actions";
 export const metadata: Metadata = { title: "글쓰기" };
 
 export default async function NewPostPage(props: PageProps<"/community/new">) {
-  const [user, sp] = await Promise.all([requireUser(), props.searchParams]);
+  const sp = await props.searchParams;
+  const back = new URLSearchParams(Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : [])));
+  const user = await requireMember(`/community/new${back.size ? `?${back}` : ""}`);
   const self = `/community/new?${new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => typeof e[1] === "string")).toString()}`;
   const me = await communityMe(user.id, user.isAdmin);
   if (!canWrite(me)) redirect(`/community/profile?next=${encodeURIComponent(self)}`);

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { MapPin } from "lucide-react";
 import { LinkButton, PageHeader, Tabs } from "@/components/ui";
 import { getAreaUnit } from "@/lib/area-unit";
-import { requireUser } from "@/lib/auth/session";
+import { getUser, NO_USER } from "@/lib/auth/session";
 import { THEME_TABS, type ThemeTab, ZONE_PHASES, type ZonePhase } from "@/lib/projects";
 import type { ZoneFilter } from "@/lib/queries/projects";
 import { ProjectForm } from "./project-form";
@@ -26,7 +26,9 @@ const SUBS: Record<ThemeTab, string> = {
 };
 
 export default async function ProjectsPage(props: PageProps<"/projects">) {
-  const [user, sp, unit] = await Promise.all([requireUser(), props.searchParams, getAreaUnit()]);
+  // 방문자도 볼 수 있다(내 부동산·팔로우 연결만 비어 있다)
+  const [viewer, sp, unit] = await Promise.all([getUser(), props.searchParams, getAreaUnit()]);
+  const user = { id: viewer?.id ?? NO_USER, isAdmin: viewer?.isAdmin ?? false };
   const tabParam = one(sp.tab);
   // 예전 링크(?tab=infra)는 교통 탭으로
   const tab: ThemeTab = tabParam === "infra" ? "transit" : (THEME_TABS.find((t) => t.key === tabParam)?.key ?? "zones");

@@ -2,7 +2,7 @@
 
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin, requireUser } from "@/lib/auth/session";
+import { ensureUser, requireAdmin, requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { geocode } from "@/lib/external/geocode";
 import { INFRA_STATUS, ZONE_STAGES } from "@/lib/projects";
@@ -60,7 +60,8 @@ export async function deleteProjectAction(form: FormData) {
 
 /** 구역 팔로우 켜기·끄기(단계 변화 알림) */
 export async function toggleZoneFollowAction(form: FormData) {
-  const user = await requireUser();
+  // 로그인 없이도 이 기기에서 구역을 지켜볼 수 있다(기기 게스트)
+  const user = await ensureUser();
   const id = Number(form.get("zone"));
   if (!Number.isInteger(id) || id <= 0) return;
   await setZoneFollow(user.id, id, form.get("on") === "1");

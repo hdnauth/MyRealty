@@ -21,7 +21,8 @@ export default function manifest(): MetadataRoute.Manifest {
     shortcuts: [
       { name: "지도", url: "/map", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
       { name: "관심 부동산", url: "/items", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
-      { name: "AI 질문하기", url: "/ai", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
+      { name: "시장 지표", url: "/indicators", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
+      { name: "동네 이야기", url: "/community", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
     ],
   };
 }

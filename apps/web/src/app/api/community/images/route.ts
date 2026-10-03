@@ -8,7 +8,7 @@ const TYPES = ["image/jpeg", "image/webp", "image/png"];
 /** 첨부 사진 업로드(브라우저에서 줄인 JPEG). 글을 저장하면 그 글에 연결되고, 하루 안에 연결되지 않으면 정리된다 */
 export async function POST(req: Request) {
   const user = await getUser();
-  if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  if (!user || user.isGuest) return NextResponse.json({ error: "이메일 간편 가입 후 사진을 올릴 수 있습니다." }, { status: 401 });
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof Blob)) return NextResponse.json({ error: "파일이 없습니다." }, { status: 400 });

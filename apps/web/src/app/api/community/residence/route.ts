@@ -9,7 +9,7 @@ import { addResidenceCheck, RESIDENCE } from "@/lib/community/rules";
  */
 export async function POST(req: Request) {
   const user = await getUser();
-  if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  if (!user || user.isGuest) return NextResponse.json({ error: "이메일 간편 가입 후 거주 인증을 할 수 있습니다." }, { status: 401 });
   const body = (await req.json().catch(() => null)) as { complexId?: number; lat?: number; lng?: number; accuracy?: number } | null;
   const complexId = Number(body?.complexId);
   const lat = Number(body?.lat);

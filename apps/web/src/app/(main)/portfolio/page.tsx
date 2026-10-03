@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LineSeriesChart } from "@/components/charts/series-chart";
 import { Card, CardHeader, EmptyState, Notice, PageHeader, Stat } from "@/components/ui";
-import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatDate, formatManwon, formatPct } from "@/lib/format";
+import { currentValue, VALUE_SOURCE_LABEL } from "@/lib/property";
+import { MARKET_COLUMNS, MARKET_JOINS, type MarketFields } from "@/lib/queries/items";
 import { holdingTax } from "@/lib/tax";
 
 export const metadata: Metadata = { title: "포트폴리오" };
@@ -18,21 +20,20 @@ type Row = {
   purchase_date: string | null;
   loans: { name?: string; amount: number; rate: number; maturity?: string }[];
   lease: { deposit: number; rent?: number; role?: string; end_date?: string } | null;
-  estimate: number | null;
   official: number | null; // 원
-};
+} & MarketFields;
 
 export default async function PortfolioPage(props: PageProps<"/portfolio">) {
   const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
   // 보유 부동산 목록과 월별 합계를 동시에 조회(합계는 같은 조건의 하위 쿼리로 부동산을 고른다)
   const [, rows, history] = await Promise.all([
-    requireUser(),
+    pageUser(uid),
     sql<Row[]>`
-      select w.id, w.label, w.property_type, w.pnu, w.purchase_price, w.purchase_date::text, w.loans, w.lease,
-        (select estimate from valuations v where v.watch_item_id = w.id order by as_of desc limit 1) as estimate,
+      select w.id, w.label, w.property_type, w.pnu, w.purchase_price, w.purchase_date::text, w.loans, w.lease, ${MARKET_COLUMNS},
         (select o.price from official_prices o where o.target_type in ('apt_unit', 'house')
            and (o.target_key = w.pnu or o.target_key like w.pnu || '|%') order by o.year desc limit 1) as official
-      from watch_items w where w.user_id = ${uid} and w.group_tag = 'owned' order by w.created_at`,
+      from watch_items w ${MARKET_JOINS}
+      where w.user_id = ${uid} and w.group_tag = 'owned' order by w.created_at`,
     sql<{ month: string; value: number }[]>`
       with owned as (select id from watch_items where user_id = ${uid} and group_tag = 'owned')
       select to_char(date_trunc('month', v.as_of), 'YYYY-MM-01') as month, sum(v.estimate)::float8 as value
@@ -50,7 +51,9 @@ export default async function PortfolioPage(props: PageProps<"/portfolio">) {
     );
   }
 
-  const value = rows.reduce((a, r) => a + (r.estimate ?? r.purchase_price ?? 0), 0);
+  // 현재 시세: 홈·목록·상세와 같은 기준(추정 시세 → 6개월 중위 → 최근 거래 → 매입가)
+  const values = rows.map((r) => currentValue(r));
+  const value = values.reduce((a, v) => a + (v.value ?? 0), 0);
   const cost = rows.reduce((a, r) => a + (r.purchase_price ?? 0), 0);
   const loans = rows.flatMap((r) => r.loans.map((l) => ({ ...l, item: r.label })));
   const debt = loans.reduce((a, l) => a + (l.amount || 0), 0);
@@ -67,10 +70,10 @@ export default async function PortfolioPage(props: PageProps<"/portfolio">) {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="포트폴리오" sub="보유 부동산의 추정 시세·대출·임대·보유세(개략)" />
+      <PageHeader title="포트폴리오" sub="보유 부동산의 현재 시세·대출·임대·보유세(개략)" />
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Stat label="보유 자산(추정)" value={formatManwon(value, { short: true })} sub={<span className="text-muted">{rows.length}건</span>} />
+          <Stat label="보유 자산(현재 시세)" value={formatManwon(value, { short: true })} sub={<span className="text-muted">{rows.length}건</span>} />
           <Stat label="평가 손익" value={cost ? formatManwon(value - cost, { short: true }) : "-"} sub={cost ? <span className={value >= cost ? "text-up" : "text-down"}>{formatPct(value / cost - 1)}</span> : null} />
           <Stat label="순자산" value={formatManwon(equity, { short: true })} sub={<span className="text-muted">대출 {formatManwon(debt, { short: true })} · 보증금 {formatManwon(deposits, { short: true })}</span>} />
           <Stat label="LTV / 연 이자" value={`${value ? formatPct(debt / value, 1, false) : "-"}`} sub={<span className="text-muted">이자 약 {formatManwon(interest, { short: true })}/년{rentIncome ? ` · 월세 수입 ${formatManwon(rentIncome, { short: true })}/년` : ""}</span>} />
@@ -93,7 +96,7 @@ export default async function PortfolioPage(props: PageProps<"/portfolio">) {
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted">
                 <th className="px-4 py-2 font-medium">부동산</th>
-                <th className="px-2 py-2 text-right font-medium">추정가</th>
+                <th className="px-2 py-2 text-right font-medium">현재 시세</th>
                 <th className="px-2 py-2 text-right font-medium">매입가</th>
                 <th className="px-2 py-2 text-right font-medium">손익</th>
                 <th className="px-2 py-2 text-right font-medium">대출</th>
@@ -102,14 +105,18 @@ export default async function PortfolioPage(props: PageProps<"/portfolio">) {
               </tr>
             </thead>
             <tbody className="tabular">
-              {rows.map((r) => {
-                const v = r.estimate ?? r.purchase_price ?? 0;
+              {rows.map((r, i) => {
+                const { value: cur, source } = values[i];
+                const v = cur ?? 0;
                 return (
                   <tr key={r.id} className="border-b border-border/60 last:border-0">
                     <td className="px-4 py-2"><Link href={`/items/${r.id}`} className="hover:text-accent">{r.label}</Link></td>
-                    <td className="px-2 py-2 text-right">{formatManwon(r.estimate, { short: true })}</td>
+                    <td className="px-2 py-2 text-right">
+                      {formatManwon(cur, { short: true })}
+                      {source ? <span className="block text-[11px] text-muted">{VALUE_SOURCE_LABEL[source]}</span> : null}
+                    </td>
                     <td className="px-2 py-2 text-right">{formatManwon(r.purchase_price, { short: true })}</td>
-                    <td className={`px-2 py-2 text-right ${r.purchase_price && v >= r.purchase_price ? "text-up" : "text-down"}`}>{r.purchase_price ? formatPct(v / r.purchase_price - 1) : "-"}</td>
+                    <td className={`px-2 py-2 text-right ${r.purchase_price && v >= r.purchase_price ? "text-up" : "text-down"}`}>{r.purchase_price && source !== "purchase" ? formatPct(v / r.purchase_price - 1) : "-"}</td>
                     <td className="px-2 py-2 text-right">{formatManwon(r.loans.reduce((a, l) => a + (l.amount || 0), 0) || null, { short: true })}</td>
                     <td className="px-2 py-2 text-right">{r.official ? formatManwon(r.official / 10000, { short: true }) : "-"}</td>
                     <td className="px-4 py-2 text-right">{value ? formatPct(v / value, 0, false) : "-"}</td>
@@ -139,10 +146,10 @@ export default async function PortfolioPage(props: PageProps<"/portfolio">) {
                 <Stat label="종부세 계" value={formatManwon(tax.comprehensive.total)} sub={<span className="text-muted">과세표준 {formatManwon(tax.comprehensive.base, { short: true })}</span>} />
                 <Stat label="합계" value={formatManwon(tax.total)} />
               </div>
-              {officials.some((o) => o === null) ? <p className="text-xs text-warn">공시가격이 없는 주택은 제외했습니다(ETL attrs 수집 필요).</p> : null}
+              {officials.some((o) => o === null) ? <p className="text-xs text-warn">공시가격을 아직 받지 못한 주택은 제외했습니다(매일 아침 수집).</p> : null}
             </>
           ) : (
-            <p className="text-muted">보유 주택의 공시가격이 아직 없습니다(ETL attrs 단계에서 수집).</p>
+            <p className="text-muted">보유 주택의 공시가격을 준비하고 있어요. 매일 아침 수집되면 보유세를 계산합니다.</p>
           )}
           <Notice>
             참고용 개략치입니다. 종부세 세액공제(고령자·장기보유), 재산세 중복분 공제, 세부담 상한, 3주택 이상 중과세율, 토지분은 반영하지 않았고 세법·시행령은 매년 바뀝니다. 실제 세액은 고지서·세무 전문가로 확인하세요.

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { NotificationRow } from "@/components/feed/notification-row";
-import { Button, Card, EmptyState, PageHeader, Tabs } from "@/components/ui";
-import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { Button, Card, EmptyState, LinkButton, PageHeader, Tabs } from "@/components/ui";
+import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { listNotifications } from "@/lib/queries/feed";
 import { markAllReadAction } from "./actions";
 
@@ -19,8 +19,8 @@ const FILTERS = [
 export default async function NotificationsPage(props: PageProps<"/notifications">) {
   const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
   const f = FILTERS.find((x) => x.key === sp.f)?.key ?? "all";
-  const [, rows] = await Promise.all([
-    requireUser(),
+  const [user, rows] = await Promise.all([
+    pageUser(uid),
     listNotifications(uid, {
       unreadOnly: f === "unread",
       kind: f !== "all" && f !== "unread" ? f : undefined,
@@ -48,7 +48,15 @@ export default async function NotificationsPage(props: PageProps<"/notifications
             ))}
           </div>
         ) : (
-          <EmptyState title="알림이 없습니다" desc="새 실거래·신고가·관련 뉴스·주변 청약이 생기면 여기에 표시됩니다." />
+          <EmptyState
+            title="알림이 없습니다"
+            desc={
+              user?.itemCount
+                ? "새 실거래·신고가·관련 뉴스·주변 청약이 생기면 여기에 표시됩니다."
+                : "관심 부동산을 등록하면 새 실거래·신고가·관련 뉴스·주변 청약을 모아 알려 드립니다. 로그인 없이도 이 기기로 받을 수 있어요."
+            }
+            action={user?.itemCount ? undefined : <LinkButton href="/items">관심 부동산 등록</LinkButton>}
+          />
         )}
       </Card>
     </div>

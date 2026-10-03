@@ -2,22 +2,17 @@ import { jwtVerify, SignJWT, type JWTPayload } from "jose";
 import { NextResponse, type NextRequest } from "next/server";
 import { REMEMBER_DAYS, SESSION_COOKIE, shouldRenew } from "@/lib/auth/policy";
 
-// /api/cron·/api/relay 는 라우트에서 CRON_SECRET 으로 인증한다. /legal·/.well-known 은 앱 마켓 심사·Android 앱 인증용 공개 경로
-const PUBLIC_PATHS = ["/login", "/manifest.webmanifest", "/sw.js", "/offline", "/legal", "/.well-known", "/api/cron", "/api/relay", "/api/health"];
-
 function secretKey() {
   const secret = process.env.AUTH_SECRET || (process.env.NODE_ENV !== "production" ? "dev-only-insecure-secret-change-me" : "");
   return secret ? new TextEncoder().encode(secret) : null;
 }
 
 /**
- * 서명만 빠르게 확인해 비로그인 사용자를 /login 으로 보낸다. 세션 폐기·계정 정지 여부는 페이지에서 DB 로 재확인.
- * "이 기기 기억하기" 세션은 하루에 한 번 쿠키를 새로 발급해 만료를 연장한다(자동 로그인 유지).
+ * 로그인 없이도 모든 화면을 열람할 수 있다(방문자). 저장이 필요한 순간 기기 게스트 계정이 만들어지고,
+ * 글쓰기·AI 등은 화면·액션에서 이메일 가입을 요구한다(lib/auth/session). API 라우트는 각자 인증한다.
+ * 여기서는 "이 기기 기억하기" 세션(게스트 포함)의 쿠키를 하루에 한 번 새로 발급해 만료를 연장한다.
  */
 export async function proxy(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const key = secretKey();
   let payload: JWTPayload | null = null;
@@ -29,8 +24,10 @@ export async function proxy(req: NextRequest) {
     }
   }
 
+  // 시작 화면: 세션이 없는 방문자는 바로 지도로(관심 부동산이 없는 사용자는 홈 화면이 지도로 보낸다)
+  if (!payload && req.nextUrl.pathname === "/") return NextResponse.redirect(new URL("/map", req.url));
+  const res = NextResponse.next();
   if (payload) {
-    const res = NextResponse.next();
     if (key && shouldRenew(payload)) {
       const expires = new Date(Date.now() + REMEMBER_DAYS * 86400_000);
       const fresh = await new SignJWT({ uid: payload.uid, rem: true })
@@ -47,14 +44,8 @@ export async function proxy(req: NextRequest) {
         expires,
       });
     }
-    return res;
   }
-  if (isPublic) return NextResponse.next();
-  if (pathname.startsWith("/api/")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const url = req.nextUrl.clone();
-  url.pathname = "/login";
-  url.search = pathname === "/" ? "" : `?next=${encodeURIComponent(pathname + req.nextUrl.search)}`;
-  return NextResponse.redirect(url);
+  return res;
 }
 
 export const config = {

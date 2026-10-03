@@ -59,8 +59,14 @@ export async function ZonesTab({ uid, isAdmin, f, limit, zoneId, unit, href }: {
       {empty ? (
         <Card>
           <EmptyState
-            title="아직 수집된 정비구역이 없습니다"
-            desc={<>매일 ETL 의 <code>zones</code> 단계가 서울·경기·부산·인천 정비사업 시스템과 국토부 전국 통합 데이터에서 구역·단계를 모읍니다. 바로 받으려면 <code>uv run myrealty zones</code>.</>}
+            title="정비구역 정보를 준비하고 있어요"
+            desc={
+              isAdmin ? (
+                <>매일 ETL 의 <code>zones</code> 단계가 서울·경기·부산·인천 정비사업 시스템과 국토부 전국 통합 데이터에서 구역·단계를 모읍니다. 바로 받으려면 <code>uv run myrealty zones</code>.</>
+              ) : (
+                "전국 재개발·재건축 구역과 진행 단계를 매일 아침 자동으로 모읍니다. 준비되면 이 화면에 나타납니다."
+              )
+            }
           />
         </Card>
       ) : (

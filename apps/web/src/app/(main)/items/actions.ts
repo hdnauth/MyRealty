@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { refresh } from "next/cache";
-import { requireUser } from "@/lib/auth/session";
+import { ensureUser, requireMember, requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { geocode, geocodeQueries } from "@/lib/external/geocode";
 import { defaultRadius, GROUP_TAGS, isPropertyType, makePnu } from "@/lib/property";
@@ -70,7 +70,13 @@ function parseFinance(form: FormData, money: Record<keyof typeof MONEY_FIELDS, n
 }
 
 export async function createItemAction(_: ItemFormState, form: FormData): Promise<ItemFormState> {
-  const user = await requireUser();
+  // 로그인하지 않았으면 이 기기의 게스트 계정을 만들어 저장한다(이메일 가입 시 그대로 이어진다)
+  let user;
+  try {
+    user = await ensureUser();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
   const type = String(form.get("property_type") ?? "");
   if (!isPropertyType(type)) return { error: "유형을 선택하세요." };
   const sggCd = str(form.get("sgg_cd"));
@@ -203,7 +209,7 @@ export async function markItemNotificationsRead(id: string) {
 }
 
 export async function analyzeItemAction(id: string): Promise<{ error?: string }> {
-  const user = await requireUser();
+  const user = await requireMember();
   const { getItem } = await import("@/lib/queries/items");
   const { generateAnalysis } = await import("@/lib/ai/analysis");
   const item = await getItem(user.id, id);

@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 
 export type MapOverlays = {
@@ -18,7 +17,6 @@ const MAX_SPAN = 0.6; // 너무 넓게 보면 경계는 생략(라벨·점만)
  * 단순화한 GeoJSON 좌표만 돌려준다(가벼운 응답).
  */
 export async function GET(req: NextRequest) {
-  if (!(await getUser())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sp = req.nextUrl.searchParams;
   const b = (sp.get("bbox") ?? "").split(",").map(Number);
   if (b.length !== 4 || !b.every(Number.isFinite)) return NextResponse.json({ error: "bbox" }, { status: 400 });

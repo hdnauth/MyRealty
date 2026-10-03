@@ -1,18 +1,20 @@
 import type { Metadata } from "next";
 import { type MapEvent, type MapFocusComplex, type MapProject, type MapWatchItem, RealtyMap } from "@/components/map/realty-map";
-import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { fillMissingItemGeoms } from "@/lib/external/geocode";
 import { env } from "@/lib/env";
 import { getAreaUnit } from "@/lib/area-unit";
+import { busiestCenter } from "@/lib/queries/complexes";
 
 export const metadata: Metadata = { title: "지도" };
 
 export default async function MapPage(props: PageProps<"/map">) {
   const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
-  const user = await requireUser();
+  // 시작 화면이라 방문자도 바로 본다(내 부동산 목록만 비어 있다)
+  const user = await pageUser(uid);
   // 좌표가 없는 부동산(등록 때 지오코딩 실패 등)은 지금 채워 지도에 빠지지 않게 한다
-  await fillMissingItemGeoms(user.id).catch((e) => console.error("[map] geocode", e));
+  if (user?.itemCount) await fillMissingItemGeoms(user.id).catch((e) => console.error("[map] geocode", e));
   const [items, missing, events, projects, unit] = await Promise.all([
     sql<MapWatchItem[]>`
       select w.id, w.label, w.property_type, w.group_tag, w.radius_m, w.complex_id, w.pnu, w.area_m2::float8 as area_m2,
@@ -56,7 +58,8 @@ export default async function MapPage(props: PageProps<"/map">) {
   const atPoint: [number, number] | null = at && at.length === 2 && at.every(Number.isFinite) ? [at[0], at[1]] : null;
   const center: [number, number] = focusComplex
     ? [focusComplex.lng, focusComplex.lat]
-    : atPoint ?? (focus ? [focus.lng, focus.lat] : items[0] ? [items[0].lng, items[0].lat] : [126.978, 37.5665]);
+    : (atPoint ??
+      (focus ? [focus.lng, focus.lat] : items[0] ? [items[0].lng, items[0].lat] : ((await busiestCenter().catch(() => null)) ?? [126.978, 37.5665])));
   const initialType = typeof sp.type === "string" ? sp.type : focusComplex?.property_type ?? null;
   const myComplexes = Object.fromEntries(items.filter((i) => i.complex_id !== null).map((i) => [i.complex_id!, i.id]));
   return (

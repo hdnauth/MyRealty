@@ -11,7 +11,7 @@
 
 부하: 격자(0.004°, 약 440×360m)마다 한 번 호출하고 45일 동안 다시 받지 않는다(poi_fetches 'luz:<x>:<y>').
 받을 격자: 수집 지역 단지가 있는 격자 · 관심 부동산 주변 3×3 · 경계 없는 구역 점의 격자. 받은 구역 필지가 격자 끝에 닿으면
-옆 격자를 다음 차례로 둔다('luzq:<x>:<y>', 구역이 격자 밖으로 이어질 때만 넓혀 받는다). 한 실행 최대 LANDUSE_MAX_TILES(150)·LANDUSE_MAX_MIN(8분).
+옆 격자를 다음 차례로 둔다('luzq:<x>:<y>', 구역이 격자 밖으로 이어질 때만 넓혀 받는다). 한 실행 최대 LANDUSE_MAX_TILES(600)·LANDUSE_MAX_MIN(8분) — 격자 한 번은 1초 안팎이라 첫 몇 번 실행에 수집 지역이 채워진다.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ WFS = "https://api.vworld.kr/ned/wfs/getLandUseWFS"
 TILE = 0.004
 MAX_FEATURES = 1000
 REFRESH_DAYS = 45
-MAX_TILES = int(os.environ.get("LANDUSE_MAX_TILES") or 150)
+MAX_TILES = int(os.environ.get("LANDUSE_MAX_TILES") or 600)
 # 매일 수집 시간 예산을 지키려고 격자 받기에 쓰는 시간 상한(분) — 넘으면 남은 격자는 다음 실행으로
 MAX_MINUTES = float(os.environ.get("LANDUSE_MAX_MIN") or 8)
 # 필지 사이 도로·틈(수 m)은 이어 붙인다(도로를 빼고 지정된 후보지도 한 덩어리로)
@@ -153,15 +153,19 @@ def save_tile(conn, tx: int, ty: int, feats: list[dict]) -> dict:
 
 
 def pending_tiles(conn, limit: int) -> list[tuple[int, int]]:
-    """받을 격자(가까운 우선순위부터). 45일 안에 받은 격자는 뺀다."""
+    """받을 격자. 45일 안에 받은 격자는 뺀다. 우선순위:
+    0 받다 만 구역의 옆 격자(경계를 마저 그림) · 1 수집 지역 구역 점·관심 부동산 주변 3×3(내가 보는 곳의 경계부터)
+    · 2 수집 지역 단지 격자(어느 출처에도 없는 후보지 찾기) · 3 그 밖의 구역 점(전국 경계)."""
     rows = conn.execute(
-        f"""with pts as (
-              select c.geom as g, 0 as pri, false as ring from complexes c
-              where c.geom is not null and c.sgg_cd in (select sgg_cd from collect_targets where enabled)
-              union all select geom, 0, true from watch_items where geom is not null
-              union all select geom, 1, false from redevelopment_zones
+        f"""with targets as (select sgg_cd from collect_targets where enabled),
+            pts as (
+              select geom as g, 1 as pri, true as ring from watch_items where geom is not null
+              union all
+              select geom, case when sgg_cd in (select sgg_cd from targets) then 1 else 3 end, false from redevelopment_zones
               where geom is not null and GeometryType(geom) = 'POINT' and stage_order is distinct from 9
                 and coalesce(attrs->>'geo', '') <> 'dong'
+              union all
+              select c.geom, 2, false from complexes c where c.geom is not null and c.sgg_cd in (select sgg_cd from targets)
             ), t as (
               select floor(ST_X(g) / {TILE})::int + dx as tx, floor(ST_Y(g) / {TILE})::int + dy as ty, pri
               from pts, (values (-1), (0), (1)) a(dx), (values (-1), (0), (1)) b(dy)

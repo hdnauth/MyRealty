@@ -121,6 +121,20 @@
 }
 html {
   font-size: 100%;
+  /* 가로로 돌릴 때 휴대폰이 글자를 멋대로 키우지 않게 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+/*
+ * 휴대폰(터치)에서 16px 보다 작은 입력칸·선택 상자를 누르면 iOS 가 화면 전체를 확대하고 그대로 둔다(지도 검색·유형·정렬·조건 입력).
+ * 터치 기기에서만 입력 글자를 16px 이상으로 둔다.
+ */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
 }
 html[data-font="normal"] {
   font-size: 93.75%;

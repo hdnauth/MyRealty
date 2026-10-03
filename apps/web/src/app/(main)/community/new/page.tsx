@@ -5,7 +5,7 @@ import { Card, PageHeader } from "@/components/ui";
 import { requireMember } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { canWrite, communityMe, shortSgg, sggNames, subscriptions } from "@/lib/community/queries";
-import { isSgg, isUserCategory } from "@/lib/community/rules";
+import { ALL_BOARD, isSgg, isUserCategory } from "@/lib/community/rules";
 import { createPostAction } from "../actions";
 
 export const metadata: Metadata = { title: "글쓰기" };
@@ -28,11 +28,16 @@ export default async function NewPostPage(props: PageProps<"/community/new">) {
   const sggCodes = [...new Set([...subs.sggs.map((s) => s.sgg), ...complexes.map((c) => c.sgg), ...(sggParam ? [sggParam] : [])])];
   const names = await sggNames(sggCodes);
   // 시군구마다 [시군구 게시판, 그 안의 단지 게시판들]
-  const boards: BoardOption[] = sggCodes.flatMap((g) => [
-    { value: `sgg:${g}`, label: `${shortSgg(names[g])} 전체`, group: names[g] ?? g, sgg: g },
-    ...complexes.filter((c) => c.sgg === g).map((c) => ({ value: `complex:${c.id}`, label: c.name, group: names[g] ?? g, sgg: g })),
-  ]);
-  if (!boards.length) redirect("/community?nosubs=1");
+  const boards: BoardOption[] = [
+    ...sggCodes
+      .filter((g) => g !== ALL_BOARD)
+      .flatMap((g) => [
+        { value: `sgg:${g}`, label: `${shortSgg(names[g])} 전체`, group: names[g] ?? g, sgg: g },
+        ...complexes.filter((c) => c.sgg === g).map((c) => ({ value: `complex:${c.id}`, label: c.name, group: names[g] ?? g, sgg: g })),
+      ]),
+    // 지역과 상관없는 이야기(정책·금리·청약 일반 등) — 구독한 지역이 없어도 쓸 수 있다
+    { value: `sgg:${ALL_BOARD}`, label: "전국 게시판(지역 무관)", group: "전국", sgg: ALL_BOARD },
+  ];
   const initialBoard = complexId ? `complex:${complexId}` : sggParam ? `sgg:${sggParam}` : boards[0].value;
 
   const trade = typeof sp.trade === "string" && /^\d+$/.test(sp.trade) ? Number(sp.trade) : null;

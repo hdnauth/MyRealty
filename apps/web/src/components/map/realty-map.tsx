@@ -975,6 +975,27 @@ export function RealtyMap({
     }
     setFullscreen("css");
   }, [fullscreen]);
+  // PC 트랙패드 핀치(ctrl+휠)·iOS Safari 제스처가 지도 밖(카드·패널·목록)에서 일어나면 브라우저가 페이지 전체를 확대한다 — 막는다.
+  // 지도 캔버스 안에서는 지도 엔진이 확대로 처리한다
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const outsideMap = (e: Event) => !(e.target instanceof Element && e.target.closest(".map-canvas"));
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey && outsideMap(e)) e.preventDefault();
+    };
+    const onGesture = (e: Event) => {
+      if (outsideMap(e)) e.preventDefault();
+    };
+    root.addEventListener("wheel", onWheel, { passive: false });
+    root.addEventListener("gesturestart", onGesture);
+    root.addEventListener("gesturechange", onGesture);
+    return () => {
+      root.removeEventListener("wheel", onWheel);
+      root.removeEventListener("gesturestart", onGesture);
+      root.removeEventListener("gesturechange", onGesture);
+    };
+  }, []);
   // Esc·브라우저 버튼으로 전체 화면이 풀리면 상태도 맞춘다
   useEffect(() => {
     const onChange = () => {
@@ -1108,7 +1129,9 @@ export function RealtyMap({
     <div
       ref={rootRef}
       className={clsx(
-        "flex flex-col",
+        // 지도 화면 위 카드·패널에서 두 손가락 확대·두 번 탭하면 지도 대신 페이지 전체(글자·카드)가 커졌다 — 페이지 확대는 막고
+        // 스크롤(pan)만 둔다. 지도 확대는 지도 엔진이 터치 이벤트로 직접 처리한다
+        "flex flex-col touch-pan-x touch-pan-y",
         isFull ? "fixed inset-0 z-[1000] h-dvh w-screen bg-bg" : "-mx-4 -mt-4 h-[calc(100dvh-7.5rem)] lg:mx-0 lg:mt-0 lg:h-[calc(100dvh-4rem)]",
       )}
     >

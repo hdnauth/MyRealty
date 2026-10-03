@@ -166,6 +166,8 @@ GitHub Actions **ETL item** 워크플로로 그 부동산만 수집하고, 상�
 | 어떤 키가 빠졌거나 틀렸는지 모르겠음 | 아래 **7. 키 점검** |
 | 화면이 느림(누를 때마다 1초 이상) | 관리 → 시스템 → **DB 응답 속도**가 30ms 를 넘으면 웹 함수와 DB 지역이 다름 → 아래 **8. 속도** |
 | "로그인 코드 받기" 후 *This page couldn't load / A server error occurred* | (이전 버전) 서버 오류가 그대로 노출됨. 현재는 원인별 문구와 오류 번호가 표시된다. `/api/health` 로 확인: `db:error`(DATABASE_URL·네트워크·Supabase 는 IPv4 풀러 주소 사용), `pendingMigrations`(`uv run myrealty migrate`), `authSecret:false`(AUTH_SECRET) |
+| 화면이 몇 번에 한 번 빈 채로 수십 초 멈추다 오류(개발·테마·지도 등), `/api/health` 가 `db:error` · `57014` | postgres.js 가 한 연결에 쿼리를 이어 보내는 **파이프라이닝**과 Supabase 트랜잭션 풀러(6543)가 충돌해 쿼리가 응답 없이 멈추고, 멈춘 DB 연결이 다른 요청까지 막았다(로컬에서 동시 쿼리로 재현: 켜면 25초 멈춤, 끄면 정상). 이제 풀러 주소면 파이프라이닝을 끄고(`db-config.ts` `maxPipeline`, 덮어쓰기 `DATABASE_PIPELINE`), 실행한 쿼리가 25초 안에 끝나지 않거나 서버리스에서 30초 넘게 쉰 연결 묶음은 새로 만든다(`db-resilient.ts`, 로그 `[db] 연결 묶음을 새로 만듦`) |
+| 휴대폰 지도에서 누르다 보면 카드·글자가 지도와 함께 크게 확대됨 | 16px 보다 작은 입력칸·선택 상자를 누르면 iOS 가 화면 전체를 확대 → 터치 기기 입력 글자를 16px 이상으로, 지도 화면 위 카드·패널에서는 페이지 확대(두 손가락·두 번 탭·PC 트랙패드 핀치)를 막고 지도만 확대되게 했다 |
 | "데이터베이스에 연결할 수 없습니다" | `DATABASE_URL` 확인. 자체 서버는 루트 `.env` 가 읽히는지(`/api/health` 의 `authSecret`), Vercel 은 Transaction pooler(6543) 주소 사용 |
 | "스키마가 최신이 아닙니다" | `cd services/etl && uv run myrealty migrate` |
 | "메일을 보내지 못했습니다" | `SMTP_*` 확인(Gmail 은 앱 비밀번호, 465 포트는 SSL). 서버 로그에서 오류 번호로 상세 원인 확인 |

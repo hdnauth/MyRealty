@@ -10,7 +10,7 @@ import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { timeAgo } from "@/lib/format";
 import { canWrite, communityMe, getSummary, isFollowing, listPosts, shortSgg, sggNames, subscriptions } from "@/lib/community/queries";
-import { CATEGORIES, isCategory, isSgg } from "@/lib/community/rules";
+import { ALL_BOARD, CATEGORIES, isCategory, isSgg } from "@/lib/community/rules";
 
 export const metadata: Metadata = { title: "동네 이야기" };
 
@@ -30,6 +30,8 @@ export default async function CommunityPage(props: PageProps<"/community">) {
   const q = typeof sp.q === "string" ? sp.q.slice(0, 50) : "";
   const page = Math.max(1, Number(sp.page) || 1);
   const feed = !sgg && !complexId;
+  // 전국 게시판(지역 무관): 지역 구독·지표 버튼은 없다
+  const allBoard = sgg === ALL_BOARD;
   const hasSubs = subs.sggs.length > 0 || subs.complexes.length > 0;
 
   const [complex] = complexId
@@ -82,7 +84,7 @@ export default async function CommunityPage(props: PageProps<"/community">) {
     <div className="space-y-4">
       <PageHeader
         title={title}
-        sub={complex ? `${shortSgg(sggName)} ${complex.umd_nm ?? ""} · 단지 글은 ${shortSgg(sggName)} 게시판에도 함께 보입니다` : sggName ? sggName : hasSubs ? "관심 부동산의 단지·시군구 글을 모아 봅니다" : "우리 동네 단지·시군구 이야기를 나눠요. 읽기는 로그인 없이 가능합니다"}
+        sub={complex ? `${shortSgg(sggName)} ${complex.umd_nm ?? ""} · 단지 글은 ${shortSgg(sggName)} 게시판에도 함께 보입니다` : allBoard ? "지역과 상관없는 부동산 이야기 — 정책·금리·대출·청약·세금 등. 내 구독 피드에도 함께 보입니다" : sggName ? sggName : hasSubs ? "관심 부동산의 단지·시군구 글을 모아 봅니다" : "우리 동네 단지·시군구 이야기를 나눠요. 읽기는 로그인 없이 가능합니다"}
         action={<LinkButton href={!member ? `/login?next=${encodeURIComponent(newHref)}&why=member` : canWrite(me) ? newHref : `/community/profile?next=${encodeURIComponent(newHref)}`}><PenSquare size={16} />글쓰기</LinkButton>}
       />
 
@@ -97,13 +99,14 @@ export default async function CommunityPage(props: PageProps<"/community">) {
       {/* 게시판 고르기: 구독 전체 / 시군구 / 단지 */}
       <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0">
         <BoardChip href="/community" active={feed}>{hasSubs ? "내 구독 전체" : "전체 최신글"}</BoardChip>
+        <BoardChip href={`/community?sgg=${ALL_BOARD}`} active={allBoard}>전국 게시판</BoardChip>
         {subs.sggs.map((s) => (
           <BoardChip key={s.sgg} href={`/community?sgg=${s.sgg}`} active={sgg === s.sgg && !complexId}>{shortSgg(s.name)}</BoardChip>
         ))}
         {subs.complexes.map((c) => (
           <BoardChip key={c.id} href={`/community?complex=${c.id}`} active={complexId === c.id}><Building2 size={12} className="mr-0.5 inline" />{c.name}</BoardChip>
         ))}
-        {boardSgg && !subs.sggs.some((s) => s.sgg === boardSgg) ? (
+        {boardSgg && !allBoard && !subs.sggs.some((s) => s.sgg === boardSgg) ? (
           <BoardChip href={`/community?sgg=${boardSgg}`} active={!complexId}>{shortSgg(sggName)}</BoardChip>
         ) : null}
         {complex && !subs.complexes.some((c) => c.id === complex.id) ? <BoardChip href={`/community?complex=${complex.id}`} active>{complex.name}</BoardChip> : null}
@@ -112,7 +115,7 @@ export default async function CommunityPage(props: PageProps<"/community">) {
       {/* 게시판 머리: 구독·이동·요약 */}
       {!feed ? (
         <Card className="space-y-3 p-4">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className={allBoard ? "hidden" : "flex flex-wrap items-center gap-2"}>
             <FollowButton
               scope={complexId ? "complex" : "sgg"}
               id={String(complexId ?? sgg)}
@@ -125,7 +128,7 @@ export default async function CommunityPage(props: PageProps<"/community">) {
           </div>
           <div className="rounded-lg bg-surface-2 p-3">
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm font-semibold">{complexId ? "이 단지 FAQ" : "이번 주 동네 이야기"}</span>
+              <span className="text-sm font-semibold">{complexId ? "이 단지 FAQ" : allBoard ? "이번 주 전국 이야기" : "이번 주 동네 이야기"}</span>
               <SummaryButton scope={complexId ? "complex_faq" : "sgg_week"} id={String(complexId ?? sgg)} label={summary ? "다시 요약" : complexId ? "글 모아 FAQ 만들기" : "AI로 요약하기"} />
             </div>
             {summary ? (

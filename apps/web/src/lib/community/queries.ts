@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { sql } from "../db";
-import { excerpt, levelOf } from "./rules";
+import { ALL_BOARD, ALL_BOARD_NAME, excerpt, levelOf } from "./rules";
 
 export type CommunityMe = {
   id: string;
@@ -44,7 +44,7 @@ export async function sggNames(codes: string[]): Promise<Record<string, string>>
     from unnest(${codes}::text[]) as c(sgg)
     left join collect_targets t on t.sgg_cd = c.sgg
     left join regions r on r.lawd_cd = c.sgg || '00000'`;
-  return Object.fromEntries(rows.map((r) => [r.sgg, r.name ?? r.sgg]));
+  return Object.fromEntries(rows.map((r) => [r.sgg, r.sgg === ALL_BOARD ? ALL_BOARD_NAME : (r.name ?? r.sgg)]));
 }
 
 /** "서울특별시 송파구" → "송파구" */
@@ -176,7 +176,8 @@ export async function listPosts(o: ListOpts): Promise<PostRow[]> {
       and (${o.sgg ?? null}::text is null or p.sgg_cd = ${o.sgg ?? null})
       and (${o.complexId ?? null}::bigint is null or p.complex_id = ${o.complexId ?? null})
       and (${o.excludeComplex ?? null}::bigint is null or p.complex_id is distinct from ${o.excludeComplex ?? null})
-      and (${sggs}::text[] is null or p.sgg_cd = any(${sggs}::text[]) or p.complex_id = any(${cids ?? []}::bigint[]))
+      -- 구독 피드에는 전국 게시판 글도 함께
+      and (${sggs}::text[] is null or p.sgg_cd = any(${sggs}::text[]) or p.complex_id = any(${cids ?? []}::bigint[]) or p.sgg_cd = ${ALL_BOARD})
       and (${o.category ?? null}::text is null or p.category = ${o.category ?? null})
       and (${o.userId ?? null}::uuid is null or p.user_id = ${o.userId ?? null})
       and (${q}::text is null or (p.title || ' ' || p.body) ilike '%' || ${q} || '%')

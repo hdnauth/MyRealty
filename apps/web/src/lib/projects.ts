@@ -52,6 +52,7 @@ export function shortSido(name: string | null | undefined) {
 /** 구역 위치 정밀도(attrs.geo) — 대략 위치는 화면에 표시한다 */
 export const GEO_LABEL: Record<string, string> = {
   boundary: "구역 경계",
+  landuse: "토지이용계획 필지로 그린 경계",
   address: "대표지번",
   complex: "같은 이름 단지",
   place: "장소 검색(대략)",
@@ -65,6 +66,7 @@ export const ZONE_SOURCE: Record<string, { label: string; url?: string }> = {
   busan: { label: "부산 정비사업 통합홈페이지", url: "https://dynamice.busan.go.kr" },
   incheon: { label: "인천 정비사업 정보", url: "https://renewal.incheon.go.kr" },
   molit: { label: "국토교통부 전국 도시정비사업 통합 데이터", url: "https://www.data.go.kr/data/15160169/fileData.do" },
+  landuse: { label: "토지이용계획(정비사업 후보지 행위제한 필지)", url: "https://www.eum.go.kr" },
   manual: { label: "직접 등록" },
   file: { label: "파일 가져오기" },
 };

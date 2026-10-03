@@ -229,6 +229,8 @@ export type TargetRow = {
   sgg_cd: string;
   name: string | null;
   enabled: boolean;
+  /** 같은 시 다른 구를 자동으로 켰을 때 계기가 된 시군구 */
+  auto_from: string | null;
   created_at: string;
   backfilled_to: string | null;
   backfill_months: number;
@@ -244,7 +246,7 @@ export type RegionRequestRow = { id: number; sgg_cd: string; name: string | null
 export async function regionAdmin() {
   const [targets, pending, recent] = await Promise.all([
     sql<TargetRow[]>`
-      select t.sgg_cd, t.name, t.enabled, t.created_at::text, t.backfilled_to::text, t.backfill_months,
+      select t.sgg_cd, t.name, t.enabled, t.auto_from, t.created_at::text, t.backfilled_to::text, t.backfill_months,
         (select count(*) from watch_items w where w.sgg_cd = t.sgg_cd)::int as items,
         (select count(*) from region_requests r where r.sgg_cd = t.sgg_cd)::int as requests,
         coalesce(x.n, 0)::int as trades, x.last_deal::text as last_deal,

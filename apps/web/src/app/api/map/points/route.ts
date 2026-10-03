@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
+import { farCap } from "@/lib/far";
 import { applicableFilters, CATEGORY_GROUPS, COMPLEX_TYPES, type DealKind, filtersFromQuery, kindFor, type MapPoint, ZONE_GROUPS } from "@/lib/map-filters";
 
 export type { MapPoint };
@@ -10,7 +11,8 @@ const LIMIT = 400;
 /**
  * 화면 영역(bbox) 안의 최근 거래를 단지(또는 읍면동) 단위로 집계하고 후보 탐색 필터를 적용한다.
  * 지표: 전세가율(최근 12개월 ㎡당 중위 비), 1년 변화(최근 6개월 vs 12~18개월 전 매매 ㎡당 중위, 각 2건 이상), 입지 점수(단지),
- * 추정 임대수익률(단지: 최근 12개월 월세×12 ÷ (매매 − 월세 보증금), ㎡당 중위), 대지 평당가(단독), 지분·법인·직거래 비율.
+ * 추정 임대수익률(단지: 최근 12개월 월세×12 ÷ (매매 − 월세 보증금), ㎡당 중위), 대지 평당가(단독), 지분·법인·직거래 비율,
+ * 대지지분(빌라: 실거래 대지권 면적, 아파트: 건축물대장 대지면적 ÷ 세대수)·대지지분 평당가, 용적률·용적률 여유(아파트 건축물대장).
  */
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -47,7 +49,7 @@ export async function GET(req: NextRequest) {
     ${!complexType && f.yearMin !== null ? sql`and t.build_year >= ${f.yearMin}` : sql``}
     ${!complexType && f.yearMax !== null ? sql`and t.build_year <= ${f.yearMax}` : sql``}`;
 
-  // 집계 열(t: deal_kind, deal_date, price, rent, area, land_area, share, corp, direct)
+  // 집계 열(t: deal_kind, deal_date, price, rent, area, land_area, share_area(빌라 대지권), share, corp, direct)
   const cur = sql`deal_kind = ${kind} and deal_date >= ${since}`;
   const sale12 = sql`deal_kind = 'sale' and deal_date >= current_date - interval '12 months'`;
   const wolse12 = sql`deal_kind = 'wolse' and deal_date >= current_date - interval '12 months'`;
@@ -57,6 +59,8 @@ export async function GET(req: NextRequest) {
     percentile_cont(0.5) within group (order by price / nullif(area / 3.305785, 0)) filter (where ${cur})::float8 as median_ppy,
     percentile_cont(0.5) within group (order by rent) filter (where ${cur} and rent > 0)::float8 as median_rent,
     percentile_cont(0.5) within group (order by price / nullif(land_area / 3.305785, 0)) filter (where ${cur} and deal_kind = 'sale')::float8 as land_ppy,
+    percentile_cont(0.5) within group (order by share_area) filter (where deal_kind = 'sale' and deal_date >= ${since} and share_area > 0)::float8 as share_m2,
+    percentile_cont(0.5) within group (order by price / (share_area / 3.305785)) filter (where deal_kind = 'sale' and deal_date >= ${since} and share_area > 0)::float8 as share_ppy,
     max(deal_date) filter (where ${cur})::text as last_date,
     (count(*) filter (where ${cur} and share))::float8 / nullif(count(*) filter (where ${cur}), 0) as share_ratio,
     (count(*) filter (where ${cur} and corp))::float8 / nullif(count(*) filter (where ${cur} and corp is not null), 0) as corp_ratio,
@@ -94,7 +98,9 @@ export async function GET(req: NextRequest) {
     ${f.chgMax !== null ? sql`and p.change_1y <= ${f.chgMax}` : sql``}
     ${f.locMin !== null ? sql`and p.loc_score >= ${f.locMin}` : sql``}
     ${f.yieldMin !== null ? sql`and p.rent_yield >= ${f.yieldMin}` : sql``}
-    ${f.rentMax !== null ? sql`and p.median_rent <= ${f.rentMax}` : sql``}`;
+    ${f.rentMax !== null ? sql`and p.median_rent <= ${f.rentMax}` : sql``}
+    ${f.farMax !== null ? sql`and p.far <= ${f.farMax}` : sql``}
+    ${f.lsMin !== null ? sql`and p.land_share >= ${f.lsMin}` : sql``}`;
 
   // 거래 행 공통 열
   // 지분 여부는 원천 JSON(raw)에만 있다 — 큰 JSON 을 행마다 읽으면 아파트 3년 조회가 수십 배 느려져 토지·상가만 본다
@@ -109,14 +115,22 @@ export async function GET(req: NextRequest) {
   const query = complexType
     ? sql<MapPoint[]>`
         with c as (
-          select c.id, c.name, c.geom, c.build_year, c.households from complexes c
+          select c.id, c.name, c.geom, c.build_year, coalesce(c.households, reg.households) as households, c.pnu, c.sgg_cd, reg.far, reg.plat
+          from complexes c
+          -- 아파트 건축물대장(용적률·대지면적·세대수). 대장의 0 은 '값 없음'
+          left join lateral (
+            select nullif(coalesce((b.recap->>'vl_rat')::float8, (select max((x->>'vl_rat')::float8) from jsonb_array_elements(b.titles) x)), 0) as far,
+              nullif(coalesce((b.recap->>'plat_area')::float8, (select max((x->>'plat_area')::float8) from jsonb_array_elements(b.titles) x)), 0) as plat,
+              nullif((b.recap->>'households')::int, 0) as households
+            from building_registers b where ${type === "apt"} and b.pnu = c.pnu) reg on true
           where c.property_type = ${type} and c.geom && ${envelope}
             ${f.yearMin !== null ? sql`and c.build_year >= ${f.yearMin}` : sql``}
             ${f.yearMax !== null ? sql`and c.build_year <= ${f.yearMax}` : sql``}
-            ${f.hhMin !== null ? sql`and c.households >= ${f.hhMin}` : sql``}
+            ${f.hhMin !== null ? sql`and coalesce(c.households, reg.households) >= ${f.hhMin}` : sql``}
         ),
         t as (
-          select t.complex_id, ${txCols}, t.area_m2 as area, null::numeric as land_area
+          select t.complex_id, ${txCols}, t.area_m2 as area, null::numeric as land_area,
+            ${type === "rowhouse" ? sql`t.land_area_m2` : sql`null::numeric`} as share_area
           from transactions t join c on c.id = t.complex_id
           where t.property_type = ${type} and not t.is_canceled and t.deal_date >= ${win} ${kinds}
             ${area(sql`t.area_m2`)}
@@ -126,6 +140,10 @@ export async function GET(req: NextRequest) {
           select 'c' || c.id as key, 'complex' as kind, c.id as complex_id, c.name,
             ST_X(c.geom) as lng, ST_Y(c.geom) as lat, a.n, a.median_price, a.median_ppy, a.last_date,
             c.build_year::int as build_year, c.households, ${indicators}, ls.total::float8 as loc_score,
+            c.far, c.sgg_cd::text as sgg_cd, (select p.land_use_zone from parcels p where p.pnu = c.pnu) as zones,
+            coalesce(a.share_m2, c.plat / nullif(c.households, 0)) as land_share,
+            coalesce(a.share_ppy, case when ${kind === "sale"} and c.plat > 0 and c.households > 0
+              then a.median_price / (c.plat / c.households / 3.305785) end) as land_share_ppy,
             (select count(*)::int from community_posts cp where cp.complex_id = c.id and cp.status = 'visible'
                and cp.created_at > now() - interval '7 days') as talk
           from a join c on c.id = a.complex_id
@@ -138,7 +156,7 @@ export async function GET(req: NextRequest) {
         with r as (select lawd_cd, emd, center from regions where center && ${envelope}),
         t as (
           select t.lawd_cd, t.umd_nm, ${txCols}, coalesce(t.area_m2, t.land_area_m2) as area,
-            case when ${type} = 'house' then t.land_area_m2 end as land_area
+            case when ${type} = 'house' then t.land_area_m2 end as land_area, null::numeric as share_area
           from transactions t
           where t.property_type = ${type} and not t.is_canceled and t.deal_date >= ${win} ${kinds}
             and t.lawd_cd in (select lawd_cd from r)
@@ -161,7 +179,7 @@ export async function GET(req: NextRequest) {
   req.signal.addEventListener("abort", cancel, { once: true });
   let points: MapPoint[];
   try {
-    points = await query;
+    points = (await query).map(withFar);
   } catch (e) {
     if (req.signal.aborted) return new NextResponse(null, { status: 499 });
     throw e;
@@ -169,4 +187,11 @@ export async function GET(req: NextRequest) {
     req.signal.removeEventListener("abort", cancel);
   }
   return NextResponse.json({ points, truncated: points.length >= LIMIT, kind });
+}
+
+/** 용적률 여유(용도지역 상한 − 현재)를 붙이고 용도지역 목록은 응답에서 뺀다 */
+function withFar(p: MapPoint & { zones?: string[] | null; sgg_cd?: string | null }): MapPoint {
+  const { zones, sgg_cd, ...rest } = p;
+  const cap = rest.far ? farCap(zones, sgg_cd) : null;
+  return cap && rest.far ? { ...rest, far_headroom: cap.cap - rest.far, far_basis: cap.basis } : rest;
 }

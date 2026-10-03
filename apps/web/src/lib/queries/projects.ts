@@ -278,11 +278,6 @@ export async function setZoneFollow(uid: string, zoneId: number, on: boolean) {
 
 // ───── 재건축 후보 ─────
 
-/** 서울시 도시계획 조례 기준 용적률 상한(참고) — special.ts FAR_CAP 과 같음 */
-export const FAR_CAP: Record<string, number> = {
-  제1종전용주거지역: 100, 제2종전용주거지역: 120, 제1종일반주거지역: 150, 제2종일반주거지역: 200, 제3종일반주거지역: 250, 준주거지역: 400,
-};
-
 export type RebuildCandidate = {
   id: number;
   name: string;
@@ -303,7 +298,8 @@ export async function rebuildCandidates(uid: string, opts: { sgg: string | null;
   const year = new Date().getFullYear();
   const [rows, sggs] = await Promise.all([
     sql<RebuildCandidate[]>`
-      select c.id::int as id, c.name, c.sgg_cd, t.name as sgg_name, c.build_year, c.households,
+      select c.id::int as id, c.name, c.sgg_cd, t.name as sgg_name, c.build_year,
+        coalesce(c.households, nullif((b.recap->>'households')::int, 0)) as households,
         -- 대장의 0 은 '값 없음'
         coalesce(nullif((b.recap->>'vl_rat')::float8, 0), (select nullif(max((x->>'vl_rat')::float8), 0) from jsonb_array_elements(b.titles) x)) as vl_rat,
         coalesce(nullif((b.recap->>'plat_area')::float8, 0), (select nullif(max((x->>'plat_area')::float8), 0) from jsonb_array_elements(b.titles) x)) as plat_area,
@@ -322,12 +318,13 @@ export async function rebuildCandidates(uid: string, opts: { sgg: string | null;
         from zone_complexes zc join redevelopment_zones z on z.id = zc.zone_id
         where zc.complex_id = c.id order by z.stage_order desc nulls last limit 1) zn on true
       where c.property_type = 'apt' and c.build_year is not null and c.build_year <= ${year - opts.minAge}
-        and coalesce(c.households, 0) >= 100
+        -- 세대수를 모르는 단지(대장을 아직 못 받음)는 빼지 않는다 — 예전에는 0으로 보아 거의 모든 단지가 빠졌다
+        and coalesce(c.households, nullif((b.recap->>'households')::int, 0), 100) >= 100
         ${opts.sgg ? sql`and c.sgg_cd = ${opts.sgg}` : sql``}
       limit 800`,
     sql<{ sgg_cd: string; name: string | null; n: number }[]>`
       select c.sgg_cd, max(t.name) as name, count(*)::int as n from complexes c left join collect_targets t on t.sgg_cd = c.sgg_cd
-      where c.property_type = 'apt' and c.build_year <= ${year - opts.minAge} and coalesce(c.households, 0) >= 100
+      where c.property_type = 'apt' and c.build_year <= ${year - opts.minAge} and coalesce(c.households, 100) >= 100
       group by c.sgg_cd order by n desc`,
   ]);
   return { rows, sggs };

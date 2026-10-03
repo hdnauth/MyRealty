@@ -96,9 +96,19 @@ def park_size_factor(area_m2: float | None) -> float:
         return 0.85
     return 0.6
 
-# 용도지역별 용적률 상한(서울시 도시계획 조례 기준, 참고용)
-FAR_CAP = {"제1종전용주거지역": 100, "제2종전용주거지역": 120, "제1종일반주거지역": 150, "제2종일반주거지역": 200,
-           "제3종일반주거지역": 250, "준주거지역": 400}
+# 용도지역별 용적률 상한(참고용 — 웹 lib/far.ts 와 같음). 서울은 서울시 도시계획 조례, 그 밖은 국토계획법 시행령 상한
+# (시·군 조례가 이보다 낮게 정한 곳이 많아 '법정 상한'으로 표시한다)
+FAR_CAP_SEOUL = {"제1종전용주거지역": 100, "제2종전용주거지역": 120, "제1종일반주거지역": 150, "제2종일반주거지역": 200,
+                 "제3종일반주거지역": 250, "준주거지역": 400}
+FAR_CAP_LAW = {"제1종전용주거지역": 100, "제2종전용주거지역": 150, "제1종일반주거지역": 200, "제2종일반주거지역": 250,
+               "제3종일반주거지역": 300, "준주거지역": 500}
+
+
+def far_cap(zones: list[str] | None, sgg_cd: str | None) -> tuple[int, str] | None:
+    """(상한 %, 기준) — 기준: 'seoul'(서울시 조례) · 'law'(국토계획법 상한, 시·군 조례 확인 필요)"""
+    table, basis = (FAR_CAP_SEOUL, "seoul") if (sgg_cd or "").startswith("11") else (FAR_CAP_LAW, "law")
+    cap = next((table[z] for z in (zones or []) if z in table), None)
+    return (cap, basis) if cap else None
 REBUILD_AGE = 30
 # 관심 부동산에서 이 거리 안 단지는 그 부동산 주변 수집(상가 1.5km)으로 시설이 충분히 잡힌다
 COVER_M = 500
@@ -332,7 +342,7 @@ def score_point(pois: list[dict], available: set[str], lng: float | None = None,
 
 
 def development_summary(conn, lng: float, lat: float, *, build_year: int | None = None, vl_rat: float | None = None,
-                        zones: list[str] | None = None, today: date | None = None) -> dict:
+                        zones: list[str] | None = None, sgg_cd: str | None = None, today: date | None = None) -> dict:
     today = today or date.today()
     pt = "ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326)::geography"
     zone_rows = conn.execute(
@@ -364,9 +374,9 @@ def development_summary(conn, lng: float, lat: float, *, build_year: int | None 
     if build_year:
         age = today.year - build_year
         out["rebuild"] = {"age": age, "eligible": age >= REBUILD_AGE, "years_left": max(0, REBUILD_AGE - age)}
-    cap = next((FAR_CAP[z] for z in (zones or []) if z in FAR_CAP), None)
+    cap = far_cap(zones, sgg_cd)
     if vl_rat and cap:
-        out["far"] = {"current": vl_rat, "cap": cap, "headroom": round(cap - vl_rat, 1)}
+        out["far"] = {"current": vl_rat, "cap": cap[0], "headroom": round(cap[0] - vl_rat, 1), "basis": cap[1]}
     return out
 
 
@@ -407,7 +417,7 @@ def compute_locations(conn, item_id: str | None = None, stale_days: int = 30) ->
              coalesce(c.build_year, (select min(left(t->>'approved_at', 4))::int from building_registers b,
                 jsonb_array_elements(b.titles) t where b.pnu = w.pnu and t->>'approved_at' is not null)) as build_year,
              (select (b.recap->>'vl_rat')::float8 from building_registers b where b.pnu = coalesce(c.pnu, w.pnu)) as vl_rat,
-             (select p.land_use_zone from parcels p where p.pnu = coalesce(c.pnu, w.pnu)) as zones
+             (select p.land_use_zone from parcels p where p.pnu = coalesce(c.pnu, w.pnu)) as zones, w.sgg_cd
            from watch_items w left join complexes c on c.id = w.complex_id
            where w.geom is not null and (%(id)s::uuid is null or w.id = %(id)s::uuid)""",
         {"id": item_id},
@@ -417,7 +427,7 @@ def compute_locations(conn, item_id: str | None = None, stale_days: int = 30) ->
         k = (round(it["lng"], 1), round(it["lat"], 1))
         avail = avail_cache.setdefault(k, available_categories(conn, it["lng"], it["lat"]))
         score_target(conn, "item", str(it["id"]), it["lng"], it["lat"], avail, build_year=it["build_year"],
-                     vl_rat=it["vl_rat"], zones=it["zones"])
+                     vl_rat=it["vl_rat"], zones=it["zones"], sgg_cd=it["sgg_cd"])
         stats["items"] += 1
     if item_id is None:
         # 시설이 갖춰지지 않은 곳의 예전 '전체' 점수는 지운다(간이 점수는 웹이 화면에서 계산한 것이라 남긴다)

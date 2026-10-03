@@ -26,6 +26,7 @@ VWORLD_DATA = "https://api.vworld.kr/req/data"
 
 # 진행단계 자유 표기 → 9단계 진행도(기본계획 1 … 준공·해산 9). 앞에서부터 처음 맞는 규칙을 쓴다.
 STAGE_RULES: list[tuple[str, int]] = [
+    ("후보지", 1), ("행위제한", 1),  # 토지이용계획의 정비사업 후보지·행위제한(구역 지정 전, landuse_zones)
     ("지정전", 1),  # 경기 '정비구역지정 전' — 지정 이전 단계(아래 '구역지정'보다 먼저)
     ("해산", 9), ("청산", 9), ("이전고시", 9), ("준공", 9), ("해제", 9), ("취소", 9),
     ("착공", 8), ("분양", 8),
@@ -159,8 +160,8 @@ def vworld_search(query: str, kind: str = "place", category: str | None = None, 
     return out
 
 
-def sgg_of_point(lng: float, lat: float) -> str | None:
-    """좌표 → 시군구 코드(브이월드 행정구역). 실패하면 None."""
+def sgg_info_of_point(lng: float, lat: float) -> dict | None:
+    """좌표 → {sig_cd, full_nm('경기도 수원시 팔달구')} (브이월드 행정구역). 실패하면 None."""
     if not settings.vworld_key:
         return None
     params = _vworld_params(service="data", request="GetFeature", data="LT_C_ADSIGG_INFO",
@@ -171,7 +172,24 @@ def sgg_of_point(lng: float, lat: float) -> str | None:
         log.warning("시군구 조회 실패: %s", e)
         return None
     feats = ((resp.get("result") or {}).get("featureCollection") or {}).get("features") or []
-    return feats[0]["properties"].get("sig_cd") if feats else None
+    return feats[0]["properties"] if feats else None
+
+
+def sgg_of_point(lng: float, lat: float) -> str | None:
+    """좌표 → 시군구 코드(브이월드 행정구역). 실패하면 None."""
+    info = sgg_info_of_point(lng, lat)
+    return info.get("sig_cd") if info else None
+
+
+def in_region(address: str, sido: str | None, sgg_name: str | None) -> bool:
+    """검색 결과 주소가 그 구역의 시도·시군구 안인지. 시군구를 알면 시군구까지 맞아야 한다
+    (예전에는 시도만 맞아도 받아 안양 벽산아파트가 수원 팔달구 같은 이름 단지에, 안산 인정프린스가 수원 권선구에 찍혔다)."""
+    addr = sgg_key(address)
+    sido2 = (sido or "")[:2]
+    if sido2 and sido2 not in address:
+        return False
+    token = sgg_key(sgg_name)[-3:]
+    return token in addr if token else bool(sido2)
 
 
 def _dong_of(name: str) -> str | None:
@@ -211,14 +229,16 @@ def locate(conn, rec: dict) -> tuple[float, float, str] | None:
             (normalize_name(short), prefixes),
         ).fetchone() if prefixes else None
         if row:
-            return row["lng"], row["lat"], "complex"
+            # 같은 이름 단지가 같은 시도 다른 시에 있을 수 있다 — 시군구까지 맞을 때만
+            info = sgg_info_of_point(row["lng"], row["lat"]) if rec.get("sgg_name") else None
+            if not rec.get("sgg_name") or (info and in_region(info.get("full_nm") or "", rec.get("sido"), rec.get("sgg_name"))):
+                return row["lng"], row["lat"], "complex"
     try:
         for q in (short, f"{short}구역" if not short.endswith("구역") else None):
             if not q:
                 continue
             for p in vworld_search(q):
-                ok_place = sgg_token and sgg_token in sgg_key(p["address"]) or (rec.get("sido") or "")[:2] in p["address"]
-                if ok_place and ("아파트" in p["category"] or "주거" in p["category"] or "구역" in p["title"] or q in p["title"]):
+                if in_region(p["address"], rec.get("sido"), rec.get("sgg_name")) and ("아파트" in p["category"] or "주거" in p["category"] or "구역" in p["title"] or q in p["title"]):
                     return p["lng"], p["lat"], "place"
         dong = _dong_of(short)
         if dong:
@@ -228,6 +248,37 @@ def locate(conn, rec: dict) -> tuple[float, float, str] | None:
     except (httpx.HTTPError, ValueError) as e:
         log.warning("구역 위치 검색 실패 %s: %s", rec["name"], e)
     return None
+
+
+def verify_locations(conn, limit: int = 300) -> dict:
+    """이름 검색으로 찾은 위치(place·complex)가 구역의 시군구 안인지 한 번 확인한다. 다른 시군구면 좌표를 지워
+    locate 단계가 고친 규칙으로 다시 찾게 한다(예전 규칙은 시도만 맞아도 받아 다른 시에 찍힌 곳이 있었다)."""
+    stats = {"checked": 0, "cleared": 0}
+    rows = conn.execute(
+        """select id, attrs->>'sido' as sido, attrs->>'gu' as gu, ST_X(ST_PointOnSurface(geom)) as lng, ST_Y(ST_PointOnSurface(geom)) as lat
+           from redevelopment_zones
+           where geom is not null and attrs->>'geo' in ('place', 'complex') and attrs->>'gu' is not null
+             and not coalesce((attrs->>'geo_verified')::boolean, false)
+           order by id limit %s""",
+        (limit,),
+    ).fetchall()
+    for r in rows:
+        info = sgg_info_of_point(r["lng"], r["lat"])
+        if not info:
+            continue
+        stats["checked"] += 1
+        if in_region(info.get("full_nm") or "", r["sido"], r["gu"]):
+            conn.execute("update redevelopment_zones set attrs = attrs || '{\"geo_verified\": true}'::jsonb where id = %s", (r["id"],))
+        else:
+            conn.execute(
+                """update redevelopment_zones set geom = null, sgg_cd = null,
+                     attrs = (attrs - 'geo' - 'geo_tried' - 'pt') || jsonb_build_object('geo_wrong', %s::text), updated_at = now()
+                   where id = %s""",
+                (info.get("full_nm"), r["id"]),
+            )
+            stats["cleared"] += 1
+    conn.commit()
+    return stats
 
 
 def locate_pending(conn, limit: int | None = None) -> dict:

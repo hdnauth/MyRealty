@@ -78,7 +78,7 @@ export default async function AdminRegions() {
               {targets.map((t) => (
                 <tr key={t.sgg_cd} className={`border-b border-border/60 last:border-0 ${t.enabled ? "" : "text-muted"}`}>
                   <td className="px-4 py-2">
-                    <span className="font-medium">{t.name ?? t.sgg_cd}</span> <span className="text-xs text-muted">{t.sgg_cd} · {formatDate(t.created_at)}</span>
+                    <span className="font-medium">{t.name ?? t.sgg_cd}</span> <span className="text-xs text-muted">{t.sgg_cd} · {formatDate(t.created_at)}{t.auto_from ? ` · 같은 시 자동(${t.auto_from})` : ""}</span>
                   </td>
                   <td className="px-2 py-2 text-right">{t.items || "-"}</td>
                   <td className="px-2 py-2 text-right">{t.requests || "-"}</td>

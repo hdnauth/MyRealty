@@ -1,7 +1,8 @@
-"""재건축 후보 단지 속성 수집: 준공 27년 이상 아파트 단지의 건축물대장(용적률·대지면적·세대수)과 토지(용도지역).
+"""수집 지역 아파트 단지 속성: 건축물대장(용적률·대지면적·세대수)과 토지(용도지역).
 
-관심 부동산이 아닌 단지도 '재건축 후보' 테마에서 용적률 여유·세대당 대지지분을 보이려면 대장이 필요하다.
-호출량을 지키려고 실행마다 limit 곳씩, 180일 지난 것만 다시 받는다.
+관심 부동산이 아닌 단지도 지도(용적률·세대당 대지지분 라벨·조건)와 '재건축 후보' 테마에서 보이려면 대장이 필요하다.
+준공 27년 이상 단지부터, 그다음 나머지 단지. 호출량을 지키려고 실행마다 limit 곳씩, 180일 지난 것만 다시 받는다
+(단지 1,100여 곳이면 열흘 남짓에 한 바퀴). 대장의 세대수는 complexes.households 도 채운다.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ log = logging.getLogger(__name__)
 MIN_AGE = 27
 
 
-def collect_rebuild_attrs(conn, limit: int = 60) -> dict:
+def collect_rebuild_attrs(conn, limit: int = 120) -> dict:
     stats = {"candidates": 0, "buildings": 0, "parcels": 0, "errors": 0}
     if not settings.data_go_kr_key and not settings.vworld_key:
         return {"skipped": "DATA_GO_KR_KEY·VWORLD_KEY"}
@@ -28,9 +29,11 @@ def collect_rebuild_attrs(conn, limit: int = 60) -> dict:
              (select fetched_at from building_registers b where b.pnu = c.pnu) as b_at,
              (select updated_at from parcels p where p.pnu = c.pnu and p.land_use_zone is not null) as p_at
            from complexes c
-           where c.property_type = 'apt' and c.pnu is not null and length(c.pnu) = 19 and c.build_year <= %s
-             and coalesce(c.households, 100) >= 100
-           order by coalesce((select fetched_at from building_registers b where b.pnu = c.pnu), 'epoch'), c.households desc nulls last
+           where c.property_type = 'apt' and c.pnu is not null and length(c.pnu) = 19
+             and coalesce(c.households, 100) >= 30
+             and c.sgg_cd in (select sgg_cd from collect_targets where enabled)
+           order by (select fetched_at from building_registers b where b.pnu = c.pnu) nulls first,
+             coalesce(c.build_year <= %s, false) desc, c.households desc nulls last
            limit %s""",
         (date.today().year - MIN_AGE, limit * 3),
     ).fetchall()

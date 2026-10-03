@@ -112,13 +112,13 @@ function rangeText(lo: number | null, hi: number | null, f: (v: number) => strin
   return lo !== null ? `${f(lo)}~` : `~${f(hi!)}`;
 }
 
-type SectionKey = "price" | "rent" | "yield" | "area" | "cats" | "zones" | "share" | "bldg" | "floor" | "year" | "hh" | "jr" | "chg" | "loc" | "ppy";
+type SectionKey = "price" | "rent" | "yield" | "area" | "cats" | "zones" | "share" | "bldg" | "floor" | "year" | "hh" | "jr" | "chg" | "loc" | "ppy" | "far" | "land";
 
 /** 유형별 조건 순서 — 그 유형에서 먼저 따지는 것부터(토지는 지목·용도지역, 상가는 용도·층, 오피스텔은 월세·수익률) */
 const ORDER: Record<string, SectionKey[]> = {
-  apt: ["price", "rent", "area", "year", "hh", "jr", "chg", "loc", "yield", "ppy"],
+  apt: ["price", "rent", "area", "year", "hh", "jr", "chg", "loc", "far", "land", "yield", "ppy"],
   officetel: ["price", "rent", "yield", "area", "year", "jr", "chg", "loc", "ppy"],
-  rowhouse: ["price", "rent", "jr", "year", "area", "yield", "chg", "ppy"],
+  rowhouse: ["price", "rent", "jr", "year", "land", "area", "yield", "chg", "ppy"],
   house: ["price", "rent", "cats", "year", "area", "ppy", "chg"],
   land: ["cats", "zones", "share", "ppy", "price", "area", "chg"],
   commercial: ["cats", "bldg", "floor", "zones", "share", "ppy", "price", "area", "year", "chg"],
@@ -143,6 +143,8 @@ const SECTION_FILTER: Record<SectionKey, keyof MapFilters> = {
   chg: "chgMin",
   loc: "locMin",
   ppy: "ppyMin",
+  far: "farMax",
+  land: "lsMin",
 };
 
 const AREA_QUICK: Record<string, [string, number | null, number | null][]> = {
@@ -322,6 +324,14 @@ function buildSections({
     ["70점+", 70, null],
     ["80점+", 80, null],
   ]);
+  const far = quick("farMax", null, [
+    ["150% 이하", 150, null],
+    ["180% 이하", 180, null],
+    ["200% 이하", 200, null],
+    ["250% 이하", 250, null],
+  ]);
+  // 대지지분은 평으로 말하는 경우가 많아 평 기준 빠른 값(저장은 ㎡)
+  const land = quick("lsMin", null, (type === "rowhouse" ? [5, 8, 10, 15] : [10, 12, 15, 20]).map((py) => [`${py}평+`, Math.round(py * M2_PER_PYEONG * 10) / 10, null] as [string, number, null]));
   const areaUnit = pyeong ? "평" : "㎡";
   const areaText = (v: number) => `${round(areaScale.toView(v), 0)}${areaUnit}`;
   const [areaLabel, areaHint] = AREA_LABEL[type] ?? AREA_LABEL.apt;
@@ -443,6 +453,24 @@ function buildSections({
       summary: summary(loc, filters.locMin === null ? null : `${filters.locMin}점+`),
       clear: () => set({ locMin: null }),
       quick: loc,
+    },
+    far: {
+      key: "far",
+      label: "용적률",
+      hint: "건축물대장의 현재 용적률 · 낮을수록 재건축으로 더 지을 여지 · 대장을 받은 단지만 남습니다",
+      summary: summary(far, filters.farMax === null ? null : `${filters.farMax}% 이하`),
+      clear: () => set({ farMax: null }),
+      quick: far,
+      range: <Range min={null} max={filters.farMax} onMin={() => {}} onMax={(v) => set({ farMax: v })} scale={id} unit="%" />,
+    },
+    land: {
+      key: "land",
+      label: "대지지분",
+      hint: type === "rowhouse" ? "실거래 대지권 면적 중위(고른 기간 매매)" : "대지면적 ÷ 세대수(평균) · 대장을 받은 단지만 남습니다",
+      summary: summary(land, filters.lsMin === null ? null : `${round(filters.lsMin / M2_PER_PYEONG, 1)}평+`),
+      clear: () => set({ lsMin: null }),
+      quick: land,
+      range: <Range min={filters.lsMin} max={null} onMin={(v) => set({ lsMin: v })} onMax={() => {}} scale={areaScale} unit={areaUnit} />,
     },
     ppy: {
       key: "ppy",

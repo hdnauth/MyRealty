@@ -2,10 +2,11 @@
 
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select } from "@/components/ui";
+import { INFRA_STATUS, ZONE_KINDS, ZONE_STAGES } from "@/lib/projects";
 import { addProjectAction, type ProjectFormState } from "./actions";
 
-export function ProjectForm() {
-  const [type, setType] = useState<"zone" | "infra">("zone");
+export function ProjectForm({ defaultType = "zone" }: { defaultType?: "zone" | "infra" }) {
+  const [type, setType] = useState<"zone" | "infra">(defaultType);
   const [state, action, pending] = useActionState<ProjectFormState, FormData>(addProjectAction, {});
   return (
     <form action={action} className="space-y-3 p-4">
@@ -22,10 +23,10 @@ export function ProjectForm() {
         {type === "zone" ? (
           <>
             <Field label="유형">
-              <Select name="kind">{["재건축", "재개발", "리모델링", "가로주택", "소규모재건축", "기타"].map((k) => <option key={k}>{k}</option>)}</Select>
+              <Select name="kind">{ZONE_KINDS.map((k) => <option key={k}>{k}</option>)}</Select>
             </Field>
             <Field label="단계">
-              <Select name="stage">{["기본계획", "정비구역지정", "추진위", "조합설립", "사업시행인가", "관리처분인가", "이주·철거", "착공", "준공"].map((k) => <option key={k}>{k}</option>)}</Select>
+              <Select name="stage">{ZONE_STAGES.map((k) => <option key={k}>{k}</option>)}</Select>
             </Field>
             <Field label="단계 일자"><Input name="date" type="date" /></Field>
             <Field label="계획 세대수"><Input name="households" inputMode="numeric" /></Field>
@@ -37,7 +38,7 @@ export function ProjectForm() {
             </Field>
             <Field label="노선명"><Input name="line_name" placeholder="예) GTX-A" /></Field>
             <Field label="상태">
-              <Select name="status">{["계획", "예타", "설계", "착공", "개통예정", "개통"].map((k) => <option key={k}>{k}</option>)}</Select>
+              <Select name="status">{INFRA_STATUS.map((k) => <option key={k}>{k}</option>)}</Select>
             </Field>
             <Field label="개통(예정)일"><Input name="date" type="date" /></Field>
           </>

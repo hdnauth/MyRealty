@@ -2,8 +2,8 @@ import Link from "next/link";
 import { Badge, Card, CardHeader, Stat } from "@/components/ui";
 import { type AreaUnit, formatDate, formatManwon, formatNumber, fromPerPyeong, unitPriceLabel } from "@/lib/format";
 import { REBUILD_AGE, type Redevelopment, stageGuide } from "@/lib/queries/special";
+import { ZONE_STAGES } from "@/lib/projects";
 
-const ZONE_STAGES = ["기본계획", "정비구역지정", "추진위", "조합설립", "사업시행인가", "관리처분인가", "이주·철거", "착공", "준공"];
 const PY = 3.305785;
 
 /**

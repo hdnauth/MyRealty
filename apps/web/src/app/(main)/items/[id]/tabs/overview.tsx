@@ -8,6 +8,7 @@ import Link from "next/link";
 import { MiniMap } from "@/components/map/mini-map";
 import { env } from "@/lib/env";
 import { PROPERTY_TYPES } from "@/lib/property";
+import { itemRegulation } from "@/lib/queries/projects";
 import { redevelopmentInfo } from "@/lib/queries/special";
 import { AttrsCard } from "./attrs-card";
 import { RedevelopmentCard } from "./redevelopment-card";
@@ -22,7 +23,7 @@ const VAL_BASIS: Record<string, string> = {
 
 /** viewing: 평형 막대에서 다른 평형을 '보기만' 하는 중(추정 시세는 저장된 내 평형 기준이라 쓰지 않는다) */
 export async function OverviewTab({ item, viewing = false }: { item: WatchItem; viewing?: boolean }) {
-  const [points, attrs, unit, [valSaved], [rate], redev, mine] = await Promise.all([
+  const [points, attrs, unit, [valSaved], [rate], redev, mine, reg] = await Promise.all([
     itemTransactions(item, 5),
     itemAttrs(item),
     getAreaUnit(),
@@ -31,6 +32,7 @@ export async function OverviewTab({ item, viewing = false }: { item: WatchItem; 
     sql<{ value: number }[]>`select value from series_values where code = 'ecos.mortgage_rate' order by period desc limit 1`,
     redevelopmentInfo(item),
     myComplexItems(item.user_id),
+    itemRegulation(item.id),
   ]);
   const val = viewing ? undefined : valSaved;
   const isComplex = Boolean(item.complex_id);
@@ -235,6 +237,25 @@ export async function OverviewTab({ item, viewing = false }: { item: WatchItem; 
         </Card>
       ) : null}
 
+      {reg ? (
+        <Card className="lg:col-span-3">
+          <CardHeader
+            title="규제·계획 구역"
+            sub="토지이용계획·구역 경계 기준"
+            action={<Link href="/projects?tab=regulation" className="text-accent">규제 테마</Link>}
+          />
+          <div className="flex flex-wrap gap-1.5 px-4 pb-2">
+            {reg.permit ? <Badge tone="up">토지거래허가구역</Badge> : null}
+            {reg.district_plan ? <Badge tone="accent">지구단위계획구역</Badge> : null}
+          </div>
+          <p className="px-4 pb-4 text-[13px] leading-relaxed">
+            {reg.permit
+              ? "토지거래허가구역입니다. 일정 면적 이상을 살 때 시군구청 허가가 필요하고, 주택은 실거주 목적만 허가돼 전세를 낀 매수가 어렵습니다. "
+              : ""}
+            {reg.district_plan ? "지구단위계획구역은 건축물 용도·높이·용적률이 계획으로 정해져 있어 재건축·신축 때 계획 내용을 확인해야 합니다." : ""}
+          </p>
+        </Card>
+      ) : null}
       {redev ? <RedevelopmentCard info={redev} price={current} unit={unit} itemId={item.id} /> : null}
 
       <AttrsCard item={item} attrs={attrs} marketPrice={current} />

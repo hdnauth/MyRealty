@@ -19,6 +19,9 @@ const HOSTS: Record<string, (q: URLSearchParams) => string | null> = {
     if (env.vworldDomain) q.set("domain", env.vworldDomain);
     return null;
   },
+  // 정비사업 목록(키 없음): 서울 정보몽땅, 부산 정비사업 통합홈페이지
+  "cleanup.seoul.go.kr": () => null,
+  "dynamice.busan.go.kr": () => null,
 };
 
 export async function GET(req: NextRequest) {

@@ -83,6 +83,14 @@ def _simple(name: str, target: str, help_: str, args=None):
 _simple("attrs", "myrealty_etl.jobs.attrs_job:refresh_attrs", "건축물대장·토지·공시가격 수집")
 _simple("events", "myrealty_etl.jobs.events_job:collect_events", "청약·연례 일정 이벤트 수집")
 _simple("news", "myrealty_etl.jobs.news_job:collect_news", "관심 부동산 뉴스 수집")
+_simple("zones", "myrealty_etl.jobs.zones_job:collect_zones",
+        "정비구역 수집(서울 정보몽땅·경계, 경기·부산·인천·시군구 파일, 국토부 전국) + 단지 연결·단계 효과",
+        lambda p: p.add_argument("--only", nargs="*", help="seoul seoul_boundaries gyeonggi busan incheon files molit link effects"))
+_simple("regulations", "myrealty_etl.collectors.regulations:collect_regulations", "토지거래허가구역·지구단위계획구역 경계(브이월드)")
+_simple("rail-seed", "myrealty_etl.collectors.rail_seed:collect_rail_seed", "교통 호재 시드(계획·최근 개통 철도 노선·역)",
+        lambda p: p.add_argument("--force", action="store_true", default=None))
+_simple("rebuild-attrs", "myrealty_etl.jobs.rebuild_job:collect_rebuild_attrs", "재건축 후보(준공 27년+) 단지 건축물대장·용도지역",
+        lambda p: p.add_argument("--limit", type=int))
 _simple("classify", "myrealty_etl.ai.news_classifier:classify_pending", "뉴스 AI 분류(배치/동기)",
         lambda p: p.add_argument("--mode", choices=["auto", "sync", "batch"]))
 _simple("macro", "myrealty_etl.collectors.macro:collect_macro", "ECOS·KOSIS·R-ONE 지표 수집")
@@ -172,7 +180,11 @@ DAILY_STEPS: list[tuple[str, str]] = [
     ("item_geom", "myrealty_etl.transforms.geocode:geocode_items"),
     ("macro", "myrealty_etl.collectors.macro:collect_macro"),
     ("attrs", "myrealty_etl.jobs.attrs_job:refresh_attrs"),
+    ("rebuild", "myrealty_etl.jobs.rebuild_job:collect_rebuild_attrs"),
     ("events", "myrealty_etl.jobs.events_job:collect_events"),
+    ("zones", "myrealty_etl.jobs.zones_job:collect_zones"),
+    ("rail", "myrealty_etl.collectors.rail_seed:collect_rail_seed"),
+    ("regulations", "myrealty_etl.collectors.regulations:collect_regulations"),
     ("news", "myrealty_etl.jobs.news_job:collect_news"),
     ("classify", "myrealty_etl.ai.news_classifier:classify_pending"),
     ("indicators", "myrealty_etl.analytics.indicators:compute_indicators"),

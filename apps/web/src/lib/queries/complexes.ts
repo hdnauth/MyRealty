@@ -59,3 +59,28 @@ export async function complexLocation(id: number) {
   const { below, n, ...score } = row;
   return { ...score, percentile: below !== null && n !== null && n >= 3 ? below / n : null, peers: n ?? 0 };
 }
+
+let busiest: { at: number; center: [number, number] | null } | null = null;
+
+/**
+ * 관심 부동산이 없는 방문자의 첫 지도 중심: 최근 90일 아파트 매매가 가장 많은 시군구에서 거래 많은 단지 20곳의 중심
+ * (지도 기본 필터가 아파트·매매라 첫 화면에 가격 라벨이 바로 보이는 곳). 서버 인스턴스마다 6시간 기억한다.
+ */
+export async function busiestCenter(): Promise<[number, number] | null> {
+  if (busiest && Date.now() - busiest.at < 6 * 3600_000) return busiest.center;
+  const [r] = await sql<{ lng: number | null; lat: number | null }[]>`
+    with sgg as (
+      select sgg_cd from transactions
+      where property_type = 'apt' and deal_kind = 'sale' and deal_date > current_date - 90 and complex_id is not null
+      group by 1 order by count(*) desc limit 1),
+    top as (
+      select t.complex_id from transactions t, sgg
+      where t.sgg_cd = sgg.sgg_cd and t.property_type = 'apt' and t.deal_kind = 'sale'
+        and t.deal_date > current_date - 90 and t.complex_id is not null
+      group by 1 order by count(*) desc limit 20)
+    select avg(ST_X(c.geom))::float8 as lng, avg(ST_Y(c.geom))::float8 as lat
+    from top join complexes c on c.id = top.complex_id and c.geom is not null`;
+  const center: [number, number] | null = r?.lng && r?.lat ? [r.lng, r.lat] : null;
+  busiest = { at: Date.now(), center };
+  return center;
+}

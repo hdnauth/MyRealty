@@ -8,7 +8,7 @@ import { BacktestCard, InsightCard } from "@/components/indicators/insight-card"
 import { Simulator } from "@/components/indicators/simulator";
 import { Badge, Card, CardHeader, EmptyState, Notice, PageHeader, Stat, Tabs } from "@/components/ui";
 import { Term } from "@/components/ui/term";
-import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { formatManwon, formatPct } from "@/lib/format";
 import { backtestInsights, marketInsights } from "@/lib/insights";
@@ -16,7 +16,7 @@ import { change, INSIGHT_REGION_KEYS, indicatorRegions, MACRO_CODES, last, type 
 import { listItems } from "@/lib/queries/items";
 import { pipelineHints } from "@/lib/queries/pipeline";
 
-export const metadata: Metadata = { title: "지표" };
+export const metadata: Metadata = { title: "시장 지표" };
 
 function yoy(points: Point[]): Point[] {
   const m = new Map(points.map(([d, v]) => [d, v]));
@@ -52,8 +52,8 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
   const since = new Date(new Date().getFullYear() - 8, 0, 1).toISOString().slice(0, 10);
   const macroCodes = MACRO_CODES;
   // 지역 목록이 있어야 정해지는 지역 지표만 다음 단계로 두고 나머지는 한 번에 조회
-  const [, regions, macroV, meta, items, official] = await Promise.all([
-    requireUser(),
+  const [user, regions, macroV, meta, items, official] = await Promise.all([
+    pageUser(uid),
     indicatorRegions(uid),
     seriesValues(macroCodes, since),
     seriesMeta(macroCodes),
@@ -108,7 +108,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="지표"
+        title="시장 지표"
         sub="실거래로 만든 자체 가격지수와 금리·물가·유동성을 조합한 지표"
         action={<Link href="/indicators/custom" className="shrink-0 text-sm text-accent">커스텀 지표 →</Link>}
       />
@@ -133,7 +133,7 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
       {view === "macro" || view === "tools" ? null : !sgg ? (
         <Card>
           <EmptyState title="아직 계산된 지역 지표가 없습니다" desc="관심 부동산이 있는 시군구의 아파트 실거래가 30건 이상 모이면 매일 수집(또는 부동산 '다시 불러오기') 때 계산됩니다." />
-          {tradeHints.length ? (
+          {user?.isAdmin && tradeHints.length ? (
             <div className="space-y-1.5 px-4 pb-4">
               {tradeHints.map((h) => (
                 <Notice key={h} tone="warn">{h}</Notice>
@@ -267,8 +267,9 @@ export default async function IndicatorsPage(props: PageProps<"/indicators">) {
 
       {macroEmpty && (view === "macro" || view === "summary") ? (
         <Notice tone="warn">
-          금리·물가·통화량 자료가 아직 없습니다. 한국은행 ECOS 키(ECOS_KEY)가 GitHub Secrets 에 있으면 매일 수집 때 채워집니다.
-          {macroHints.map((h) => (
+          금리·물가·통화량 자료를 준비하고 있습니다. 매일 아침 자동으로 수집됩니다.
+          {/* 수집 설정 문제(키·작업 실패)는 운영자에게만 */}
+          {(user?.isAdmin ? macroHints : []).map((h) => (
             <span key={h} className="mt-1 block">
               {h}
             </span>

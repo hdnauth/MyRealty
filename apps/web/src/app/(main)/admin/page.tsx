@@ -34,7 +34,7 @@ export default async function AdminHome() {
 
       <Card>
         <div className="grid grid-cols-2 gap-4 p-4 md:grid-cols-4">
-          <Stat label="전체 사용자" value={formatNumber(users.total)} sub={<span className="text-muted">정지 {users.blocked} · 관리자 {users.admins}</span>} />
+          <Stat label="가입 사용자" value={formatNumber(users.total)} sub={<span className="text-muted">게스트 {users.guests} · 정지 {users.blocked} · 관리자 {users.admins}</span>} />
           <Stat label="신규 가입" value={`${users.new7}명`} sub={<span className="text-muted">7일 · 30일 {users.new30}명</span>} />
           <Stat label="활성 사용자" value={`${users.seen7}명`} sub={<span className="text-muted">7일 · 오늘 {users.seen1}명</span>} />
           <Stat label="로그인 세션" value={formatNumber(counts.sessions)} sub={<span className="text-muted">7일 로그인 {counts.logins7}회</span>} />
@@ -60,7 +60,7 @@ export default async function AdminHome() {
             {recent.rows.slice(0, 8).map((u) => (
               <li key={u.id} className="flex items-center justify-between gap-2 py-2">
                 <Link href={`/admin/users/${u.id}`} className="min-w-0 truncate hover:underline">
-                  {u.email}
+                  {u.email ?? "게스트(기기)"}
                 </Link>
                 <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted">
                   {u.status === "blocked" ? <Badge tone="up">정지</Badge> : null}

@@ -146,7 +146,7 @@ export function PageHeader({ title, sub, action }: { title: string; sub?: ReactN
         <h1 className="text-xl font-bold tracking-tight md:text-2xl">{title}</h1>
         {sub ? <p className="mt-1 text-sm text-muted">{sub}</p> : null}
       </div>
-      {action}
+      {action ? <div className="shrink-0 whitespace-nowrap">{action}</div> : null}
     </div>
   );
 }

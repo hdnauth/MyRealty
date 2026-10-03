@@ -10,7 +10,7 @@ import { BlockButton, CommentForm, LikeButton, PollCard, ReplyToggle, ReportButt
 import { AuthorLine, CategoryBadge, PostList, PostText } from "@/components/community/parts";
 import { Badge, Card, CardHeader, Notice } from "@/components/ui";
 import { getAreaUnit } from "@/lib/area-unit";
-import { requireUser } from "@/lib/auth/session";
+import { getUser, NO_USER } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { canWrite, type CommentRow, communityMe, getPoll, getPost, listComments, listPosts, shortSgg } from "@/lib/community/queries";
 import { REPORT_REASONS } from "@/lib/community/rules";
@@ -24,7 +24,10 @@ export async function generateMetadata(props: PageProps<"/community/posts/[id]">
 }
 
 export default async function PostPage(props: PageProps<"/community/posts/[id]">) {
-  const [{ id: raw }, user] = await Promise.all([props.params, requireUser()]);
+  const [{ id: raw }, viewer] = await Promise.all([props.params, getUser()]);
+  // 방문자·게스트도 읽을 수 있다(쓰기·공감·투표는 가입 후)
+  const user = { id: viewer?.id ?? NO_USER, isAdmin: viewer?.isAdmin ?? false };
+  const member = Boolean(viewer && !viewer.isGuest);
   const id = Number(raw);
   if (!Number.isSafeInteger(id)) notFound();
   const [post, comments, poll, me, unit] = await Promise.all([
@@ -117,7 +120,7 @@ export default async function PostPage(props: PageProps<"/community/posts/[id]">
         <ul className="divide-y divide-border">
           {top.map((c) => (
             <li key={c.id} className="px-4 py-3">
-              <Comment c={c} postId={post.id} canReply={canWrite(me) && post.status === "visible"} isAdmin={user.isAdmin} />
+              <Comment c={c} postId={post.id} canReply={member && canWrite(me) && post.status === "visible"} isAdmin={user.isAdmin} />
               {replies(c.id).length ? (
                 <ul className="mt-2 space-y-2 border-l-2 border-border pl-3">
                   {replies(c.id).map((r) => (
@@ -132,6 +135,14 @@ export default async function PostPage(props: PageProps<"/community/posts/[id]">
         <div className="border-t border-border p-4">
           {post.status !== "visible" ? (
             <p className="text-sm text-muted">공개된 글에만 댓글을 달 수 있습니다.</p>
+          ) : !member ? (
+            <p className="text-sm text-muted">
+              댓글을 쓰려면{" "}
+              <Link href={`/login?next=${encodeURIComponent(`/community/posts/${post.id}`)}&why=member`} className="text-accent underline">
+                이메일로 간편 가입
+              </Link>
+              하세요.
+            </p>
           ) : canWrite(me) ? (
             me.mutedUntil ? <p className="text-sm text-up">{me.mutedUntil.slice(0, 10)}까지 댓글 작성이 제한되었습니다.</p> : <CommentForm postId={post.id} />
           ) : (

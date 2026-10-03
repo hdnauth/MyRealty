@@ -102,7 +102,9 @@ def send_digest(conn) -> dict:
     if not settings.smtp_host:
         return {"skipped": "SMTP_HOST 미설정"}
     users = conn.execute(
-        """select id, email from users where status = 'active' and coalesce((settings->>'emailDigest')::boolean, true)"""
+        # 기기 게스트(이메일 없음)는 웹푸시로만 받는다
+        """select id, email from users
+           where status = 'active' and email is not null and coalesce((settings->>'emailDigest')::boolean, true)"""
     ).fetchall()
     sent = 0
     for u in users:

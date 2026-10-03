@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { TypeIcon } from "@/components/items/item-card";
 import { Badge, LinkButton, Tabs } from "@/components/ui";
-import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { getAreaUnit } from "@/lib/area-unit";
 import { formatArea, shortAddress } from "@/lib/format";
 import { GROUP_TAGS, PROPERTY_TYPES } from "@/lib/property";
@@ -26,7 +26,7 @@ import { PriceTab } from "./tabs/price";
 
 export async function generateMetadata(props: PageProps<"/items/[id]">): Promise<Metadata> {
   const [uid, { id }] = await Promise.all([sessionUserId(), props.params]);
-  const [, item] = await Promise.all([requireUser(), getItem(uid, id)]);
+  const [, item] = await Promise.all([pageUser(uid), getItem(uid, id)]);
   return { title: item?.label ?? "부동산" };
 }
 
@@ -44,7 +44,7 @@ const TABS = [
 export default async function ItemPage(props: PageProps<"/items/[id]">) {
   const [uid, { id }, sp] = await Promise.all([sessionUserId(), props.params, props.searchParams]);
   const [user, first, unit, siblings] = await Promise.all([
-    requireUser(),
+    pageUser(uid),
     getItem(uid, id),
     getAreaUnit(),
     // 다른 관심 부동산으로 바로 옮겨 가기(그룹 순 → 목록 순)
@@ -52,7 +52,7 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
       select id, label, property_type, group_tag from watch_items where user_id = ${uid}
       order by array_position(array['owned', 'candidate', 'watch', 'tenant'], group_tag), sort_order, created_at`,
   ]);
-  if (!first) notFound();
+  if (!first || !user) notFound();
   let item = first;
   // 좌표가 없으면(등록 때 지오코딩 실패 등) 지금 채운다 — 주변·입지·지도가 비지 않도록
   if (item.lng === null && (await fillMissingItemGeoms(user.id).catch(() => 0)) > 0) item = (await getItem(uid, id)) ?? item;
@@ -92,7 +92,7 @@ export default async function ItemPage(props: PageProps<"/items/[id]">) {
             <ItemSwitcher items={siblings} currentId={item.id} tab={tab} />
           </div>
           <p className="mt-0.5 truncate text-sm text-muted">
-            {item.road_address ?? item.jibun_address} · {formatArea(item.area_m2 ?? item.land_area_m2, unit)}
+            {[item.road_address ?? item.jibun_address, formatArea(item.area_m2 ?? item.land_area_m2, unit)].filter((x) => x && x !== "-").join(" · ")}
             {item.floor ? ` · ${item.floor}층` : ""}
           </p>
         </div>

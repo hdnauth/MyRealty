@@ -4,13 +4,13 @@ import { redirect } from "next/navigation";
 import { refresh } from "next/cache";
 import { normalizeEmail } from "@/lib/auth/otp";
 import { cookies } from "next/headers";
-import { destroySession, requireUser, SESSION_COOKIE } from "@/lib/auth/session";
+import { destroySession, ensureUser, requireUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { AREA_UNIT_COOKIE, isAreaUnit } from "@/lib/format";
 
 export async function logoutAction() {
   await destroySession();
-  redirect("/login");
+  redirect("/");
 }
 
 export async function revokeSessionAction(form: FormData) {
@@ -27,10 +27,11 @@ export async function sendTestPushAction(): Promise<{ message: string }> {
 }
 
 export async function updateNotificationSettingsAction(form: FormData) {
-  const user = await requireUser();
+  const user = await ensureUser();
   const settings = {
     ...user.settings,
-    emailDigest: form.get("emailDigest") === "on",
+    // 게스트에게는 이메일 항목이 없다 — 가입 후 기본값(받기)이 되도록 그대로 둔다
+    ...(user.email ? { emailDigest: form.get("emailDigest") === "on" } : {}),
     pushEnabled: form.get("pushEnabled") === "on",
   };
   await sql`update users set settings = ${sql.json(settings)} where id = ${user.id}`;
@@ -38,7 +39,6 @@ export async function updateNotificationSettingsAction(form: FormData) {
 }
 
 export async function setAreaUnitAction(form: FormData) {
-  await requireUser();
   const unit = form.get("unit");
   if (!isAreaUnit(unit)) return;
   (await cookies()).set(AREA_UNIT_COOKIE, unit, { path: "/", maxAge: 60 * 60 * 24 * 365 * 2, sameSite: "lax" });
@@ -48,8 +48,11 @@ export async function setAreaUnitAction(form: FormData) {
 export async function deleteAccountAction(_: { error?: string }, form: FormData): Promise<{ error?: string }> {
   const user = await requireUser();
   if (user.isEnvAdmin) return { error: "ADMIN_EMAILS 로 지정된 관리자 계정은 탈퇴할 수 없습니다." };
-  if (normalizeEmail(String(form.get("confirm") ?? "")) !== user.email) return { error: "확인을 위해 이메일 주소를 정확히 입력하세요." };
+  const confirm = String(form.get("confirm") ?? "").trim();
+  if (user.email ? normalizeEmail(confirm) !== user.email : confirm !== "삭제") {
+    return { error: user.email ? "확인을 위해 이메일 주소를 정확히 입력하세요." : "확인을 위해 '삭제'를 입력하세요." };
+  }
   await sql`delete from users where id = ${user.id}`; // 부동산·메모·알림·세션 등은 cascade
   (await cookies()).delete(SESSION_COOKIE);
-  redirect("/login");
+  redirect("/");
 }

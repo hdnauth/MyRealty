@@ -12,7 +12,7 @@ function str(v: string | string[] | undefined) {
 
 export default async function AdminUsers(props: PageProps<"/admin/users">) {
   const sp = await props.searchParams;
-  const f = { q: str(sp.q), status: str(sp.status), role: str(sp.role), page: Number(str(sp.page)) || 1 };
+  const f = { q: str(sp.q), status: str(sp.status), role: str(sp.role), kind: str(sp.kind), page: Number(str(sp.page)) || 1 };
   const { total, rows, page } = await listUsers(f);
   const pages = Math.max(1, Math.ceil(total / USERS_PAGE_SIZE));
   const qs = (p: number) => {
@@ -20,6 +20,7 @@ export default async function AdminUsers(props: PageProps<"/admin/users">) {
     if (f.q) u.set("q", f.q);
     if (f.status) u.set("status", f.status);
     if (f.role) u.set("role", f.role);
+    if (f.kind) u.set("kind", f.kind);
     if (p > 1) u.set("page", String(p));
     const s = u.toString();
     return s ? `?${s}` : "";
@@ -34,6 +35,11 @@ export default async function AdminUsers(props: PageProps<"/admin/users">) {
             <option value="">전체 상태</option>
             <option value="active">정상</option>
             <option value="blocked">정지</option>
+          </Select>
+          <Select name="kind" defaultValue={f.kind} className="w-auto">
+            <option value="">가입 사용자</option>
+            <option value="guest">기기 게스트</option>
+            <option value="all">전체</option>
           </Select>
           <Select name="role" defaultValue={f.role} className="w-auto">
             <option value="">전체 역할</option>
@@ -67,7 +73,7 @@ export default async function AdminUsers(props: PageProps<"/admin/users">) {
                 <tr key={u.id} className="hover:bg-surface-2">
                   <td className="max-w-64 px-4 py-2">
                     <Link href={`/admin/users/${u.id}`} className="block truncate font-medium hover:underline">
-                      {u.email}
+                      {u.email ?? <span className="text-muted">게스트(기기)</span>}
                     </Link>
                     {u.display_name ? <span className="block truncate text-xs text-muted">{u.display_name}</span> : null}
                   </td>

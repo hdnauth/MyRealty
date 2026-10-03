@@ -1,12 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { ensureOsmPois } from "@/lib/external/osm";
 
 const ALLOWED = new Set(["subway", "school", "park", "hospital", "mart"]);
 
 export async function GET(req: NextRequest) {
-  if (!(await getUser())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sp = req.nextUrl.searchParams;
   const bbox = (sp.get("bbox") ?? "").split(",").map(Number);
   if (bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v))) return NextResponse.json({ error: "bbox" }, { status: 400 });

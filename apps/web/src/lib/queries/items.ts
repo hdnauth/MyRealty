@@ -47,21 +47,36 @@ const ITEM_COLUMNS = sql`
   c.name as complex_name, c.households as complex_households, c.build_year as complex_build_year,
   coalesce(c.umd_nm, r.emd) as umd_nm`;
 
+/**
+ * 관심 부동산 w 의 시세 근거: 최신 추정 시세, 같은 단지·평형(±3㎡) 6개월 매매 중위, 최근 매매.
+ * 목록·홈·포트폴리오가 같은 기준(lib/property currentValue)으로 "현재 시세"를 보이게 함께 쓴다.
+ */
+export const MARKET_COLUMNS = sql`
+  v.estimate, v.as_of::text as est_as_of,
+  lt.price as last_trade_price, lt.deal_date::text as last_trade_date, m6.median6m`;
+export const MARKET_JOINS = sql`
+  left join lateral (select estimate, as_of from valuations where watch_item_id = w.id order by as_of desc limit 1) v on true
+  left join lateral (
+    select t.price, t.deal_date from transactions t
+    where t.complex_id = w.complex_id and w.complex_id is not null and t.deal_kind = 'sale' and not t.is_canceled
+      and (w.area_m2 is null or abs(t.area_m2 - w.area_m2) <= 3)
+    order by t.deal_date desc limit 1) lt on true
+  left join lateral (
+    select percentile_cont(0.5) within group (order by t.price)::float8 as median6m from transactions t
+    where t.complex_id = w.complex_id and w.complex_id is not null and t.deal_kind = 'sale' and not t.is_canceled
+      and t.deal_date >= current_date - interval '6 months'
+      and (w.area_m2 is null or abs(t.area_m2 - w.area_m2) <= 3)) m6 on true`;
+
+export type MarketFields = { estimate: number | null; est_as_of: string | null; last_trade_price: number | null; last_trade_date: string | null; median6m: number | null };
+
 export async function listItems(userId: string) {
-  return sql<(WatchItem & { estimate: number | null; est_as_of: string | null; last_trade_price: number | null; last_trade_date: string | null; unread: number })[]>`
-    select ${ITEM_COLUMNS},
-      v.estimate, v.as_of::text as est_as_of,
-      lt.price as last_trade_price, lt.deal_date::text as last_trade_date,
+  return sql<(WatchItem & MarketFields & { unread: number })[]>`
+    select ${ITEM_COLUMNS}, ${MARKET_COLUMNS},
       (select count(*)::int from notifications n where n.watch_item_id = w.id and n.read_at is null) as unread
     from watch_items w
     left join complexes c on c.id = w.complex_id
     left join regions r on r.lawd_cd = w.lawd_cd
-    left join lateral (select estimate, as_of from valuations where watch_item_id = w.id order by as_of desc limit 1) v on true
-    left join lateral (
-      select t.price, t.deal_date from transactions t
-      where t.complex_id = w.complex_id and w.complex_id is not null and t.deal_kind = 'sale' and not t.is_canceled
-        and (w.area_m2 is null or abs(t.area_m2 - w.area_m2) <= 3)
-      order by t.deal_date desc limit 1) lt on true
+    ${MARKET_JOINS}
     where w.user_id = ${userId}
     order by w.sort_order, w.created_at`;
 }

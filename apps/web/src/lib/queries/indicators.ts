@@ -39,13 +39,22 @@ export async function listSeries(userId: string) {
  * 지표 화면의 지역(시군구) 목록: 내 관심 부동산이 있고 지표가 계산된 곳만.
  * 수집 대상(collect_targets)은 모든 사용자가 함께 쓰므로 그대로 보여 주면 다른 사람이 등록한 지역까지 보인다.
  */
+/**
+ * 지표를 볼 지역: 내 관심 부동산이 있는 시군구. 없으면(방문자·처음 사용자) 지표가 계산된 모든 시군구에서 고른다.
+ */
 export async function indicatorRegions(userId: string) {
-  return sql<{ sgg: string; name: string }[]>`
+  const mine = await sql<{ sgg: string; name: string }[]>`
     select g.sgg_cd as sgg, coalesce(t.name, s.name) as name
     from (select distinct w.sgg_cd from watch_items w where w.user_id = ${userId} and w.sgg_cd is not null) g
     join series s on s.code = 'ind.temp.' || g.sgg_cd
     left join collect_targets t on t.sgg_cd = g.sgg_cd
     order by name`;
+  if (mine.length) return mine;
+  return sql<{ sgg: string; name: string }[]>`
+    select right(s.code, 5) as sgg, coalesce(t.name, s.name) as name
+    from series s left join collect_targets t on t.sgg_cd = right(s.code, 5)
+    where s.code ~ '^ind\.temp\.[0-9]{5}$'
+    order by name limit 60`;
 }
 
 export function last(points: Point[] | undefined): number | null {

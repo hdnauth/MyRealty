@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { getTitles, getUnits, type TitleRow, toTuples, type UnitInfo } from "@/lib/external/building";
@@ -49,7 +48,6 @@ function mainTitle(titles: TitleRow[]) {
  * 동·호 목록, 토지 면적. 외부 API 가 실패해도 가능한 만큼만 채워 돌려준다.
  */
 export async function GET(req: NextRequest) {
-  if (!(await getUser())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sp = req.nextUrl.searchParams;
   const sgg = sp.get("sgg") ?? "";
   const lawd = sp.get("lawd") ?? "";

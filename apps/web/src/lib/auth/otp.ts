@@ -107,7 +107,12 @@ export async function requestOtp(rawEmail: string, ip: string | null): Promise<R
 
 export type VerifyResult = { ok: true; userId: string; isNew: boolean } | { ok: false; error: string };
 
-export async function verifyOtp(rawEmail: string, rawCode: string): Promise<VerifyResult> {
+/**
+ * 코드를 확인하고 사용자를 정한다. guestId(이 기기의 게스트 계정)가 있으면 그 데이터를 이어받는다:
+ * - 처음 쓰는 이메일 → 게스트 행에 이메일을 채워 그대로 회원이 된다(가입)
+ * - 이미 가입한 이메일 → 게스트의 관심 부동산·구독 등을 그 계정으로 옮기고 게스트는 지운다(로그인)
+ */
+export async function verifyOtp(rawEmail: string, rawCode: string, guestId: string | null = null): Promise<VerifyResult> {
   const email = normalizeEmail(rawEmail);
   const code = rawCode.replace(/\D/g, "");
   if (code.length !== 6) return { ok: false, error: "6자리 코드를 입력하세요." };
@@ -132,9 +137,36 @@ export async function verifyOtp(rawEmail: string, rawCode: string): Promise<Veri
   if (!decision.allow) {
     return { ok: false, error: decision.reason === "blocked" ? "이용이 정지된 계정입니다. 관리자에게 문의하세요." : "현재 새 가입을 받지 않습니다." };
   }
+  if (guestId) {
+    const [upgraded] = await sql<{ id: string }[]>`
+      update users set email = ${email}, last_login_at = now()
+      where id = ${guestId} and email is null and not exists (select 1 from users where email = ${email})
+      returning id`;
+    if (upgraded) return { ok: true, userId: upgraded.id, isNew: true };
+  }
   const [user] = await sql<{ id: string; is_new: boolean }[]>`
     insert into users (email, last_login_at) values (${email}, now())
     on conflict (email) do update set last_login_at = now()
     returning id, (xmax = 0) as is_new`;
+  if (guestId && guestId !== user.id) await mergeGuest(guestId, user.id);
   return { ok: true, userId: user.id, isNew: user.is_new };
+}
+
+/** 게스트 계정의 개인 데이터를 회원 계정으로 옮기고 게스트를 지운다(나머지는 cascade 삭제) */
+export async function mergeGuest(from: string, to: string) {
+  await sql.begin(async (tx) => {
+    const [g] = await tx`select 1 from users where id = ${from} and email is null for update`;
+    if (!g) return;
+    await tx`update watch_items set user_id = ${to} where user_id = ${from}`;
+    await tx`update notes set user_id = ${to} where user_id = ${from}`;
+    await tx`update custom_indicators set user_id = ${to} where user_id = ${from}`;
+    await tx`update push_subscriptions set user_id = ${to} where user_id = ${from}`;
+    await tx`
+      update notifications n set user_id = ${to} where user_id = ${from}
+        and not exists (select 1 from notifications m where m.user_id = ${to} and m.dedupe_key = n.dedupe_key)`;
+    await tx`
+      insert into community_follows (user_id, scope, scope_id, created_at)
+      select ${to}, scope, scope_id, created_at from community_follows where user_id = ${from} on conflict do nothing`;
+    await tx`delete from users where id = ${from}`;
+  });
 }

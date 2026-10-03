@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, CardHeader, EmptyState, Notice, PageHeader } from "@/components/ui";
 import { AiReportButton } from "@/components/ai/report-button";
-import { AiSetupNotice } from "@/components/ai/setup-notice";
+import { AiSetupNotice, AiSignupNotice } from "@/components/ai/setup-notice";
 import { aiStatus } from "@/lib/ai/client";
 import { latestCompare } from "@/lib/ai/compare";
-import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { getAreaUnit } from "@/lib/area-unit";
 import { formatArea, formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceName } from "@/lib/format";
@@ -21,7 +21,7 @@ export const metadata: Metadata = { title: "비교" };
 
 export default async function ComparePage(props: PageProps<"/compare">) {
   const [uid, sp] = await Promise.all([sessionUserId(), props.searchParams]);
-  const [, all, unit] = await Promise.all([requireUser(), listItems(uid), getAreaUnit()]);
+  const [viewer, all, unit] = await Promise.all([pageUser(uid), listItems(uid), getAreaUnit()]);
   const ids = (typeof sp.ids === "string" ? sp.ids.split(",") : all.slice(0, 3).map((i) => i.id)).filter((id) => all.some((i) => i.id === id)).slice(0, 5);
   const toggle = (id: string) => {
     const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id].slice(0, 5);
@@ -85,7 +85,8 @@ export default async function ComparePage(props: PageProps<"/compare">) {
   const leftOut = rows.filter((r) => !charted.includes(r)).map((r) => r.it.label);
   const otherFamily = charted.filter((r) => !absRows.includes(r)).map((r) => r.it.label);
   const aiState = await aiStatus(uid);
-  const enabled = aiState.enabled;
+  const member = Boolean(viewer && !viewer.isGuest);
+  const enabled = aiState.enabled && member;
 
   type Row = (typeof rows)[number];
   const lastOfficial = (r: Row, types: string[]) => r.attrs.prices.filter((p) => types.includes(p.target_type)).at(-1) ?? null;
@@ -220,7 +221,11 @@ export default async function ComparePage(props: PageProps<"/compare">) {
           </div>
           <Card>
             <CardHeader title="AI 비교" sub={ai ? `생성 ${ai.created_at.slice(0, 16).replace("T", " ")}` : "데이터 근거로 장단점과 조건별 적합도를 정리"} action={<CompareButton ids={ids} enabled={enabled} />} />
-            {!enabled ? <div className="px-4 pb-4"><AiSetupNotice problem={aiState.problem} /></div> : null}
+            {!member ? (
+              <div className="px-4 pb-4"><AiSignupNotice next={`/compare${ids.length ? `?ids=${ids.join(",")}` : ""}`} /></div>
+            ) : !enabled ? (
+              <div className="px-4 pb-4"><AiSetupNotice problem={aiState.problem} /></div>
+            ) : null}
             {ai ? (
               <div className="space-y-4 px-4 pb-4 text-sm">
                 <p className="text-[15px] font-medium">{ai.data.result.summary}</p>

@@ -1,10 +1,11 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { requestOtp, verifyOtp } from "@/lib/auth/otp";
 import { safeNext } from "@/lib/auth/policy";
-import { createSession } from "@/lib/auth/session";
+import { clientIp, createSession, readToken, SESSION_COOKIE } from "@/lib/auth/session";
+import { sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { reportError } from "@/lib/errors";
 import { getSiteSettings } from "@/lib/site-settings";
@@ -16,11 +17,6 @@ export type LoginState = {
   error?: string;
   info?: string;
 };
-
-async function clientIp() {
-  const h = await headers();
-  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
-}
 
 export async function requestCodeAction(_: LoginState, form: FormData): Promise<LoginState> {
   const email = String(form.get("email") ?? "").trim().toLowerCase();
@@ -47,8 +43,12 @@ export async function verifyCodeAction(prev: LoginState, form: FormData): Promis
   const code = String(form.get("code") ?? "");
   const remember = form.get("remember") === "on";
   try {
-    const res = await verifyOtp(email, code);
+    // 이 기기의 게스트(이메일 없는 계정)가 있으면 그 데이터를 이어받는다
+    const tok = await readToken((await cookies()).get(SESSION_COOKIE)?.value);
+    const [guest] = tok ? await sql<{ id: string }[]>`select id from users where id = ${tok.uid} and email is null` : [];
+    const res = await verifyOtp(email, code, guest?.id ?? null);
     if (!res.ok) return { step: "code", email, remember, error: res.error };
+    if (tok) await sql`update sessions set revoked_at = now() where id = ${tok.sid} and revoked_at is null`;
     await createSession(res.userId, remember);
   } catch (e) {
     return { step: "code", email, remember, error: reportError("auth.verify", e) };

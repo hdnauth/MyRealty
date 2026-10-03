@@ -60,3 +60,27 @@ export function makePnu(lawdCd: string, mountain: boolean, bonbun: number | stri
   if (!Number.isFinite(b1) || !Number.isFinite(b2)) return null;
   return `${lawdCd}${mountain ? 2 : 1}${String(b1).padStart(4, "0")}${String(b2).padStart(4, "0")}`;
 }
+
+/**
+ * "현재 시세" 한 가지 기준(홈·목록·포트폴리오·상세 개요가 같은 값을 보이도록):
+ * 추정 시세(AVM) → 같은 단지·평형 6개월 매매 중위 → 최근 매매 → 매입가(시세 근거가 없을 때 손익 0으로 둔다)
+ */
+export type ValueSource = "estimate" | "median6m" | "last" | "purchase";
+export const VALUE_SOURCE_LABEL: Record<ValueSource, string> = {
+  estimate: "추정 시세",
+  median6m: "6개월 중위",
+  last: "최근 거래",
+  purchase: "매입가 기준",
+};
+export function currentValue(i: {
+  estimate: number | null;
+  median6m?: number | null;
+  last_trade_price?: number | null;
+  purchase_price?: number | null;
+}): { value: number | null; source: ValueSource | null } {
+  if (i.estimate) return { value: i.estimate, source: "estimate" };
+  if (i.median6m) return { value: Math.round(i.median6m), source: "median6m" };
+  if (i.last_trade_price) return { value: i.last_trade_price, source: "last" };
+  if (i.purchase_price) return { value: i.purchase_price, source: "purchase" };
+  return { value: null, source: null };
+}

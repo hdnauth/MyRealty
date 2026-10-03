@@ -157,7 +157,8 @@ async function newsEmptyReason(itemId: string): Promise<string> {
   const d = r?.step?.detail ?? r?.job?.detail ?? null;
   const err = r?.step?.status === "error" || r?.job?.status === "error" ? (d?.error as string | undefined) : undefined;
   if (err) return `뉴스를 모으지 못했습니다: ${errorNote(err)}`;
-  if (typeof d?.skipped === "string") return `뉴스 수집을 건너뛰었습니다(${d.skipped}). 네이버 개발자센터 검색 API 키를 넣으면 매일 키워드별 뉴스를 모읍니다.`;
+  // 수집 설정 문제(키 없음 등)는 관리 › 시스템에서 다루고, 사용자에게는 준비 중으로 안내한다
+  if (typeof d?.skipped === "string") return "관련 뉴스 기능을 준비하고 있습니다. 준비되면 키워드별 기사를 매일 모아 드립니다.";
   if (d) return "최근 90일 동안 키워드에 맞는 기사가 없습니다. 키워드는 수정 화면에서 바꿀 수 있습니다.";
   return "매일 아침 수집 때 키워드별 뉴스를 모으고 AI 가 관련도를 판단합니다.";
 }

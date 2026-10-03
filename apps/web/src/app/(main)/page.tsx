@@ -1,16 +1,19 @@
 import { ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { NeighborhoodFeed } from "@/components/community/board-teaser";
 import { NotificationRow } from "@/components/feed/notification-row";
 import { ItemCard } from "@/components/items/item-card";
-import { Card, CardHeader, Change, EmptyState, LinkButton, Stat } from "@/components/ui";
-import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { GuestNote } from "@/components/shell/member-gate";
+import { Card, CardHeader, Change, Stat } from "@/components/ui";
+import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { formatDate, formatManwon, formatNumber } from "@/lib/format";
 import { calendarEntries, listNotifications } from "@/lib/queries/feed";
 import { listItems } from "@/lib/queries/items";
 import { getAreaUnit } from "@/lib/area-unit";
 import { sql } from "@/lib/db";
 import { insightBalance, marketInsights } from "@/lib/insights";
+import { currentValue } from "@/lib/property";
 import { insightInputs } from "@/lib/queries/indicators";
 
 function isoDay(offset = 0) {
@@ -21,13 +24,16 @@ function isoDay(offset = 0) {
 
 export default async function HomePage() {
   const uid = await sessionUserId();
-  const [, items, notes, upcoming, unit] = await Promise.all([
-    requireUser(),
+  const [user, items, notes, upcoming, unit] = await Promise.all([
+    pageUser(uid),
     listItems(uid),
     listNotifications(uid, { limit: 8 }),
     calendarEntries(uid, isoDay(0), isoDay(45)),
     getAreaUnit(),
   ]);
+
+  // 시작 화면: 관심 부동산이 없으면 가장 많이 쓰는 지도로 바로 시작한다
+  if (!user || !items.length) redirect("/map");
 
   const owned = items.filter((i) => i.group_tag === "owned");
   // 대표 지역: 보유 → 첫 관심 부동산 순
@@ -52,27 +58,17 @@ export default async function HomePage() {
   const insights = marketInsights(inputs);
   const balance = insightBalance(insights);
   const regionName = mainSgg ? (owned[0] ?? items[0]).road_address?.split(" ").slice(0, 2).join(" ") ?? null : null;
-  const value = owned.reduce((a, i) => a + (i.estimate ?? i.last_trade_price ?? i.purchase_price ?? 0), 0);
+  // 현재 시세: 상세·목록·포트폴리오와 같은 기준(lib/property currentValue)
+  const value = owned.reduce((a, i) => a + (currentValue(i).value ?? 0), 0);
   const cost = owned.reduce((a, i) => a + (i.purchase_price ?? 0), 0);
   const debt = owned.reduce((a, i) => a + i.loans.reduce((s, l) => s + (l.amount || 0), 0) + (i.lease && i.lease.role !== "tenant" ? i.lease.deposit : 0), 0);
   const unread = notes.filter((n) => !n.read_at);
   const highs = unread.filter((n) => n.kind === "record_high").length;
   const news = unread.filter((n) => n.kind === "news").length;
 
-  if (!items.length) {
-    return (
-      <Card>
-        <EmptyState
-          title="환영합니다!"
-          desc="보유하거나 관심 있는 부동산을 등록하면 실거래·주변 시세·뉴스·정책·일정을 모아 알려드립니다."
-          action={<LinkButton href="/items/new">관심 부동산 등록하기</LinkButton>}
-        />
-      </Card>
-    );
-  }
-
   return (
     <div className="space-y-4">
+      {user.isGuest ? <GuestNote /> : null}
       <Card className="p-4">
         <p className="text-xs text-muted">{formatDate(new Date(), "long")} 요약</p>
         <ul className="mt-2 space-y-2 text-[15px] leading-relaxed">

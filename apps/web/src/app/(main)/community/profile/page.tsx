@@ -4,7 +4,7 @@ import { BlockButton } from "@/components/community/interactive";
 import { PostList } from "@/components/community/parts";
 import { ProfileForm, ResidenceCheck } from "@/components/community/profile-form";
 import { Card, CardHeader, PageHeader, Stat } from "@/components/ui";
-import { requireUser } from "@/lib/auth/session";
+import { requireMember } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { communityMe, listBlocks, listPosts } from "@/lib/community/queries";
 import { levelOf, RESIDENCE } from "@/lib/community/rules";
@@ -12,7 +12,7 @@ import { levelOf, RESIDENCE } from "@/lib/community/rules";
 export const metadata: Metadata = { title: "내 활동·설정" };
 
 export default async function CommunityProfilePage(props: PageProps<"/community/profile">) {
-  const [user, sp] = await Promise.all([requireUser(), props.searchParams]);
+  const [user, sp] = await Promise.all([requireMember("/community/profile"), props.searchParams]);
   const next = typeof sp.next === "string" && sp.next.startsWith("/community") ? sp.next : null;
   const [me, mine, counts, residences, settings, blocks] = await Promise.all([
     communityMe(user.id, user.isAdmin),

@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { jibunOf, searchJuso } from "@/lib/external/juso";
 import { looksLikeJibun, parsePnu, searchParcels } from "@/lib/external/parcel";
@@ -48,7 +47,6 @@ const lastToken = (s: string | null) => (s ?? "").trim().split(/\s+/).at(-1) ?? 
  * 도로명주소 결과가 이미 수집된 단지와 같은 필지면 단지 정보를 붙이고 로컬 중복 결과는 뺀다.
  */
 export async function GET(req: NextRequest) {
-  if (!(await getUser())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
   if (q.length < 2) return NextResponse.json({ results: [] });
 

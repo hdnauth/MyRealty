@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import type { AddressCandidate } from "@/app/api/address/route";
 import { PageHeader } from "@/components/ui";
 import { getAreaUnit } from "@/lib/area-unit";
-import { requireUser } from "@/lib/auth/session";
+import { GuestNote } from "@/components/shell/member-gate";
+import { getUser } from "@/lib/auth/session";
 import { env } from "@/lib/env";
 import { getComplex } from "@/lib/queries/complexes";
 import { NewItemForm } from "./new-item-form";
@@ -10,13 +11,15 @@ import { NewItemForm } from "./new-item-form";
 export const metadata: Metadata = { title: "부동산 등록" };
 
 export default async function NewItemPage(props: PageProps<"/items/new">) {
-  const [sp] = await Promise.all([props.searchParams, requireUser()]);
+  // 방문자도 등록할 수 있다: 저장할 때 이 기기의 게스트 계정이 만들어진다
+  const [sp, user] = await Promise.all([props.searchParams, getUser()]);
   // ?complex=단지 id: 단지 상세·지도에서 '관심 등록'으로 들어오면 그 단지를 고른 상태로 연다
   const [unit, complex] = await Promise.all([getAreaUnit(), typeof sp.complex === "string" ? getComplex(Number(sp.complex)) : null]);
   const initialPick: AddressCandidate | null = complex ? complexCandidate(complex) : null;
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader title="관심 부동산 등록" sub="아파트·빌라·오피스텔·단독·토지·임야·상가를 주소로 등록하세요." />
+      {!user || user.isGuest ? <GuestNote className="mb-4 rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-muted" /> : null}
       <NewItemForm mapKeys={{ keyId: env.ncpKeyId ?? null, vworldKey: env.vworldKey ?? null }} unit={unit} initialPick={initialPick} />
     </div>
   );

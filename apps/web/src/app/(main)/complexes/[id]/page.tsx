@@ -1,4 +1,4 @@
-import { Map as MapIcon, Plus, Star } from "lucide-react";
+import { Map as MapIcon, Star } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -10,7 +10,7 @@ import { TxTable } from "@/components/items/tx-table";
 import { MiniMap } from "@/components/map/mini-map";
 import { Badge, Card, CardHeader, Change, LinkButton, Stat } from "@/components/ui";
 import { getAreaUnit } from "@/lib/area-unit";
-import { requireUser, sessionUserId } from "@/lib/auth/session";
+import { pageUser, sessionUserId } from "@/lib/auth/session";
 import { env } from "@/lib/env";
 import { formatArea, formatDate, formatManwon, formatNumber, formatPct, perUnitArea, unitPriceLabel, unitPriceName } from "@/lib/format";
 import { monthlyRollingMedian } from "@/lib/item-analytics";
@@ -33,7 +33,7 @@ export async function generateMetadata(props: PageProps<"/complexes/[id]">): Pro
 export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
   const [uid, { id: raw }, sp] = await Promise.all([sessionUserId(), props.params, props.searchParams]);
   const id = Number(raw);
-  const [, c, unit, mine] = await Promise.all([requireUser(), getComplex(id), getAreaUnit(), myComplexItems(uid)]);
+  const [, c, unit, mine] = await Promise.all([pageUser(uid), getComplex(id), getAreaUnit(), myComplexItems(uid)]);
   if (!c) notFound();
   const [txs, loc] = await Promise.all([complexTransactions(id, 5), complexLocation(id)]);
   const myItemId = mine[id] ?? null;
@@ -97,9 +97,10 @@ export default async function ComplexPage(props: PageProps<"/complexes/[id]">) {
             <span className="hidden sm:inline">내 부동산 보기</span>
           </LinkButton>
         ) : (
-          <LinkButton href={registerComplexHref(id)} className="shrink-0">
-            <Plus size={16} />
-            <span className="hidden sm:inline">관심 등록</span>
+          // 지도에서 단지를 눌러 들어온 사용자의 다음 행동이라 모바일에서도 글자로 보인다
+          <LinkButton href={registerComplexHref(id)} className="shrink-0 px-3">
+            <Star size={16} />
+            관심 등록
           </LinkButton>
         )}
       </div>

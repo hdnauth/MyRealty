@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { COMPLEX_TYPES, filtersFromQuery, type MapPoint } from "@/lib/map-filters";
 
@@ -13,7 +12,6 @@ const LIMIT = 400;
  * 지표: 전세가율(최근 12개월 ㎡당 중위 비), 1년 변화(최근 6개월 vs 12~18개월 전 매매 ㎡당 중위, 각 2건 이상), 입지 점수(단지).
  */
 export async function GET(req: NextRequest) {
-  if (!(await getUser())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sp = req.nextUrl.searchParams;
   const bbox = (sp.get("bbox") ?? "").split(",").map(Number);
   if (bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v))) return NextResponse.json({ error: "bbox" }, { status: 400 });

@@ -20,7 +20,7 @@ export function AttrsCard({ item, attrs, marketPrice }: { item: WatchItem; attrs
   if (!building && !parcel && !prices.length) {
     return (
       <Card className="p-4 text-sm text-muted lg:col-span-3">
-        건축물대장·토지특성·공시가격은 ETL <code>attrs</code> 단계에서 수집됩니다(공공데이터포털·브이월드 키 필요).
+        건물 정보(건축물대장)·토지 정보·공시가격을 준비하고 있어요. 매일 아침 자동으로 수집되며, 준비되면 여기에 표시됩니다.
       </Card>
     );
   }

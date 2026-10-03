@@ -63,7 +63,7 @@ export default async function AdminUserDetail(props: PageProps<"/admin/users/[id
         <CardHeader
           title={
             <span className="flex flex-wrap items-center gap-1.5">
-              {u.email}
+              {u.email ?? "게스트(기기)"}
               {isAdmin ? <Badge tone="warn">관리자{isEnv ? "(환경 변수)" : ""}</Badge> : null}
               {u.status === "blocked" ? <Badge tone="up">정지됨</Badge> : <Badge tone="ok">정상</Badge>}
               {isSelf ? <Badge tone="accent">나</Badge> : null}

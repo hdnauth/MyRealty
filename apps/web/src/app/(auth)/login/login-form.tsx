@@ -15,7 +15,7 @@ export function LoginForm({ next }: { next: string }) {
   if (!onCodeStep) {
     return (
       <form action={(fd) => { setRestart(0); requestAction(fd); }} className="space-y-4">
-        <Field label="이메일" hint="처음이면 코드 확인 후 바로 가입됩니다.">
+        <Field label="이메일" hint="처음이면 코드 확인과 동시에 가입됩니다. 이미 가입했다면 로그인됩니다.">
           <Input
             name="email"
             type="email"
@@ -30,7 +30,7 @@ export function LoginForm({ next }: { next: string }) {
         <RememberBox checked={remember} onChange={setRemember} />
         {reqState.error ? <p role="alert" className="text-sm text-up">{reqState.error}</p> : null}
         <Button type="submit" className="w-full" disabled={requesting}>
-          {requesting ? "보내는 중…" : "로그인 코드 받기"}
+          {requesting ? "보내는 중…" : "인증 코드 받기"}
         </Button>
       </form>
     );
@@ -62,7 +62,7 @@ export function LoginForm({ next }: { next: string }) {
       <RememberBox checked={remember} onChange={setRemember} />
       {verState.error ? <p role="alert" className="text-sm text-up">{verState.error}</p> : null}
       <Button type="submit" className="w-full" disabled={verifying}>
-        {verifying ? "확인 중…" : "로그인"}
+        {verifying ? "확인 중…" : "확인하고 시작하기"}
       </Button>
     </form>
   );

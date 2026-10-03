@@ -162,6 +162,10 @@ export function excerpt(body: string, n = 120): string {
 }
 
 /** 시군구 코드(5자리) */
+/** 지역과 상관없는 전국 공통 게시판 — 게시판 키(시군구 코드 자리)에 쓰는 예약 코드 */
+export const ALL_BOARD = "00000";
+export const ALL_BOARD_NAME = "전국";
+
 export function isSgg(v: unknown): v is string {
   return typeof v === "string" && /^\d{5}$/.test(v);
 }

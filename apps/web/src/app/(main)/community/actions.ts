@@ -9,7 +9,7 @@ import { env } from "@/lib/env";
 import { answerQuestion, buildSummary } from "@/lib/community/ai";
 import { addPoints, notifyCommunity, postUrl, recountComments, reviewAfterSave } from "@/lib/community/moderation";
 import { type Attachment, canWrite, communityMe } from "@/lib/community/queries";
-import { dailyLimit, isReportReason, isSgg, isUserCategory, LIMITS, nicknameError, POINTS, screenText } from "@/lib/community/rules";
+import { ALL_BOARD, dailyLimit, isReportReason, isSgg, isUserCategory, LIMITS, nicknameError, POINTS, screenText } from "@/lib/community/rules";
 import { getSiteSettings } from "@/lib/site-settings";
 
 export type FormState = { error?: string; ok?: string };
@@ -94,6 +94,7 @@ async function readBoard(form: FormData): Promise<{ sgg: string; complexId: numb
   }
   const sgg = str(form.get("sgg"));
   if (!isSgg(sgg)) return { error: "게시판(시군구)을 고르세요." };
+  if (sgg === ALL_BOARD) return { sgg, complexId: null };
   const [ok] = await sql`
     select 1 from collect_targets where sgg_cd = ${sgg}
     union all select 1 from regions where lawd_cd = ${`${sgg}00000`}
